@@ -114,7 +114,9 @@ to the assigned task number.
 ### `list [--status {status,...}] [--no-complexity]`
 
 - Lists tasks in the local project workspace, grouped by status in workflow
-  order and sorted by the fetched `rank` field
+  order with separated sections and sorted by the fetched `rank` field
+- Status headings are uppercase with camel case separated into words (for
+  example, `IN PROGRESS`)
 - Run `pull` to refresh local task data and rank values from Solutions
 - Discarded tasks are hidden by default; include `discarded` in `--status` to
   display them

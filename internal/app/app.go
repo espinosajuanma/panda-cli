@@ -568,7 +568,10 @@ func listTasks(ws *workspace.Workspace, args []string, out io.Writer) error {
 		fmt.Fprintln(out, "No tasks match the filters.")
 		return nil
 	}
-	for _, status := range statuses {
+	for i, status := range statuses {
+		if i > 0 {
+			fmt.Fprintln(out, colorText(out, "2", "----------------------------------------"))
+		}
 		sortTasksByRank(groups[status])
 		if err := printTaskGroup(out, status, groups[status]); err != nil {
 			return err
@@ -683,7 +686,7 @@ func printTaskGroup(out io.Writer, status string, tasks []map[string]any) error 
 	if status == "released" {
 		style = "1;36"
 	}
-	fmt.Fprintln(out, colorText(out, style, status))
+	fmt.Fprintln(out, colorText(out, style, displayStatus(status)))
 	var table bytes.Buffer
 	writer := tabwriter.NewWriter(&table, 0, 4, 2, ' ', 0)
 	if _, err := fmt.Fprintln(writer, "NUMBER\tPRIORITY\tTYPE\tCOMPLEXITY\tTITLE"); err != nil {
@@ -718,6 +721,17 @@ func printTaskGroup(out io.Writer, status string, tasks []map[string]any) error 
 		fmt.Fprintln(out, line)
 	}
 	return nil
+}
+
+func displayStatus(status string) string {
+	var spaced strings.Builder
+	for i, char := range status {
+		if i > 0 && char >= 'A' && char <= 'Z' {
+			spaced.WriteByte(' ')
+		}
+		spaced.WriteRune(char)
+	}
+	return strings.ToUpper(spaced.String())
 }
 
 func tableCell(value any) string {

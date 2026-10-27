@@ -630,18 +630,21 @@ func TestListGroupsByWorkflowStatusSortsByRankAndFilters(t *testing.T) {
 	}
 	text := output.String()
 	statusPositions := []int{
-		strings.Index(text, "new\n"),
-		strings.Index(text, "toDo\n"),
-		strings.Index(text, "inProgress\n"),
-		strings.Index(text, "inReview\n"),
-		strings.Index(text, "completed\n"),
-		strings.Index(text, "staging\n"),
-		strings.Index(text, "released\n"),
+		strings.Index(text, "NEW\n"),
+		strings.Index(text, "TO DO\n"),
+		strings.Index(text, "IN PROGRESS\n"),
+		strings.Index(text, "IN REVIEW\n"),
+		strings.Index(text, "COMPLETED\n"),
+		strings.Index(text, "STAGING\n"),
+		strings.Index(text, "RELEASED\n"),
 	}
 	for i, position := range statusPositions {
 		if position < 0 || (i > 0 && position <= statusPositions[i-1]) {
 			t.Fatalf("workflow statuses are not grouped in the requested order: %q", text)
 		}
+	}
+	if got := strings.Count(text, "----------------------------------------"); got != len(statusPositions)-1 {
+		t.Fatalf("got %d status dividers, want %d", got, len(statusPositions)-1)
 	}
 	if strings.Contains(text, "Discarded") {
 		t.Fatalf("discarded task appeared without an explicit status filter: %q", text)
