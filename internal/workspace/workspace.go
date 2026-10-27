@@ -26,7 +26,7 @@ func New(root string) *Workspace {
 }
 
 func (w *Workspace) Ensure() error {
-	for _, dir := range []string{w.Root, filepath.Join(w.Root, ".panda"), filepath.Join(w.Root, ".panda", "state")} {
+	for _, dir := range []string{w.Root, filepath.Join(w.Root, ".panda"), filepath.Join(w.Root, ".panda", "state"), w.TasksRoot()} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return err
 		}
@@ -34,11 +34,59 @@ func (w *Workspace) Ensure() error {
 			return err
 		}
 	}
+	return w.migrateLegacyTaskDirectories()
+}
+
+func (w *Workspace) TasksRoot() string {
+	return filepath.Join(w.Root, "tasks")
+}
+
+func (w *Workspace) TaskPath(name string) string {
+	return filepath.Join(w.TasksRoot(), name)
+}
+
+func (w *Workspace) migrateLegacyTaskDirectories() error {
+	entries, err := os.ReadDir(w.Root)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || entry.Name() == ".panda" || entry.Name() == "tasks" {
+			continue
+		}
+		legacyDir := filepath.Join(w.Root, entry.Name())
+		metadata, err := ReadMap(filepath.Join(legacyDir, "metadata.json"))
+		if err != nil || (metadata["id"] == nil && metadata["localId"] == nil && metadata["number"] == nil) {
+			continue
+		}
+		if !hasTaskFiles(legacyDir) {
+			continue
+		}
+		newDir := w.TaskPath(entry.Name())
+		if _, err := os.Lstat(newDir); err == nil {
+			return fmt.Errorf("cannot migrate legacy task directory %s: %s already exists", entry.Name(), newDir)
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		if err := os.Rename(legacyDir, newDir); err != nil {
+			return fmt.Errorf("move legacy task directory %s into tasks: %w", entry.Name(), err)
+		}
+	}
 	return nil
 }
 
+func hasTaskFiles(dir string) bool {
+	if info, err := os.Stat(filepath.Join(dir, "description.md")); err == nil && !info.IsDir() {
+		return true
+	}
+	if info, err := os.Stat(filepath.Join(dir, "notes")); err == nil && info.IsDir() {
+		return true
+	}
+	return false
+}
+
 func (w *Workspace) TaskDirectories() ([]string, error) {
-	entries, err := os.ReadDir(w.Root)
+	entries, err := os.ReadDir(w.TasksRoot())
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -47,8 +95,8 @@ func (w *Workspace) TaskDirectories() ([]string, error) {
 	}
 	var dirs []string
 	for _, entry := range entries {
-		if entry.IsDir() && entry.Name() != ".panda" {
-			dirs = append(dirs, filepath.Join(w.Root, entry.Name()))
+		if entry.IsDir() {
+			dirs = append(dirs, w.TaskPath(entry.Name()))
 		}
 	}
 	sort.Strings(dirs)

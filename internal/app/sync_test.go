@@ -157,7 +157,7 @@ func TestPullThenPushMergesIndependentRemoteAndLocalChanges(t *testing.T) {
 	if err := pull(context.Background(), client, ws, project, &strings.Builder{}); err != nil {
 		t.Fatal(err)
 	}
-	dir := filepath.Join(ws.Root, "14")
+	dir := ws.TaskPath("14")
 	metadata, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -183,13 +183,76 @@ func TestPullThenPushMergesIndependentRemoteAndLocalChanges(t *testing.T) {
 	}
 }
 
+func TestPullSkipsTasksWithUnchangedVersion(t *testing.T) {
+	remote := map[string]any{
+		"id": "task-versioned", "number": float64(51), "version": float64(1),
+		"title": "Original title", "type": "feature", "priority": "medium", "complexity": "s", "status": "new",
+		"description": "<p>Body</p>", "project": map[string]any{"id": "project-1"},
+		"labels": []any{}, "assignees": []any{}, "reviewers": []any{}, "notes": []any{},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/data/dev.tasks" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"total":1,"items":[%s]}`, marshalForTest(remote))
+	}))
+	defer server.Close()
+
+	ws := workspace.New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	client := solutions.NewClient(server.URL, "token")
+	project := &config.Project{ID: "project-1", Name: "Alpha"}
+	var output strings.Builder
+	if err := pull(context.Background(), client, ws, project, &output); err != nil {
+		t.Fatal(err)
+	}
+	dir := ws.TaskPath("51")
+
+	remote["title"] = "Changed without version bump"
+	output.Reset()
+	if err := pull(context.Background(), client, ws, project, &output); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "0 updated") {
+		t.Fatalf("unchanged version was counted as updated: %q", output.String())
+	}
+	local, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if local["title"] != "Original title" {
+		t.Fatalf("unchanged version rewrote local task metadata: %#v", local)
+	}
+
+	remote["title"] = "Changed with version bump"
+	remote["version"] = float64(2)
+	output.Reset()
+	if err := pull(context.Background(), client, ws, project, &output); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "1 updated") {
+		t.Fatalf("changed version was not counted as updated: %q", output.String())
+	}
+	local, err = workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if local["title"] != "Changed with version bump" || local["version"] != float64(2) {
+		t.Fatalf("versioned remote update was not applied locally: %#v", local)
+	}
+}
+
 func TestInteractiveEditValidatesEnumsAndWritesMetadata(t *testing.T) {
 	root := t.TempDir()
 	ws := workspace.New(root)
 	if err := ws.Ensure(); err != nil {
 		t.Fatal(err)
 	}
-	dir := filepath.Join(root, "14")
+	dir := ws.TaskPath("14")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -536,7 +599,7 @@ func TestNewTaskGetsRemoteNumberAfterSuccessfulPush(t *testing.T) {
 	if created["project"].(map[string]any)["id"] != "project-1" || !strings.Contains(stringField(created, "description"), "<strong>world</strong>") {
 		t.Fatalf("remote task payload incorrect: %#v", created)
 	}
-	finalDir := filepath.Join(ws.Root, "15")
+	finalDir := ws.TaskPath("15")
 	metadata, err := workspace.ReadMap(filepath.Join(finalDir, "metadata.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -825,10 +888,10 @@ func TestListGroupsByWorkflowStatusSortsByRankAndFilters(t *testing.T) {
 	for _, task := range fixtures {
 		addSyncedTask(t, ws, task)
 	}
-	if err := os.WriteFile(filepath.Join(ws.Root, "12", "description.md"), []byte("Has a description"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(ws.TaskPath("12"), "description.md"), []byte("Has a description"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(ws.Root, "13", "description.md"), []byte(" \n\t "), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(ws.TaskPath("13"), "description.md"), []byte(" \n\t "), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -909,7 +972,7 @@ func makeSyncedTask(t *testing.T, remote map[string]any) (*workspace.Workspace, 
 
 func addSyncedTask(t *testing.T, ws *workspace.Workspace, remote map[string]any) string {
 	t.Helper()
-	dir := filepath.Join(ws.Root, workspace.DirectoryName(remote))
+	dir := ws.TaskPath(workspace.DirectoryName(remote))
 	if err := os.MkdirAll(filepath.Join(dir, "notes"), 0o700); err != nil {
 		t.Fatal(err)
 	}

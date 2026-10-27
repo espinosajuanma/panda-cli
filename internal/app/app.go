@@ -362,9 +362,9 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 		remoteIDs[id] = true
 		dir, local, err := ws.FindByRemoteID(id)
 		if errors.Is(err, os.ErrNotExist) {
-			dir = filepath.Join(ws.Root, workspace.DirectoryName(remote))
+			dir = ws.TaskPath(workspace.DirectoryName(remote))
 			if _, statErr := os.Stat(dir); statErr == nil {
-				dir = filepath.Join(ws.Root, workspace.DirectoryName(remote)+"-"+id)
+				dir = ws.TaskPath(workspace.DirectoryName(remote) + "-" + id)
 			}
 			if err := os.MkdirAll(filepath.Join(dir, "notes"), 0o700); err != nil {
 				return err
@@ -396,6 +396,9 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 		state, err := ws.ReadState(id)
 		if err != nil {
 			return fmt.Errorf("task %s has no sync baseline; run clean then pull: %w", id, err)
+		}
+		if sameTaskVersion(remote, state.Remote) {
+			continue
 		}
 		fields := mergeMetadata(local, state.Remote, remote)
 		if len(fields) != 0 {
@@ -476,6 +479,12 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 		return fmt.Errorf("pull completed with %d conflict(s); use `panda clean <taskNumber>` then pull again to discard local edits, or resolve the conflicting files manually", conflictCount)
 	}
 	return nil
+}
+
+func sameTaskVersion(remote, baseline map[string]any) bool {
+	remoteVersion, remoteHasVersion := remote["version"]
+	baseVersion, baselineHasVersion := baseline["version"]
+	return remoteHasVersion && baselineHasVersion && remoteVersion != nil && baseVersion != nil && same(remoteVersion, baseVersion)
 }
 
 func diff(ws *workspace.Workspace, args []string, out io.Writer) error {
@@ -1114,9 +1123,9 @@ func push(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 				_ = os.Remove(oldPath)
 			}
 			key = newID
-			newDir := filepath.Join(ws.Root, workspace.DirectoryName(remote))
+			newDir := ws.TaskPath(workspace.DirectoryName(remote))
 			if _, err := os.Stat(newDir); err == nil && newDir != dir {
-				newDir = filepath.Join(ws.Root, workspace.DirectoryName(remote)+"-"+safeName(newID))
+				newDir = ws.TaskPath(workspace.DirectoryName(remote) + "-" + safeName(newID))
 			}
 			if newDir != dir {
 				if err := os.Rename(dir, newDir); err != nil {
@@ -1408,7 +1417,7 @@ func createTask(ws *workspace.Workspace, project *config.Project, args []string,
 		return errors.New("task title cannot be empty")
 	}
 	localID := "local-" + strconv.FormatInt(time.Now().UnixNano(), 36)
-	dir := filepath.Join(ws.Root, localID)
+	dir := ws.TaskPath(localID)
 	metadata := map[string]any{
 		"localId":   localID,
 		"project":   map[string]any{"id": project.ID, "label": project.Name},

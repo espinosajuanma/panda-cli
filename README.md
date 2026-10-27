@@ -46,17 +46,20 @@ For example, the directory layout is:
     {projectName}/
       .panda/
         state/
-      {taskNumber-or-localId}/
-        description.md
-        metadata.json
-        notes/
-          {timeStamp}-{authorName}.md
+      tasks/
+        {taskNumber-or-localId}/
+          description.md
+          metadata.json
+          notes/
+            {timeStamp}-{authorName}.md
 ```
 
 The `.panda/state` directory stores the last-synced baseline and remote task
 IDs needed for synchronization. A task created locally uses a temporary local
 ID until a successful push creates it remotely; then its directory is renamed
-to the assigned task number.
+to the assigned task number. Legacy task directories at the project root are
+moved into `tasks/` when the workspace is next opened; unrelated project files
+and directories at the root are left in place.
 
 ### `login`
 
@@ -92,6 +95,7 @@ to the assigned task number.
 - Fetch all tasks for the selected project from the Solutions app, following
   API pagination
 - Compare the fetched tasks with the last-synced baseline
+- Skip rewriting tasks whose remote `version` matches the stored baseline
 - Apply remote-only changes locally and preserve local-only changes
 - Report conflicts when the same field changed both locally and remotely
 - Changes remain local until a `push` is performed
