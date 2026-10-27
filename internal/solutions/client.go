@@ -148,6 +148,12 @@ func (c *Client) list(ctx context.Context, endpoint string, query url.Values) ([
 			return nil, err
 		}
 		items = append(items, response.Items...)
+		if response.Total > 0 && float64(len(items)) >= response.Total {
+			break
+		}
+		if len(response.Items) == 0 {
+			break
+		}
 		if response.Offset == "" {
 			break
 		}

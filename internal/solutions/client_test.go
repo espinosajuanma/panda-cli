@@ -73,3 +73,24 @@ func TestListTasksFollowsOffsetAndSendsProjectFilter(t *testing.T) {
 		t.Fatalf("made %d requests, want 2", requests)
 	}
 }
+
+func TestListStopsWhenTotalIsSatisfiedEvenIfOffsetIsPresent(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"total":1,"offset":"last-record-id","items":[{"id":"project-1","name":"Stokes Wagner"}]}`))
+	}))
+	defer server.Close()
+
+	project, err := NewClient(server.URL, "token").FindProject(context.Background(), "Stokes Wagner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.ID != "project-1" {
+		t.Fatalf("got project ID %q", project.ID)
+	}
+	if requests != 1 {
+		t.Fatalf("made %d requests, want exactly one", requests)
+	}
+}
