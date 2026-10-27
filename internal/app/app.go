@@ -519,6 +519,12 @@ func renderDiff(ws *workspace.Workspace, args []string, out, colorTarget io.Writ
 		var taskChanges bytes.Buffer
 		if stateErr != nil || state.LocalCreated {
 			fmt.Fprintf(&taskChanges, "  %s\n", colorText(colorTarget, "1;32", "new task"))
+			for _, field := range []string{"type", "priority", "complexity"} {
+				fmt.Fprintf(&taskChanges, "  %s: %s\n",
+					colorText(colorTarget, "1", field),
+					colorText(colorTarget, "32", formatDiffValue(valueAt(local, field))),
+				)
+			}
 			changes++
 		} else {
 			for _, field := range editableFields {

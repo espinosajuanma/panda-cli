@@ -688,6 +688,46 @@ func TestDiffGroupsTaskChangesAndShowsDescriptionLines(t *testing.T) {
 	}
 }
 
+func TestDiffShowsKeyFieldsForNewTasks(t *testing.T) {
+	ws := workspace.New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	if err := createTask(ws, &config.Project{ID: "project-1", Name: "Alpha"}, []string{"Brand new task"}, strings.NewReader(""), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	dirs, err := ws.TaskDirectories()
+	if err != nil || len(dirs) != 1 {
+		t.Fatalf("created task directories = %v, error = %v", dirs, err)
+	}
+	metadataPath := filepath.Join(dirs[0], "metadata.json")
+	metadata, err := workspace.ReadMap(metadataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata["priority"] = "high"
+	metadata["complexity"] = "xl"
+	if err := workspace.WriteMap(metadataPath, metadata); err != nil {
+		t.Fatal(err)
+	}
+
+	var output bytes.Buffer
+	if err := diff(ws, nil, &output); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	for _, expected := range []string{
+		"new task",
+		"type: feature",
+		"priority: high",
+		"complexity: xl",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Errorf("new task diff missing %q:\n%s", expected, text)
+		}
+	}
+}
+
 func TestPageOutputFallsBackWhenPagerIsUnavailable(t *testing.T) {
 	t.Setenv("PAGER", "panda-test-missing-pager-command")
 	want := "diff content\n"
