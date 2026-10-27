@@ -1,0 +1,75 @@
+package solutions
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+func TestLoginSendsCredentials(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/auth/login" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		var credentials map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&credentials); err != nil {
+			t.Fatal(err)
+		}
+		if credentials["email"] != "dev@example.com" || credentials["password"] != "secret" {
+			t.Fatalf("unexpected credentials: %#v", credentials)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"token":"session-token"}`))
+	}))
+	defer server.Close()
+
+	token, err := NewClient(server.URL, "").Login(context.Background(), "dev@example.com", "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token != "session-token" {
+		t.Fatalf("got token %q", token)
+	}
+}
+
+func TestListTasksFollowsOffsetAndSendsProjectFilter(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.URL.Path != "/data/dev.tasks" {
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+		if r.Header.Get("token") != "session-token" {
+			t.Fatalf("missing token header")
+		}
+		if r.URL.Query().Get("project.id") != "project-7" {
+			t.Fatalf("missing project filter: %v", r.URL.Query())
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if requests == 1 {
+			if got := r.URL.Query().Get("_offset"); got != "" {
+				t.Fatalf("first page unexpectedly has offset %q", got)
+			}
+			_, _ = w.Write([]byte(`{"total":2,"offset":"page-two","items":[{"id":"task-1"}]}`))
+			return
+		}
+		if got := r.URL.Query().Get("_offset"); got != "page-two" {
+			t.Fatalf("got offset %q, want page-two", got)
+		}
+		_, _ = w.Write([]byte(`{"total":2,"items":[{"id":"task-2"}]}`))
+	}))
+	defer server.Close()
+
+	tasks, err := NewClient(server.URL, "session-token").ListTasks(context.Background(), "project-7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 2 || tasks[0]["id"] != "task-1" || tasks[1]["id"] != "task-2" {
+		t.Fatalf("unexpected tasks: %#v", tasks)
+	}
+	if requests != 2 {
+		t.Fatalf("made %d requests, want 2", requests)
+	}
+}

@@ -64,6 +64,10 @@ to the assigned task number.
 
 - Prints the current project
 
+### `completion labels [prefix]`
+
+- Prints matching labels from the selected project for shell completion
+
 ### `pull`
 
 - If project is not set throws error
