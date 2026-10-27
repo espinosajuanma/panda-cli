@@ -674,6 +674,39 @@ func TestDiffGroupsTaskChangesAndShowsDescriptionLines(t *testing.T) {
 	}
 }
 
+func TestPageOutputFallsBackWhenPagerIsUnavailable(t *testing.T) {
+	t.Setenv("PAGER", "panda-test-missing-pager-command")
+	want := "diff content\n"
+	var output bytes.Buffer
+	if err := pageOutput(&output, []byte(want)); err != nil {
+		t.Fatal(err)
+	}
+	if output.String() != want {
+		t.Fatalf("fallback output = %q, want %q", output.String(), want)
+	}
+}
+
+func TestEnablePagerColorsForLess(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{name: "adds raw color option", args: []string{"less"}, want: []string{"less", "-R"}},
+		{name: "preserves existing combined option", args: []string{"less", "-FRX"}, want: []string{"less", "-FRX"}},
+		{name: "preserves combined raw option", args: []string{"less", "-FrX"}, want: []string{"less", "-FrX"}},
+		{name: "preserves explicit raw option", args: []string{"less", "-F", "-R"}, want: []string{"less", "-F", "-R"}},
+		{name: "leaves other pagers unchanged", args: []string{"more"}, want: []string{"more"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := enablePagerColors(test.args); !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("enablePagerColors(%v) = %v, want %v", test.args, got, test.want)
+			}
+		})
+	}
+}
+
 func TestListGroupsByWorkflowStatusSortsByRankAndFilters(t *testing.T) {
 	ws := workspace.New(t.TempDir())
 	if err := ws.Ensure(); err != nil {

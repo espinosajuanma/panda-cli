@@ -215,7 +215,7 @@ Commands:
   path                          Print the active project's workspace path
   list [filters]                List local tasks grouped by status
   pull                          Fetch project tasks and merge local changes
-  diff [taskNumber|localId]     Show local changes pending push
+  diff [taskNumber|localId]     Show local changes pending push (paged in a terminal)
   push                          Apply local changes to Solutions
   create [title]                Create a local task
   edit <task|localId> [labels|json] Edit task fields, labels, or JSON
@@ -237,7 +237,7 @@ func printCommandHelp(command string, out io.Writer) error {
 		"path":       "Usage: panda path\nPrint the active project's workspace path.",
 		"list":       "Usage: panda list [--status <status,...>] [--no-complexity]\nList local tasks grouped by status and sorted by rank. Discarded tasks are hidden unless selected explicitly.",
 		"pull":       "Usage: panda pull\nFetch project tasks, preserve local edits, and report overlapping changes.",
-		"diff":       "Usage: panda diff [taskNumber|localId]\nShow local edits and staged actions grouped by task. A task ID limits the output to one task; description changes are shown as Markdown line diffs.",
+		"diff":       "Usage: panda diff [taskNumber|localId]\nShow local edits and staged actions grouped by task. A task ID limits the output to one task; description changes are shown as Markdown line diffs. Terminal output uses the pager selected by $PAGER (defaults to less -FRX).",
 		"push":       "Usage: panda push\nCheck for remote conflicts, then apply local edits and staged actions.",
 		"create":     "Usage: panda create [title]\nCreate a local task with a temporary ID; push assigns its task number.",
 		"edit":       "Usage: panda edit <taskNumber|localId> [labels [labelName|--remove=labelName...]|json]\nInteractively edit title, type, priority, complexity, labels, and description. Type e to open the description in $EDITOR. Use `labels` for label-only editing or `json` to edit all metadata directly.",
@@ -479,6 +479,17 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 }
 
 func diff(ws *workspace.Workspace, args []string, out io.Writer) error {
+	if !isTerminal(out) {
+		return renderDiff(ws, args, out, out)
+	}
+	var output bytes.Buffer
+	if err := renderDiff(ws, args, &output, out); err != nil {
+		return err
+	}
+	return pageOutput(out, output.Bytes())
+}
+
+func renderDiff(ws *workspace.Workspace, args []string, out, colorTarget io.Writer) error {
 	if len(args) > 1 {
 		return errors.New("usage: panda diff [taskNumber|localId]")
 	}
@@ -507,16 +518,16 @@ func diff(ws *workspace.Workspace, args []string, out io.Writer) error {
 		state, stateErr := ws.ReadState(key)
 		var taskChanges bytes.Buffer
 		if stateErr != nil || state.LocalCreated {
-			fmt.Fprintf(&taskChanges, "  %s\n", colorText(out, "1;32", "new task"))
+			fmt.Fprintf(&taskChanges, "  %s\n", colorText(colorTarget, "1;32", "new task"))
 			changes++
 		} else {
 			for _, field := range editableFields {
 				if !same(valueAt(local, field), valueAt(state.Remote, field)) {
 					fmt.Fprintf(&taskChanges, "  %s: %s %s %s\n",
-						colorText(out, "1", field),
-						colorText(out, "31", formatDiffValue(valueAt(state.Remote, field))),
-						colorText(out, "2", "->"),
-						colorText(out, "32", formatDiffValue(valueAt(local, field))),
+						colorText(colorTarget, "1", field),
+						colorText(colorTarget, "31", formatDiffValue(valueAt(state.Remote, field))),
+						colorText(colorTarget, "2", "->"),
+						colorText(colorTarget, "32", formatDiffValue(valueAt(local, field))),
 					)
 					changes++
 				}
@@ -531,17 +542,17 @@ func diff(ws *workspace.Workspace, args []string, out io.Writer) error {
 		}
 		localMarkdown, readErr := os.ReadFile(filepath.Join(dir, "description.md"))
 		if readErr == nil && string(localMarkdown) != baseMarkdown {
-			fmt.Fprintf(&taskChanges, "  %s\n", colorText(out, "1;36", "description.md"))
-			writeLineDiff(&taskChanges, out, baseMarkdown, string(localMarkdown))
+			fmt.Fprintf(&taskChanges, "  %s\n", colorText(colorTarget, "1;36", "description.md"))
+			writeLineDiff(&taskChanges, colorTarget, baseMarkdown, string(localMarkdown))
 			changes++
 		}
 		if stateErr == nil && len(state.StagedNotes) > 0 {
-			fmt.Fprintf(&taskChanges, "  %s\n", colorText(out, "36", fmt.Sprintf("notes: %d staged", len(state.StagedNotes))))
+			fmt.Fprintf(&taskChanges, "  %s\n", colorText(colorTarget, "36", fmt.Sprintf("notes: %d staged", len(state.StagedNotes))))
 			changes += len(state.StagedNotes)
 		}
 		if taskChanges.Len() > 0 {
 			heading := fmt.Sprintf("Task %s: %s", taskLabel(local), stringField(local, "title"))
-			fmt.Fprintln(out, colorText(out, "1;36", heading))
+			fmt.Fprintln(out, colorText(colorTarget, "1;36", heading))
 			_, _ = taskChanges.WriteTo(out)
 			fmt.Fprintln(out)
 		}
@@ -550,6 +561,64 @@ func diff(ws *workspace.Workspace, args []string, out io.Writer) error {
 		fmt.Fprintln(out, "No local changes.")
 	}
 	return nil
+}
+
+func isTerminal(out io.Writer) bool {
+	file, ok := out.(*os.File)
+	return ok && term.IsTerminal(int(file.Fd()))
+}
+
+func pageOutput(out io.Writer, content []byte) error {
+	pager := strings.Fields(os.Getenv("PAGER"))
+	if len(pager) == 0 {
+		pager = []string{"less", "-FRX"}
+	}
+	pager = enablePagerColors(pager)
+	command := exec.Command(pager[0], pager[1:]...)
+	stdin, err := command.StdinPipe()
+	if err != nil {
+		_, writeErr := io.Copy(out, bytes.NewReader(content))
+		return writeErr
+	}
+	command.Stdout = out
+	command.Stderr = os.Stderr
+	if err := command.Start(); err != nil {
+		_ = stdin.Close()
+		_, writeErr := io.Copy(out, bytes.NewReader(content))
+		return writeErr
+	}
+	inputDone := make(chan error, 1)
+	go func() {
+		_, copyErr := io.Copy(stdin, bytes.NewReader(content))
+		closeErr := stdin.Close()
+		if copyErr == nil {
+			copyErr = closeErr
+		}
+		inputDone <- copyErr
+	}()
+	waitErr := command.Wait()
+	inputErr := <-inputDone
+	if waitErr != nil {
+		return fmt.Errorf("run pager: %w", waitErr)
+	}
+	// A pager normally closes stdin early when the user quits before the end.
+	_ = inputErr
+	return nil
+}
+
+func enablePagerColors(pager []string) []string {
+	if len(pager) == 0 || !strings.EqualFold(filepath.Base(pager[0]), "less") {
+		return pager
+	}
+	for _, argument := range pager[1:] {
+		if argument == "-r" || argument == "-R" || strings.Contains(strings.ToUpper(argument), "RAW-CONTROL-CHARS") {
+			return pager
+		}
+		if strings.HasPrefix(argument, "-") && !strings.HasPrefix(argument, "--") && strings.ContainsAny(argument[1:], "Rr") {
+			return pager
+		}
+	}
+	return append(pager, "-R")
 }
 
 func formatDiffValue(value any) string {

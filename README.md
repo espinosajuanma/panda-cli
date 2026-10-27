@@ -111,6 +111,7 @@ to the assigned task number.
 - Displays pending local changes grouped under each task's number and title
 - Shows changed Markdown description lines with `-` and `+` prefixes
 - `panda diff {taskNumber|localId}` limits the view to one task
+- Uses `$PAGER` (defaults to `less -FRX`) when output is interactive; piped output is printed directly
 
 ### `list [--status {status,...}] [--no-complexity]`
 
