@@ -549,13 +549,147 @@ func TestNewTaskGetsRemoteNumberAfterSuccessfulPush(t *testing.T) {
 	}
 }
 
+func TestPushContactsOnlyTasksWithLocalChanges(t *testing.T) {
+	cleanTask := map[string]any{
+		"id": "task-clean", "number": float64(14), "title": "Unchanged", "type": "feature",
+		"priority": "medium", "status": "new", "description": "<p>Body</p>",
+		"project": map[string]any{"id": "project-1"}, "labels": []any{}, "assignees": []any{}, "reviewers": []any{}, "notes": []any{},
+	}
+	dirtyTask := map[string]any{
+		"id": "task-dirty", "number": float64(15), "title": "Original", "type": "feature",
+		"priority": "medium", "status": "new", "description": "<p>Body</p>",
+		"project": map[string]any{"id": "project-1"}, "labels": []any{}, "assignees": []any{}, "reviewers": []any{}, "notes": []any{},
+	}
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/data/dev.tasks/task-dirty":
+			_ = json.NewEncoder(w).Encode(dirtyTask)
+		case r.Method == http.MethodPut && r.URL.Path == "/data/dev.tasks/task-dirty":
+			if err := json.NewDecoder(r.Body).Decode(&dirtyTask); err != nil {
+				t.Error(err)
+			}
+			_ = json.NewEncoder(w).Encode(dirtyTask)
+		default:
+			http.Error(w, "unexpected request", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	ws := workspace.New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	cleanDir := addSyncedTask(t, ws, cleanTask)
+	dirtyDir := addSyncedTask(t, ws, dirtyTask)
+	metadata, err := workspace.ReadMap(filepath.Join(dirtyDir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata["title"] = "Locally edited"
+	if err := workspace.WriteMap(filepath.Join(dirtyDir, "metadata.json"), metadata); err != nil {
+		t.Fatal(err)
+	}
+	var output strings.Builder
+	if err := push(context.Background(), solutions.NewClient(server.URL, "token"), ws, &config.Project{ID: "project-1", Name: "Alpha"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 2 || requests[0] != "GET /data/dev.tasks/task-dirty" || requests[1] != "PUT /data/dev.tasks/task-dirty" {
+		t.Fatalf("unexpected API calls; clean task path=%s, requests=%v", cleanDir, requests)
+	}
+	if strings.Contains(output.String(), "Pushed 14") || !strings.Contains(output.String(), "Pushed 15") {
+		t.Fatalf("push output included clean tasks or omitted dirty task: %q", output.String())
+	}
+}
+
+func TestListGroupsByWorkflowStatusSortsByRankAndFilters(t *testing.T) {
+	ws := workspace.New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	fixtures := []map[string]any{
+		listTask("new-b", 12, "new", "b", "m", "New B", "feature"),
+		listTask("new-a", 11, "new", "a", nil, "New A", "feature"),
+		listTask("todo", 13, "toDo", "c", "", "To Do", "bug"),
+		listTask("progress", 14, "inProgress", "d", "s", "In Progress", "feature"),
+		listTask("review", 15, "inReview", "e", "m", "In Review", "feature"),
+		listTask("complete", 16, "completed", "f", "l", "Completed", "feature"),
+		listTask("staging", 17, "staging", "g", "xl", "Staging", "feature"),
+		listTask("release", 18, "released", "h", "xxl", "Release", "release"),
+		listTask("discard", 19, "discarded", "i", "s", "Discarded", "bug"),
+	}
+	for _, task := range fixtures {
+		addSyncedTask(t, ws, task)
+	}
+
+	var output strings.Builder
+	if err := listTasks(ws, nil, &output); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	statusPositions := []int{
+		strings.Index(text, "new\n"),
+		strings.Index(text, "toDo\n"),
+		strings.Index(text, "inProgress\n"),
+		strings.Index(text, "inReview\n"),
+		strings.Index(text, "completed\n"),
+		strings.Index(text, "staging\n"),
+		strings.Index(text, "released\n"),
+	}
+	for i, position := range statusPositions {
+		if position < 0 || (i > 0 && position <= statusPositions[i-1]) {
+			t.Fatalf("workflow statuses are not grouped in the requested order: %q", text)
+		}
+	}
+	if strings.Contains(text, "Discarded") {
+		t.Fatalf("discarded task appeared without an explicit status filter: %q", text)
+	}
+	if strings.Index(text, "New A") > strings.Index(text, "New B") {
+		t.Fatalf("new tasks were not sorted by rank: %q", text)
+	}
+
+	output.Reset()
+	if err := listTasks(ws, []string{"--status", "new,toDo", "--no-complexity"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	filtered := output.String()
+	if !strings.Contains(filtered, "New A") || !strings.Contains(filtered, "To Do") || strings.Contains(filtered, "New B") || strings.Contains(filtered, "Discarded") {
+		t.Fatalf("status/no-complexity filters were not applied: %q", filtered)
+	}
+
+	output.Reset()
+	if err := listTasks(ws, []string{"--status=discarded"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "Discarded") {
+		t.Fatalf("explicit discarded filter did not show discarded tasks: %q", output.String())
+	}
+}
+
+func listTask(id string, number float64, status, rank string, complexity any, title, taskType string) map[string]any {
+	return map[string]any{
+		"id": id, "number": number, "title": title, "type": taskType,
+		"priority": "medium", "complexity": complexity, "status": status, "rank": rank,
+		"description": "", "project": map[string]any{"id": "project-1"},
+		"labels": []any{}, "assignees": []any{}, "reviewers": []any{}, "notes": []any{},
+	}
+}
+
 func makeSyncedTask(t *testing.T, remote map[string]any) (*workspace.Workspace, string) {
 	t.Helper()
 	ws := workspace.New(t.TempDir())
 	if err := ws.Ensure(); err != nil {
 		t.Fatal(err)
 	}
-	dir := filepath.Join(ws.Root, "14")
+	dir := addSyncedTask(t, ws, remote)
+	return ws, dir
+}
+
+func addSyncedTask(t *testing.T, ws *workspace.Workspace, remote map[string]any) string {
+	t.Helper()
+	dir := filepath.Join(ws.Root, workspace.DirectoryName(remote))
 	if err := os.MkdirAll(filepath.Join(dir, "notes"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -569,10 +703,11 @@ func makeSyncedTask(t *testing.T, remote map[string]any) (*workspace.Workspace, 
 	if err := workspace.WriteFileAtomic(filepath.Join(dir, "description.md"), []byte(markdown), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := ws.WriteState("task-1", workspace.State{Remote: cloneMap(remote)}); err != nil {
+	id := stringField(remote, "id")
+	if err := ws.WriteState(id, workspace.State{Remote: cloneMap(remote)}); err != nil {
 		t.Fatal(err)
 	}
-	return ws, dir
+	return dir
 }
 
 func marshalForTest(value any) string {

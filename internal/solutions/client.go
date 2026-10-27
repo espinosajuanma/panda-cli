@@ -29,6 +29,8 @@ type listResponse struct {
 	Items  []json.RawMessage `json:"items"`
 }
 
+const taskListFields = "id,label,version,project,number,title,type,package,labels,priority,complexity,workload,status,assignees,reviewers,reviewFeedbacks,github,createdBy,createdAt,release,releaseInformation,releaseNotes,description,files,notes,checklist,rank,reviewStatus,relatedFiles"
+
 func NewClient(baseURL, token string) *Client {
 	return &Client{
 		BaseURL: strings.TrimRight(baseURL, "/"),
@@ -72,7 +74,10 @@ func (c *Client) FindProject(ctx context.Context, name string) (*Project, error)
 }
 
 func (c *Client) ListTasks(ctx context.Context, projectID string) ([]map[string]any, error) {
-	query := url.Values{"project.id": []string{projectID}}
+	query := url.Values{
+		"project.id": []string{projectID},
+		"_fields":    []string{taskListFields},
+	}
 	items, err := c.list(ctx, "/data/dev.tasks", query)
 	if err != nil {
 		return nil, err

@@ -76,6 +76,10 @@ to the assigned task number.
 
 - Prints the current project
 
+### `path`
+
+- Prints the selected project's workspace path without creating it
+
 ### `completion labels [prefix]`
 
 - Prints matching labels from the selected project for shell completion
@@ -97,6 +101,7 @@ to the assigned task number.
 - If project is not set throws error
 - Detects remote changes since the last pull and reports overlapping edits as
   conflicts rather than overwriting them
+- Skips tasks with no local edits or staged actions
 - Applies local changes and staged actions to the Solutions app
 - Updates the local baseline only after successful API operations
 
@@ -105,6 +110,18 @@ to the assigned task number.
 - If project is not set throws error
 - Displays local changes relative to the last-synced baseline that are pending
   to be applied to the Solutions app
+
+### `list [--status {status,...}] [--no-complexity]`
+
+- Lists tasks in the local project workspace, grouped by status in workflow
+  order and sorted by the fetched `rank` field
+- Run `pull` to refresh local task data and rank values from Solutions
+- Discarded tasks are hidden by default; include `discarded` in `--status` to
+  display them
+- `--no-complexity` shows only tasks without a complexity value
+- Table columns are number, priority, type, complexity, and title; release tasks
+  are cyan
+- Examples: `panda list --status 'new,toDo'` and `panda list --no-complexity`
 
 ### `create`
 

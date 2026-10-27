@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"golang.org/x/term"
@@ -56,12 +58,19 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 		return configCommand(context.Background(), cfg, client, args, out)
 	case "completion":
 		return completionCommand(context.Background(), cfg, client, args, out)
-	case "pull", "diff", "push", "create", "edit", "view", "add-note", "discard", "clean":
+	case "path":
+		if len(args) != 0 {
+			return errors.New("usage: panda path")
+		}
+		return printWorkspacePath(cfg, out)
+	case "list", "pull", "diff", "push", "create", "edit", "view", "add-note", "discard", "clean":
 		ws, err := projectWorkspace(cfg)
 		if err != nil {
 			return err
 		}
 		switch command {
+		case "list":
+			return listTasks(ws, args, out)
 		case "pull":
 			if len(args) != 0 {
 				return errors.New("usage: panda pull")
@@ -130,6 +139,18 @@ func completeLabels(ctx context.Context, cfg *config.Config, client *solutions.C
 	return nil
 }
 
+func printWorkspacePath(cfg *config.Config, out io.Writer) error {
+	if cfg.Project == nil || cfg.Project.Name == "" {
+		return errors.New("no project selected; run `panda config set project <name>` first")
+	}
+	path, err := workspace.WorkspacePath(cfg.Project.Name)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(out, path)
+	return nil
+}
+
 func completionCommand(ctx context.Context, cfg *config.Config, client *solutions.Client, args []string, out io.Writer) error {
 	if len(args) == 1 {
 		switch args[0] {
@@ -159,7 +180,7 @@ const bashCompletion = `_panda_complete() {
     COMPREPLY=()
     while IFS= read -r candidate; do COMPREPLY+=("$candidate"); done < <(panda completion labels "$cur" 2>/dev/null)
   else
-    COMPREPLY=( $(compgen -W "login config pull diff push create edit view add-note discard clean completion" -- "$cur") )
+    COMPREPLY=( $(compgen -W "login config path list pull diff push create edit view add-note discard clean completion" -- "$cur") )
   fi
 }
 complete -F _panda_complete panda`
@@ -174,7 +195,7 @@ _panda() {
   elif [[ "${words[2]}" == "completion" && "${words[3]}" == "labels" ]]; then
     compadd -- "${(@f)$(panda completion labels "$cur" 2>/dev/null)}"
   else
-    compadd -- login config pull diff push create edit view add-note discard clean completion
+    compadd -- login config path list pull diff push create edit view add-note discard clean completion
   fi
 }
 compdef _panda panda`
@@ -182,7 +203,7 @@ compdef _panda panda`
 const fishCompletion = `complete -c panda -f -n '__fish_seen_subcommand_from edit; and test (count (commandline -opc)) -ge 4; and test (commandline -opc)[4] = labels' -a '(panda completion labels (commandline -ct) 2>/dev/null)'
 complete -c panda -f -n '__fish_seen_subcommand_from edit; and test (count (commandline -opc)) -eq 3' -a labels
 complete -c panda -f -n '__fish_seen_subcommand_from completion; and test (commandline -opc)[3] = labels' -a '(panda completion labels (commandline -ct) 2>/dev/null)'
-complete -c panda -f -n 'not __fish_seen_subcommand_from login config pull diff push create edit view add-note discard clean completion' -a 'login config pull diff push create edit view add-note discard clean completion'`
+complete -c panda -f -n 'not __fish_seen_subcommand_from login config path list pull diff push create edit view add-note discard clean completion' -a 'login config path list pull diff push create edit view add-note discard clean completion'`
 
 func printHelp(out io.Writer) {
 	fmt.Fprintf(out, "\x1b[1;32mPANDA DASHBOARD\x1b[0m — sync Solutions tasks with local files\n\n")
@@ -194,6 +215,8 @@ Commands:
   login                         Authenticate with Solutions
   config set project <name>     Select the active project
   config get project            Show the active project
+  path                          Print the active project's workspace path
+  list [filters]                List local tasks grouped by status
   pull                          Fetch project tasks and merge local changes
   diff                          Show local changes pending push
   push                          Apply local changes to Solutions
@@ -214,6 +237,8 @@ func printCommandHelp(command string, out io.Writer) error {
 	help := map[string]string{
 		"login":      "Usage: panda login [email]\nPrompts for credentials and stores the session token.",
 		"config":     "Usage: panda config set project <name> | panda config get project\nSelect or display the active Solutions project.",
+		"path":       "Usage: panda path\nPrint the active project's workspace path.",
+		"list":       "Usage: panda list [--status <status,...>] [--no-complexity]\nList local tasks grouped by status and sorted by rank. Discarded tasks are hidden unless selected explicitly.",
 		"pull":       "Usage: panda pull\nFetch project tasks, preserve local edits, and report overlapping changes.",
 		"diff":       "Usage: panda diff\nShow local edits and staged actions relative to the last-synced baseline.",
 		"push":       "Usage: panda push\nCheck for remote conflicts, then apply local edits and staged actions.",
@@ -500,12 +525,219 @@ func diff(ws *workspace.Workspace, out io.Writer) error {
 	return nil
 }
 
+type listOptions struct {
+	statusFilter    map[string]bool
+	statusSpecified bool
+	noComplexity    bool
+}
+
+var taskStatusOrder = []string{"new", "toDo", "inProgress", "inReview", "completed", "staging", "released", "discarded"}
+
+func listTasks(ws *workspace.Workspace, args []string, out io.Writer) error {
+	options, err := parseListOptions(args)
+	if err != nil {
+		return err
+	}
+	dirs, err := ws.TaskDirectories()
+	if err != nil {
+		return err
+	}
+	groups := make(map[string][]map[string]any)
+	for _, dir := range dirs {
+		metadata, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+		if err != nil {
+			return fmt.Errorf("read task metadata in %s: %w", filepath.Base(dir), err)
+		}
+		status := stringField(metadata, "status")
+		if status == "" {
+			status = "new"
+		}
+		if status == "discarded" && !options.statusSpecified {
+			continue
+		}
+		if options.statusSpecified && !options.statusFilter[status] {
+			continue
+		}
+		if options.noComplexity && !isEmptyField(metadata["complexity"]) {
+			continue
+		}
+		groups[status] = append(groups[status], metadata)
+	}
+	statuses := orderedTaskStatuses(groups)
+	if len(statuses) == 0 {
+		fmt.Fprintln(out, "No tasks match the filters.")
+		return nil
+	}
+	for _, status := range statuses {
+		sortTasksByRank(groups[status])
+		if err := printTaskGroup(out, status, groups[status]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func parseListOptions(args []string) (listOptions, error) {
+	options := listOptions{statusFilter: make(map[string]bool)}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--no-complexity":
+			options.noComplexity = true
+		case arg == "--status":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return options, errors.New("usage: panda list [--status <status,...>] [--no-complexity]")
+			}
+			i++
+			if err := addStatusFilter(&options, args[i]); err != nil {
+				return options, err
+			}
+		case strings.HasPrefix(arg, "--status="):
+			if err := addStatusFilter(&options, strings.TrimPrefix(arg, "--status=")); err != nil {
+				return options, err
+			}
+		default:
+			return options, errors.New("usage: panda list [--status <status,...>] [--no-complexity]")
+		}
+	}
+	return options, nil
+}
+
+func addStatusFilter(options *listOptions, value string) error {
+	known := make(map[string]bool, len(taskStatusOrder))
+	for _, status := range taskStatusOrder {
+		known[status] = true
+	}
+	parts := strings.Split(value, ",")
+	added := 0
+	for _, part := range parts {
+		status := strings.TrimSpace(part)
+		if status == "" {
+			continue
+		}
+		if !known[status] {
+			return fmt.Errorf("unknown status %q; valid statuses are %s", status, strings.Join(taskStatusOrder, ", "))
+		}
+		options.statusFilter[status] = true
+		added++
+	}
+	if added == 0 {
+		return errors.New("--status requires one or more comma-separated statuses")
+	}
+	options.statusSpecified = true
+	return nil
+}
+
+func orderedTaskStatuses(groups map[string][]map[string]any) []string {
+	statuses := make([]string, 0, len(groups))
+	seen := make(map[string]bool, len(groups))
+	for _, status := range taskStatusOrder {
+		if len(groups[status]) > 0 {
+			statuses = append(statuses, status)
+			seen[status] = true
+		}
+	}
+	var remaining []string
+	for status := range groups {
+		if !seen[status] {
+			remaining = append(remaining, status)
+		}
+	}
+	sort.Strings(remaining)
+	return append(statuses, remaining...)
+}
+
+func sortTasksByRank(tasks []map[string]any) {
+	sort.SliceStable(tasks, func(i, j int) bool {
+		leftRank := stringField(tasks[i], "rank")
+		rightRank := stringField(tasks[j], "rank")
+		if leftRank == "" || rightRank == "" {
+			if leftRank != rightRank {
+				return leftRank != ""
+			}
+		} else if leftRank != rightRank {
+			return leftRank < rightRank
+		}
+		return compareTaskNumbers(tasks[i]["number"], tasks[j]["number"]) < 0
+	})
+}
+
+func compareTaskNumbers(left, right any) int {
+	leftNumber, leftErr := strconv.ParseFloat(fmt.Sprint(left), 64)
+	rightNumber, rightErr := strconv.ParseFloat(fmt.Sprint(right), 64)
+	if leftErr == nil && rightErr == nil {
+		switch {
+		case leftNumber < rightNumber:
+			return -1
+		case leftNumber > rightNumber:
+			return 1
+		default:
+			return 0
+		}
+	}
+	return strings.Compare(fmt.Sprint(left), fmt.Sprint(right))
+}
+
+func printTaskGroup(out io.Writer, status string, tasks []map[string]any) error {
+	style := "1;32"
+	if status == "released" {
+		style = "1;36"
+	}
+	fmt.Fprintln(out, colorText(out, style, status))
+	var table bytes.Buffer
+	writer := tabwriter.NewWriter(&table, 0, 4, 2, ' ', 0)
+	if _, err := fmt.Fprintln(writer, "NUMBER\tPRIORITY\tTYPE\tCOMPLEXITY\tTITLE"); err != nil {
+		return err
+	}
+	for _, task := range tasks {
+		number := stringField(task, "number")
+		if number == "" {
+			number = taskLabel(task)
+		}
+		complexity := tableCell(task["complexity"])
+		if complexity == "" {
+			complexity = "-"
+		}
+		_, err := fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\n",
+			tableCell(number), tableCell(task["priority"]), tableCell(task["type"]), complexity, tableCell(task["title"]))
+		if err != nil {
+			return err
+		}
+	}
+	if err := writer.Flush(); err != nil {
+		return err
+	}
+	lines := strings.Split(strings.TrimSuffix(table.String(), "\n"), "\n")
+	for i, line := range lines {
+		if i > 0 {
+			task := tasks[i-1]
+			if stringField(task, "type") == "release" || status == "released" {
+				line = colorText(out, "36", line)
+			}
+		}
+		fmt.Fprintln(out, line)
+	}
+	return nil
+}
+
+func tableCell(value any) string {
+	if value == nil {
+		return ""
+	}
+	return strings.Join(strings.Fields(fmt.Sprint(value)), " ")
+}
+
+func isEmptyField(value any) bool {
+	return value == nil || strings.TrimSpace(fmt.Sprint(value)) == ""
+}
+
 func push(ctx context.Context, client *solutions.Client, ws *workspace.Workspace, project *config.Project, out io.Writer) error {
 	dirs, err := ws.TaskDirectories()
 	if err != nil {
 		return err
 	}
 	var problems []string
+	pushed := 0
 	for _, dir := range dirs {
 		local, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
 		if err != nil {
@@ -516,6 +748,14 @@ func push(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 		state, err := ws.ReadState(key)
 		if err != nil {
 			problems = append(problems, fmt.Sprintf("%s: missing sync baseline; pull first", filepath.Base(dir)))
+			continue
+		}
+		dirty, err := taskHasLocalChanges(local, state, dir)
+		if err != nil {
+			problems = append(problems, fmt.Sprintf("%s: inspect local changes: %v", taskLabel(local), err))
+			continue
+		}
+		if !dirty {
 			continue
 		}
 		if state.LocalCreated {
@@ -596,6 +836,7 @@ func push(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 			continue
 		}
 		fmt.Fprintf(out, "%s %s.\n", colorText(out, "1;32", "Pushed"), taskLabel(local))
+		pushed++
 	}
 	if len(problems) > 0 {
 		for _, problem := range problems {
@@ -603,10 +844,30 @@ func push(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 		}
 		return fmt.Errorf("push had %d failure(s)", len(problems))
 	}
-	if len(dirs) == 0 {
-		fmt.Fprintln(out, "No tasks to push.")
+	if pushed == 0 {
+		fmt.Fprintln(out, "No local changes to push.")
 	}
 	return nil
+}
+
+func taskHasLocalChanges(local map[string]any, state workspace.State, dir string) (bool, error) {
+	if state.LocalCreated || len(state.StagedNotes) > 0 {
+		return true, nil
+	}
+	for _, field := range editableFields {
+		if !same(valueAt(local, field), valueAt(state.Remote, field)) {
+			return true, nil
+		}
+	}
+	baselineMarkdown, err := content.HTMLToMarkdown(stringField(state.Remote, "description"))
+	if err != nil {
+		return false, err
+	}
+	localMarkdown, err := os.ReadFile(filepath.Join(dir, "description.md"))
+	if err != nil {
+		return false, err
+	}
+	return string(localMarkdown) != baselineMarkdown, nil
 }
 
 func createRemoteTask(ctx context.Context, client *solutions.Client, dir string, metadata map[string]any, project *config.Project) (map[string]any, error) {

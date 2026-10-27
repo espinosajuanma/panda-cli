@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -46,6 +47,9 @@ func TestListTasksFollowsOffsetAndSendsProjectFilter(t *testing.T) {
 		}
 		if r.URL.Query().Get("project.id") != "project-7" {
 			t.Fatalf("missing project filter: %v", r.URL.Query())
+		}
+		if !strings.Contains(r.URL.Query().Get("_fields"), "rank") {
+			t.Fatalf("rank field was not explicitly requested: %v", r.URL.Query())
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if requests == 1 {
