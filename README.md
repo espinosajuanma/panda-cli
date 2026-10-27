@@ -109,7 +109,8 @@ to the assigned task number.
 
 - If project is not set throws error
 - Displays pending local changes grouped under each task's number and title
-- Shows changed Markdown description lines with `-` and `+` prefixes
+- By default, lists changed fields and marks a changed description as `updated`
+- `--verbose` shows changed Markdown description lines with `-` and `+` prefixes
 - `panda diff {taskNumber|localId}` limits the view to one task
 - Uses `$PAGER` (defaults to `less -FRX`) when output is interactive; piped output is printed directly
 

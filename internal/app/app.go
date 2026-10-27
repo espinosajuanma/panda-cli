@@ -215,7 +215,7 @@ Commands:
   path                          Print the active project's workspace path
   list [filters]                List local tasks grouped by status
   pull                          Fetch project tasks and merge local changes
-  diff [taskNumber|localId]     Show local changes pending push (paged in a terminal)
+  diff [taskNumber|localId] [--verbose]  List local changes (paged in a terminal)
   push                          Apply local changes to Solutions
   create [title]                Create a local task
   edit <task|localId> [labels|json] Edit task fields, labels, or JSON
@@ -237,7 +237,7 @@ func printCommandHelp(command string, out io.Writer) error {
 		"path":       "Usage: panda path\nPrint the active project's workspace path.",
 		"list":       "Usage: panda list [--status <status,...>] [--no-complexity]\nList local tasks grouped by status and sorted by rank. Discarded tasks are hidden unless selected explicitly.",
 		"pull":       "Usage: panda pull\nFetch project tasks, preserve local edits, and report overlapping changes.",
-		"diff":       "Usage: panda diff [taskNumber|localId]\nShow local edits and staged actions grouped by task. A task ID limits the output to one task; description changes are shown as Markdown line diffs. Terminal output uses the pager selected by $PAGER (defaults to less -FRX).",
+		"diff":       "Usage: panda diff [taskNumber|localId] [--verbose]\nList local edits grouped by task for a quick check. Use --verbose to show changed Markdown description lines. Terminal output uses the pager selected by $PAGER (defaults to less -FRX).",
 		"push":       "Usage: panda push\nCheck for remote conflicts, then apply local edits and staged actions.",
 		"create":     "Usage: panda create [title]\nCreate a local task with a temporary ID; push assigns its task number.",
 		"edit":       "Usage: panda edit <taskNumber|localId> [labels [labelName|--remove=labelName...]|json]\nInteractively edit title, type, priority, complexity, labels, and description. Type e to open the description in $EDITOR. Use `labels` for label-only editing or `json` to edit all metadata directly.",
@@ -490,13 +490,13 @@ func diff(ws *workspace.Workspace, args []string, out io.Writer) error {
 }
 
 func renderDiff(ws *workspace.Workspace, args []string, out, colorTarget io.Writer) error {
-	if len(args) > 1 {
-		return errors.New("usage: panda diff [taskNumber|localId]")
+	options, err := parseDiffOptions(args)
+	if err != nil {
+		return err
 	}
 	selectedDir := ""
-	if len(args) == 1 {
-		var err error
-		selectedDir, _, err = ws.FindTask(args[0])
+	if options.task != "" {
+		selectedDir, _, err = ws.FindTask(options.task)
 		if err != nil {
 			return err
 		}
@@ -542,8 +542,12 @@ func renderDiff(ws *workspace.Workspace, args []string, out, colorTarget io.Writ
 		}
 		localMarkdown, readErr := os.ReadFile(filepath.Join(dir, "description.md"))
 		if readErr == nil && string(localMarkdown) != baseMarkdown {
-			fmt.Fprintf(&taskChanges, "  %s\n", colorText(colorTarget, "1;36", "description.md"))
-			writeLineDiff(&taskChanges, colorTarget, baseMarkdown, string(localMarkdown))
+			if options.verbose {
+				fmt.Fprintf(&taskChanges, "  %s\n", colorText(colorTarget, "1;36", "description.md"))
+				writeLineDiff(&taskChanges, colorTarget, baseMarkdown, string(localMarkdown))
+			} else {
+				fmt.Fprintf(&taskChanges, "  %s %s\n", colorText(colorTarget, "1", "description:"), colorText(colorTarget, "32", "updated"))
+			}
 			changes++
 		}
 		if stateErr == nil && len(state.StagedNotes) > 0 {
@@ -561,6 +565,27 @@ func renderDiff(ws *workspace.Workspace, args []string, out, colorTarget io.Writ
 		fmt.Fprintln(out, "No local changes.")
 	}
 	return nil
+}
+
+type diffOptions struct {
+	task    string
+	verbose bool
+}
+
+func parseDiffOptions(args []string) (diffOptions, error) {
+	var options diffOptions
+	for _, arg := range args {
+		switch arg {
+		case "--verbose":
+			options.verbose = true
+		default:
+			if strings.HasPrefix(arg, "-") || options.task != "" {
+				return diffOptions{}, errors.New("usage: panda diff [taskNumber|localId] [--verbose]")
+			}
+			options.task = arg
+		}
+	}
+	return options, nil
 }
 
 func isTerminal(out io.Writer) bool {

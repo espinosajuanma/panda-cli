@@ -648,6 +648,9 @@ func TestDiffGroupsTaskChangesAndShowsDescriptionLines(t *testing.T) {
 	if firstHeader < 0 || secondHeader <= firstHeader || !strings.Contains(allTasks, "title: Unchanged task -> Changed second title") {
 		t.Fatalf("changes were not grouped under task headings:\n%s", allTasks)
 	}
+	if !strings.Contains(allTasks, "description: updated") || strings.Contains(allTasks, "-Original body") {
+		t.Fatalf("default diff should summarize description changes:\n%s", allTasks)
+	}
 
 	output.Reset()
 	if err := diff(ws, []string{"13359"}, &output); err != nil {
@@ -657,20 +660,31 @@ func TestDiffGroupsTaskChangesAndShowsDescriptionLines(t *testing.T) {
 	for _, expected := range []string{
 		"Task 13359: Improve task diffs",
 		"priority: medium -> high",
-		"description.md",
-		"-Original body",
-		"+Updated body",
-		"+A new line",
+		"description: updated",
 	} {
 		if !strings.Contains(text, expected) {
 			t.Errorf("diff output missing %q:\n%s", expected, text)
 		}
 	}
-	if strings.Contains(text, "13360") || strings.Contains(text, "description: modified") {
+	if strings.Contains(text, "13360") || strings.Contains(text, "-Original body") {
 		t.Fatalf("task selector or description diff was not applied:\n%s", text)
+	}
+
+	output.Reset()
+	if err := diff(ws, []string{"--verbose", "13359"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	verbose := output.String()
+	for _, expected := range []string{"description.md", "-Original body", "+Updated body", "+A new line"} {
+		if !strings.Contains(verbose, expected) {
+			t.Errorf("verbose diff output missing %q:\n%s", expected, verbose)
+		}
 	}
 	if err := diff(ws, []string{"missing-task"}, &output); err == nil {
 		t.Fatal("diff for an unknown task succeeded")
+	}
+	if err := diff(ws, []string{"13359", "13360"}, &output); err == nil {
+		t.Fatal("diff accepted multiple task identifiers")
 	}
 }
 
