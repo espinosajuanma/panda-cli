@@ -728,6 +728,51 @@ func TestDiffShowsKeyFieldsForNewTasks(t *testing.T) {
 	}
 }
 
+func TestDiffSummaryCountsEditedDiscardedAndNewTasks(t *testing.T) {
+	ws := workspace.New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	editedDir := addSyncedTask(t, ws, listTask("task-edited", 41, "new", "r", "s", "Original title", "feature"))
+	discardedDir := addSyncedTask(t, ws, listTask("task-discarded", 42, "inProgress", "q", "m", "Discard this", "bug"))
+	for dir, updates := range map[string]map[string]any{
+		editedDir:    {"title": "Updated title"},
+		discardedDir: {"status": "discarded"},
+	} {
+		metadataPath := filepath.Join(dir, "metadata.json")
+		metadata, err := workspace.ReadMap(metadataPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for field, value := range updates {
+			metadata[field] = value
+		}
+		if err := workspace.WriteMap(metadataPath, metadata); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := createTask(ws, &config.Project{ID: "project-1", Name: "Alpha"}, []string{"New task"}, strings.NewReader(""), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+
+	var output bytes.Buffer
+	if err := diff(ws, []string{"--summary"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := output.String(), "Tasks: 1 edited, 1 discarded, 1 new\n"; got != want {
+		t.Fatalf("summary = %q, want %q", got, want)
+	}
+}
+
+func TestSummaryDiffSkipsPager(t *testing.T) {
+	if shouldPageDiff([]string{"--summary"}, true) {
+		t.Fatal("summary diff should not use the pager")
+	}
+	if !shouldPageDiff([]string{"--verbose"}, true) {
+		t.Fatal("terminal detail diff should use the pager")
+	}
+}
+
 func TestPageOutputFallsBackWhenPagerIsUnavailable(t *testing.T) {
 	t.Setenv("PAGER", "panda-test-missing-pager-command")
 	want := "diff content\n"

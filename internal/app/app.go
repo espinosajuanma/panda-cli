@@ -215,7 +215,7 @@ Commands:
   path                          Print the active project's workspace path
   list [filters]                List local tasks grouped by status
   pull                          Fetch project tasks and merge local changes
-  diff [taskNumber|localId] [--verbose]  List local changes (paged in a terminal)
+  diff [taskNumber|localId] [--verbose] [--summary]  List local changes
   push                          Apply local changes to Solutions
   create [title]                Create a local task
   edit <task|localId> [labels|json] Edit task fields, labels, or JSON
@@ -237,7 +237,7 @@ func printCommandHelp(command string, out io.Writer) error {
 		"path":       "Usage: panda path\nPrint the active project's workspace path.",
 		"list":       "Usage: panda list [--status <status,...>] [--no-complexity]\nList local tasks grouped by status and sorted by rank. Discarded tasks are hidden unless selected explicitly.",
 		"pull":       "Usage: panda pull\nFetch project tasks, preserve local edits, and report overlapping changes.",
-		"diff":       "Usage: panda diff [taskNumber|localId] [--verbose]\nList local edits grouped by task for a quick check. Use --verbose to show changed Markdown description lines. Terminal output uses the pager selected by $PAGER (defaults to less -FRX).",
+		"diff":       "Usage: panda diff [taskNumber|localId] [--verbose] [--summary]\nList local edits grouped by task for a quick check. Use --verbose to show changed Markdown description lines or --summary to print counts of edited, discarded, and new tasks. Terminal output uses the pager selected by $PAGER (defaults to less -FRX).",
 		"push":       "Usage: panda push\nCheck for remote conflicts, then apply local edits and staged actions.",
 		"create":     "Usage: panda create [title]\nCreate a local task with a temporary ID; push assigns its task number.",
 		"edit":       "Usage: panda edit <taskNumber|localId> [labels [labelName|--remove=labelName...]|json]\nInteractively edit title, type, priority, complexity, labels, and description. Type e to open the description in $EDITOR. Use `labels` for label-only editing or `json` to edit all metadata directly.",
@@ -479,7 +479,7 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 }
 
 func diff(ws *workspace.Workspace, args []string, out io.Writer) error {
-	if !isTerminal(out) {
+	if !shouldPageDiff(args, isTerminal(out)) {
 		return renderDiff(ws, args, out, out)
 	}
 	var output bytes.Buffer
@@ -487,6 +487,10 @@ func diff(ws *workspace.Workspace, args []string, out io.Writer) error {
 		return err
 	}
 	return pageOutput(out, output.Bytes())
+}
+
+func shouldPageDiff(args []string, terminal bool) bool {
+	return terminal && !contains(args, "--summary")
 }
 
 func renderDiff(ws *workspace.Workspace, args []string, out, colorTarget io.Writer) error {
@@ -506,6 +510,7 @@ func renderDiff(ws *workspace.Workspace, args []string, out, colorTarget io.Writ
 		return err
 	}
 	changes := 0
+	counts := diffSummary{}
 	for _, dir := range dirs {
 		local, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
 		if err != nil {
@@ -516,8 +521,11 @@ func renderDiff(ws *workspace.Workspace, args []string, out, colorTarget io.Writ
 		}
 		key := stateKey(dir, local)
 		state, stateErr := ws.ReadState(key)
+		newTask := stateErr != nil || state.LocalCreated
+		discardedTask := !newTask && stringField(local, "status") == "discarded" && stringField(state.Remote, "status") != "discarded"
+		taskChanged := false
 		var taskChanges bytes.Buffer
-		if stateErr != nil || state.LocalCreated {
+		if newTask {
 			fmt.Fprintf(&taskChanges, "  %s\n", colorText(colorTarget, "1;32", "new task"))
 			for _, field := range []string{"type", "priority", "complexity"} {
 				fmt.Fprintf(&taskChanges, "  %s: %s\n",
@@ -536,6 +544,7 @@ func renderDiff(ws *workspace.Workspace, args []string, out, colorTarget io.Writ
 						colorText(colorTarget, "32", formatDiffValue(valueAt(local, field))),
 					)
 					changes++
+					taskChanged = true
 				}
 			}
 		}
@@ -555,17 +564,32 @@ func renderDiff(ws *workspace.Workspace, args []string, out, colorTarget io.Writ
 				fmt.Fprintf(&taskChanges, "  %s %s\n", colorText(colorTarget, "1", "description:"), colorText(colorTarget, "32", "updated"))
 			}
 			changes++
+			taskChanged = true
 		}
 		if stateErr == nil && len(state.StagedNotes) > 0 {
 			fmt.Fprintf(&taskChanges, "  %s\n", colorText(colorTarget, "36", fmt.Sprintf("notes: %d staged", len(state.StagedNotes))))
 			changes += len(state.StagedNotes)
+			taskChanged = true
 		}
-		if taskChanges.Len() > 0 {
+		if newTask {
+			counts.new++
+		} else if taskChanged {
+			if discardedTask {
+				counts.discarded++
+			} else {
+				counts.edited++
+			}
+		}
+		if !options.summary && taskChanges.Len() > 0 {
 			heading := fmt.Sprintf("Task %s: %s", taskLabel(local), stringField(local, "title"))
 			fmt.Fprintln(out, colorText(colorTarget, "1;36", heading))
 			_, _ = taskChanges.WriteTo(out)
 			fmt.Fprintln(out)
 		}
+	}
+	if options.summary {
+		fmt.Fprintf(out, "Tasks: %d edited, %d discarded, %d new\n", counts.edited, counts.discarded, counts.new)
+		return nil
 	}
 	if changes == 0 {
 		fmt.Fprintln(out, "No local changes.")
@@ -573,9 +597,16 @@ func renderDiff(ws *workspace.Workspace, args []string, out, colorTarget io.Writ
 	return nil
 }
 
+type diffSummary struct {
+	edited    int
+	discarded int
+	new       int
+}
+
 type diffOptions struct {
 	task    string
 	verbose bool
+	summary bool
 }
 
 func parseDiffOptions(args []string) (diffOptions, error) {
@@ -584,9 +615,11 @@ func parseDiffOptions(args []string) (diffOptions, error) {
 		switch arg {
 		case "--verbose":
 			options.verbose = true
+		case "--summary":
+			options.summary = true
 		default:
 			if strings.HasPrefix(arg, "-") || options.task != "" {
-				return diffOptions{}, errors.New("usage: panda diff [taskNumber|localId] [--verbose]")
+				return diffOptions{}, errors.New("usage: panda diff [taskNumber|localId] [--verbose] [--summary]")
 			}
 			options.task = arg
 		}

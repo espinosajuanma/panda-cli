@@ -112,6 +112,7 @@ to the assigned task number.
 - By default, lists changed fields and marks a changed description as `updated`
 - Shows type, priority, and complexity for newly created tasks
 - `--verbose` shows changed Markdown description lines with `-` and `+` prefixes
+- `--summary` prints counts of edited, discarded, and new tasks instead of task details
 - `panda diff {taskNumber|localId}` limits the view to one task
 - Uses `$PAGER` (defaults to `less -FRX`) when output is interactive; piped output is printed directly
 
