@@ -96,6 +96,7 @@ and directories at the root are left in place.
   API pagination
 - Compare the fetched tasks with the last-synced baseline
 - Skip rewriting tasks whose remote `version` matches the stored baseline
+- Shows an in-place progress bar when output is a terminal
 - Apply remote-only changes locally and preserve local-only changes
 - Report conflicts when the same field changed both locally and remotely
 - Changes remain local until a `push` is performed

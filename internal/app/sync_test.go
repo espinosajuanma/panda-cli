@@ -246,6 +246,20 @@ func TestPullSkipsTasksWithUnchangedVersion(t *testing.T) {
 	}
 }
 
+func TestPullProgressBarFormattingAndNonTerminalOutput(t *testing.T) {
+	if got, want := formatPullProgress(5, 10), "Pulling tasks: [##########----------] 5/10 (50%)"; got != want {
+		t.Fatalf("progress bar = %q, want %q", got, want)
+	}
+	var output strings.Builder
+	progress := newPullProgress(&output, 3)
+	progress.Update(0)
+	progress.Advance()
+	progress.Finish()
+	if output.Len() != 0 {
+		t.Fatalf("non-terminal output included a progress bar: %q", output.String())
+	}
+}
+
 func TestInteractiveEditValidatesEnumsAndWritesMetadata(t *testing.T) {
 	root := t.TempDir()
 	ws := workspace.New(root)

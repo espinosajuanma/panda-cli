@@ -354,9 +354,13 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 	}
 	updated, created, conflictCount := 0, 0, 0
 	remoteIDs := make(map[string]bool, len(tasks))
+	progress := newPullProgress(out, len(tasks))
+	defer progress.Finish()
+	progress.Update(0)
 	for _, remote := range tasks {
 		id := stringField(remote, "id")
 		if id == "" {
+			progress.Advance()
 			continue
 		}
 		remoteIDs[id] = true
@@ -388,6 +392,7 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 				return err
 			}
 			created++
+			progress.Advance()
 			continue
 		}
 		if err != nil {
@@ -398,11 +403,13 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 			return fmt.Errorf("task %s has no sync baseline; run clean then pull: %w", id, err)
 		}
 		if sameTaskVersion(remote, state.Remote) {
+			progress.Advance()
 			continue
 		}
 		fields := mergeMetadata(local, state.Remote, remote)
 		if len(fields) != 0 {
 			conflictCount += len(fields)
+			progress.Pause()
 			fmt.Fprintf(out, "%s task %s: %s\n", colorText(out, "1;31", "Conflict"), taskLabel(local), strings.Join(fields, ", "))
 		}
 		merged := workspace.MetadataFromRemote(remote)
@@ -435,6 +442,7 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 		descriptionConflict := string(localMarkdown) != baseMarkdown && remoteHTML != baseHTML && string(localMarkdown) != remoteMarkdown
 		if descriptionConflict {
 			conflictCount++
+			progress.Pause()
 			fmt.Fprintf(out, "%s task %s: description\n", colorText(out, "1;31", "Conflict"), taskLabel(local))
 		} else if string(localMarkdown) == baseMarkdown {
 			if err := workspace.WriteFileAtomic(filepath.Join(dir, "description.md"), []byte(remoteMarkdown), 0o600); err != nil {
@@ -449,7 +457,9 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 			return err
 		}
 		updated++
+		progress.Advance()
 	}
+	progress.Finish()
 	missingRemote := 0
 	localDirs, err := ws.TaskDirectories()
 	if err != nil {
@@ -464,6 +474,7 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 		if id == "" || remoteIDs[id] {
 			continue
 		}
+		progress.Pause()
 		fmt.Fprintf(out, "%s task %s is no longer returned for this project; kept local files.\n", colorText(out, "1;33", "Warning:"), taskLabel(metadata))
 		missingRemote++
 	}
@@ -485,6 +496,56 @@ func sameTaskVersion(remote, baseline map[string]any) bool {
 	remoteVersion, remoteHasVersion := remote["version"]
 	baseVersion, baselineHasVersion := baseline["version"]
 	return remoteHasVersion && baselineHasVersion && remoteVersion != nil && baseVersion != nil && same(remoteVersion, baseVersion)
+}
+
+type pullProgress struct {
+	out     io.Writer
+	total   int
+	current int
+	active  bool
+	drawn   bool
+}
+
+func newPullProgress(out io.Writer, total int) *pullProgress {
+	return &pullProgress{out: out, total: total, active: total > 0 && isTerminal(out)}
+}
+
+func (p *pullProgress) Update(current int) {
+	if !p.active {
+		return
+	}
+	p.current = min(max(current, 0), p.total)
+	fmt.Fprintf(p.out, "\r%s", colorText(p.out, "1;36", formatPullProgress(p.current, p.total)))
+	p.drawn = true
+}
+
+func (p *pullProgress) Advance() {
+	p.Update(p.current + 1)
+}
+
+func (p *pullProgress) Pause() {
+	if p.active && p.drawn {
+		fmt.Fprint(p.out, "\r\x1b[K")
+		p.drawn = false
+	}
+}
+
+func (p *pullProgress) Finish() {
+	if p.active && p.drawn {
+		fmt.Fprintln(p.out)
+		p.drawn = false
+	}
+}
+
+func formatPullProgress(current, total int) string {
+	if total <= 0 {
+		return "Pulling tasks: [--------------------] 0/0 (0%)"
+	}
+	current = min(max(current, 0), total)
+	const width = 20
+	filled := current * width / total
+	percentage := current * 100 / total
+	return fmt.Sprintf("Pulling tasks: [%s%s] %d/%d (%d%%)", strings.Repeat("#", filled), strings.Repeat("-", width-filled), current, total, percentage)
 }
 
 func diff(ws *workspace.Workspace, args []string, out io.Writer) error {
