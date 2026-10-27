@@ -1,6 +1,6 @@
 # Panda Dashboard
 
-Panda Dashboard is a CLI tool written in go that connects with the Solutions
+Panda Dashboard is a CLI tool written in Go that connects with the Solutions
 app REST API to sync the current tasks from the task dashboard and allow the user
 to update them using the file system.
 
@@ -9,6 +9,18 @@ to update them using the file system.
 - Go 1.26+
 - No database
 - File system, stored under the operating system's user config directory
+
+## Build and setup
+
+```sh
+go install ./cmd/panda
+panda login
+panda config set project "Project Name"
+panda pull
+```
+
+The binary is named `panda`. Configuration and synced task files are created
+under the OS user config directory.
 
 ## Capabilities
 
@@ -67,6 +79,8 @@ to the assigned task number.
 ### `completion labels [prefix]`
 
 - Prints matching labels from the selected project for shell completion
+- `panda completion bash|zsh|fish` prints shell integration code; source the
+  output from the appropriate shell startup/completion file
 
 ### `pull`
 
@@ -103,7 +117,11 @@ to the assigned task number.
 
 ### `edit {taskNumber}`
 
-- Edit a task locally
+- Interactively edit title, type, priority, and complexity
+- Type `e` when prompted to open `description.md` in `$EDITOR`
+- `edit {taskNumber} labels` opens a prefix-search label picker; labels can also
+  be added as names or removed with `--remove={labelName}`
+- `edit {taskNumber} json` opens `metadata.json` directly for advanced fields
 
 ### `view {taskNumber}`
 
@@ -156,6 +174,6 @@ And track these:
 ## CLI
 
 - Similar to the `gh` tool that is interactive
-- For long body like the description allows you to type `e` to open the `$EDITOR`
-- Colors
-- Autocomplete for labels
+- For a long body like the description, type `e` to open `$EDITOR`
+- Colored output; help-page titles are uppercase, bold, and green
+- Shell completion for commands and project labels (bash, zsh, fish)

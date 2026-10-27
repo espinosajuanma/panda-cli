@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -32,13 +34,13 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 		return nil
 	}
 	if args[0] == "help" {
-		if len(args) > 1 {
+		if len(args) > 1 && args[1] != "--help" && args[1] != "-h" {
 			return printCommandHelp(args[1], out)
 		}
 		printHelp(out)
 		return nil
 	}
-	if len(args) > 1 && (args[1] == "--help" || args[1] == "-h") {
+	if len(args) > 1 && (args[len(args)-1] == "--help" || args[len(args)-1] == "-h") {
 		return printCommandHelp(args[0], out)
 	}
 	cfg, err := config.Load()
@@ -53,7 +55,7 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 	case "config":
 		return configCommand(context.Background(), cfg, client, args, out)
 	case "completion":
-		return completeLabels(context.Background(), cfg, client, args, out)
+		return completionCommand(context.Background(), cfg, client, args, out)
 	case "pull", "diff", "push", "create", "edit", "view", "add-note", "discard", "clean":
 		ws, err := projectWorkspace(cfg)
 		if err != nil {
@@ -84,7 +86,7 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 		case "create":
 			return createTask(ws, cfg.Project, args, in, out)
 		case "edit":
-			return editTask(ws, args)
+			return editTask(context.Background(), ws, args, client, cfg, in, out)
 		case "view":
 			return viewTask(ws, args, out)
 		case "add-note":
@@ -128,10 +130,64 @@ func completeLabels(ctx context.Context, cfg *config.Config, client *solutions.C
 	return nil
 }
 
-func printHelp(out io.Writer) {
-	fmt.Fprintln(out, `Panda Dashboard - sync Solutions tasks with local files
+func completionCommand(ctx context.Context, cfg *config.Config, client *solutions.Client, args []string, out io.Writer) error {
+	if len(args) == 1 {
+		switch args[0] {
+		case "bash":
+			fmt.Fprintln(out, bashCompletion)
+			return nil
+		case "zsh":
+			fmt.Fprintln(out, zshCompletion)
+			return nil
+		case "fish":
+			fmt.Fprintln(out, fishCompletion)
+			return nil
+		}
+	}
+	return completeLabels(ctx, cfg, client, args, out)
+}
 
-Usage:
+const bashCompletion = `_panda_complete() {
+  local cur="${COMP_WORDS[COMP_CWORD]}"
+  local candidate
+  if [[ "${COMP_WORDS[1]}" == "edit" && $COMP_CWORD -eq 3 ]]; then
+    COMPREPLY=( $(compgen -W "labels" -- "$cur") )
+  elif [[ "${COMP_WORDS[1]}" == "edit" && "${COMP_WORDS[3]}" == "labels" ]]; then
+    COMPREPLY=()
+    while IFS= read -r candidate; do COMPREPLY+=("$candidate"); done < <(panda completion labels "$cur" 2>/dev/null)
+  elif [[ "${COMP_WORDS[1]}" == "completion" && "${COMP_WORDS[2]}" == "labels" ]]; then
+    COMPREPLY=()
+    while IFS= read -r candidate; do COMPREPLY+=("$candidate"); done < <(panda completion labels "$cur" 2>/dev/null)
+  else
+    COMPREPLY=( $(compgen -W "login config pull diff push create edit view add-note discard clean completion" -- "$cur") )
+  fi
+}
+complete -F _panda_complete panda`
+
+const zshCompletion = `#compdef panda
+_panda() {
+  local cur="${words[CURRENT]}"
+  if [[ "${words[2]}" == "edit" && $CURRENT -eq 4 ]]; then
+    compadd -- labels
+  elif [[ "${words[2]}" == "edit" && "${words[4]}" == "labels" ]]; then
+    compadd -- "${(@f)$(panda completion labels "$cur" 2>/dev/null)}"
+  elif [[ "${words[2]}" == "completion" && "${words[3]}" == "labels" ]]; then
+    compadd -- "${(@f)$(panda completion labels "$cur" 2>/dev/null)}"
+  else
+    compadd -- login config pull diff push create edit view add-note discard clean completion
+  fi
+}
+compdef _panda panda`
+
+const fishCompletion = `complete -c panda -f -n '__fish_seen_subcommand_from edit; and test (count (commandline -opc)) -ge 4; and test (commandline -opc)[4] = labels' -a '(panda completion labels (commandline -ct) 2>/dev/null)'
+complete -c panda -f -n '__fish_seen_subcommand_from edit; and test (count (commandline -opc)) -eq 3' -a labels
+complete -c panda -f -n '__fish_seen_subcommand_from completion; and test (commandline -opc)[3] = labels' -a '(panda completion labels (commandline -ct) 2>/dev/null)'
+complete -c panda -f -n 'not __fish_seen_subcommand_from login config pull diff push create edit view add-note discard clean completion' -a 'login config pull diff push create edit view add-note discard clean completion'`
+
+func printHelp(out io.Writer) {
+	fmt.Fprintf(out, "\x1b[1;32mPANDA DASHBOARD\x1b[0m — sync Solutions tasks with local files\n\n")
+	fmt.Fprintln(out, `Usage:
+
   panda <command> [arguments]
 
 Commands:
@@ -142,12 +198,13 @@ Commands:
   diff                          Show local changes pending push
   push                          Apply local changes to Solutions
   create [title]                Create a local task
-  edit <taskNumber|localId>     Edit task metadata and description
+  edit <task|localId> [labels|json] Edit task fields, labels, or JSON
   view <taskNumber|localId>     Display a task
   add-note <task> [text]        Stage a task note
   discard <task> [note]         Stage task discard and optional note
   clean [taskNumber] [--yes]    Discard local changes (all tasks if omitted)
-  completion labels [prefix]    Print labels matching a completion prefix
+  completion <shell>             Print bash, zsh, or fish completion setup
+  completion labels [prefix]    Print matching project labels
 
 Task files and configuration are stored below the OS user config directory in
 panda-dashboard/. Set EDITOR to choose the editor used by edit and note commands.`)
@@ -161,17 +218,18 @@ func printCommandHelp(command string, out io.Writer) error {
 		"diff":       "Usage: panda diff\nShow local edits and staged actions relative to the last-synced baseline.",
 		"push":       "Usage: panda push\nCheck for remote conflicts, then apply local edits and staged actions.",
 		"create":     "Usage: panda create [title]\nCreate a local task with a temporary ID; push assigns its task number.",
-		"edit":       "Usage: panda edit <taskNumber|localId>\nOpen metadata.json and description.md in $EDITOR.",
+		"edit":       "Usage: panda edit <taskNumber|localId> [labels [labelName|--remove=labelName...]|json]\nInteractively edit title, type, priority, complexity, labels, and description. Type e to open the description in $EDITOR. Use `labels` for label-only editing or `json` to edit all metadata directly.",
 		"view":       "Usage: panda view <taskNumber|localId>\nDisplay task metadata and its Markdown description.",
 		"add-note":   "Usage: panda add-note <taskNumber|localId> [text]\nStage a Markdown note for the next push.",
 		"discard":    "Usage: panda discard <taskNumber|localId> [note]\nStage status=discarded and an optional Markdown note.",
 		"clean":      "Usage: panda clean [taskNumber|localId] [--yes]\nDiscard local edits; without a task ID, confirm before cleaning the project.",
-		"completion": "Usage: panda completion labels [prefix]\nPrint matching project label names for shell completion.",
+		"completion": "Usage: panda completion <bash|zsh|fish> | panda completion labels [prefix]\nInstall shell completion or print matching project labels.",
 	}
 	text, ok := help[command]
 	if !ok {
 		return fmt.Errorf("no help available for %q", command)
 	}
+	fmt.Fprintf(out, "\x1b[1;32m%s\x1b[0m\n\n", strings.ToUpper(command))
 	fmt.Fprintln(out, text)
 	return nil
 }
@@ -273,11 +331,13 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 		return err
 	}
 	updated, created, conflictCount := 0, 0, 0
+	remoteIDs := make(map[string]bool, len(tasks))
 	for _, remote := range tasks {
 		id := stringField(remote, "id")
 		if id == "" {
 			continue
 		}
+		remoteIDs[id] = true
 		dir, local, err := ws.FindByRemoteID(id)
 		if errors.Is(err, os.ErrNotExist) {
 			dir = filepath.Join(ws.Root, workspace.DirectoryName(remote))
@@ -318,7 +378,7 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 		fields := mergeMetadata(local, state.Remote, remote)
 		if len(fields) != 0 {
 			conflictCount += len(fields)
-			fmt.Fprintf(out, "Conflict task %s: %s\n", taskLabel(local), strings.Join(fields, ", "))
+			fmt.Fprintf(out, "%s task %s: %s\n", colorText(out, "1;31", "Conflict"), taskLabel(local), strings.Join(fields, ", "))
 		}
 		merged := workspace.MetadataFromRemote(remote)
 		for _, field := range editableFields {
@@ -350,7 +410,7 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 		descriptionConflict := string(localMarkdown) != baseMarkdown && remoteHTML != baseHTML && string(localMarkdown) != remoteMarkdown
 		if descriptionConflict {
 			conflictCount++
-			fmt.Fprintf(out, "Conflict task %s: description\n", taskLabel(local))
+			fmt.Fprintf(out, "%s task %s: description\n", colorText(out, "1;31", "Conflict"), taskLabel(local))
 		} else if string(localMarkdown) == baseMarkdown {
 			if err := workspace.WriteFileAtomic(filepath.Join(dir, "description.md"), []byte(remoteMarkdown), 0o600); err != nil {
 				return err
@@ -365,13 +425,33 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 		}
 		updated++
 	}
-	fmt.Fprintf(out, "Pulled %d task(s): %d new, %d updated", len(tasks), created, updated)
+	missingRemote := 0
+	localDirs, err := ws.TaskDirectories()
+	if err != nil {
+		return err
+	}
+	for _, dir := range localDirs {
+		metadata, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+		if err != nil {
+			continue
+		}
+		id := stringField(metadata, "id")
+		if id == "" || remoteIDs[id] {
+			continue
+		}
+		fmt.Fprintf(out, "%s task %s is no longer returned for this project; kept local files.\n", colorText(out, "1;33", "Warning:"), taskLabel(metadata))
+		missingRemote++
+	}
+	fmt.Fprintf(out, "%s %d task(s): %d new, %d updated", colorText(out, "1;32", "Pulled"), len(tasks), created, updated)
+	if missingRemote > 0 {
+		fmt.Fprintf(out, "; %d missing remotely", missingRemote)
+	}
 	if conflictCount > 0 {
 		fmt.Fprintf(out, "; %d conflict(s) need attention", conflictCount)
 	}
 	fprintln(out)
 	if conflictCount > 0 {
-		return fmt.Errorf("pull completed with %d conflict(s)", conflictCount)
+		return fmt.Errorf("pull completed with %d conflict(s); use `panda clean <taskNumber>` then pull again to discard local edits, or resolve the conflicting files manually", conflictCount)
 	}
 	return nil
 }
@@ -406,11 +486,11 @@ func diff(ws *workspace.Workspace, out io.Writer) error {
 		}
 		localMarkdown, err := os.ReadFile(filepath.Join(dir, "description.md"))
 		if err == nil && string(localMarkdown) != baseMarkdown {
-			fmt.Fprintf(out, "%s description: modified\n", taskLabel(local))
+			fmt.Fprintf(out, "%s description: modified\n", colorText(out, "1;36", taskLabel(local)))
 			changes++
 		}
 		if len(state.StagedNotes) > 0 {
-			fmt.Fprintf(out, "%s notes: %d staged\n", taskLabel(local), len(state.StagedNotes))
+			fmt.Fprintf(out, "%s notes: %d staged\n", colorText(out, "1;36", taskLabel(local)), len(state.StagedNotes))
 			changes += len(state.StagedNotes)
 		}
 	}
@@ -483,9 +563,13 @@ func push(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 				problems = append(problems, fmt.Sprintf("%s: fetch current remote task: %v", taskLabel(local), err))
 				continue
 			}
+			if projectID := relationshipID(remote["project"]); projectID != "" && projectID != project.ID {
+				problems = append(problems, fmt.Sprintf("%s: task now belongs to project %s", taskLabel(local), projectID))
+				continue
+			}
 			conflicts := taskConflicts(local, state.Remote, remote, dir)
 			if len(conflicts) > 0 {
-				problems = append(problems, fmt.Sprintf("%s: conflict in %s", taskLabel(local), strings.Join(conflicts, ", ")))
+				problems = append(problems, fmt.Sprintf("%s: conflict in %s; use `panda clean %s` then pull to take the remote version, or resolve the files manually", taskLabel(local), strings.Join(conflicts, ", "), taskLabel(local)))
 				continue
 			}
 			payload, changed, err := mergeForPush(local, remote, state.Remote, dir)
@@ -511,7 +595,7 @@ func push(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 			problems = append(problems, fmt.Sprintf("%s: %v", taskLabel(local), err))
 			continue
 		}
-		fmt.Fprintf(out, "Pushed %s.\n", taskLabel(local))
+		fmt.Fprintf(out, "%s %s.\n", colorText(out, "1;32", "Pushed"), taskLabel(local))
 	}
 	if len(problems) > 0 {
 		for _, problem := range problems {
@@ -538,6 +622,7 @@ func createRemoteTask(ctx context.Context, client *solutions.Client, dir string,
 	task["project"] = map[string]any{"id": project.ID, "label": project.Name}
 	task["description"] = html
 	delete(task, "id")
+	delete(task, "localId")
 	delete(task, "number")
 	delete(task, "label")
 	delete(task, "version")
@@ -682,6 +767,7 @@ func pushStagedNotes(ctx context.Context, client *solutions.Client, ws *workspac
 
 func syncRemoteNotes(dir string, remote map[string]any, stagedNotes []string) error {
 	items, _ := remote["notes"].([]any)
+	counts := make(map[string]int)
 	staged := make(map[string]bool, len(stagedNotes))
 	for _, filename := range stagedNotes {
 		staged[filename] = true
@@ -692,7 +778,7 @@ func syncRemoteNotes(dir string, remote map[string]any, stagedNotes []string) er
 			continue
 		}
 		text := stringField(note, "note")
-		timestamp := time.Now()
+		timestamp := time.Unix(0, 0)
 		if raw, ok := note["timestamp"].(float64); ok && raw > 0 {
 			timestamp = time.UnixMilli(int64(raw))
 		}
@@ -704,7 +790,9 @@ func syncRemoteNotes(dir string, remote map[string]any, stagedNotes []string) er
 		if err != nil {
 			return err
 		}
-		filename := noteFilename(timestamp, author)
+		base := noteFilename(timestamp, author, 1)
+		counts[base]++
+		filename := noteFilename(timestamp, author, counts[base])
 		path := filepath.Join(dir, "notes", filename)
 		if staged[filename] {
 			continue
@@ -731,6 +819,7 @@ func createTask(ws *workspace.Workspace, project *config.Project, args []string,
 	localID := "local-" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	dir := filepath.Join(ws.Root, localID)
 	metadata := map[string]any{
+		"localId":   localID,
 		"project":   map[string]any{"id": project.ID, "label": project.Name},
 		"title":     title,
 		"type":      "feature",
@@ -756,18 +845,221 @@ func createTask(ws *workspace.Workspace, project *config.Project, args []string,
 	return nil
 }
 
-func editTask(ws *workspace.Workspace, args []string) error {
-	if len(args) != 1 {
-		return errors.New("usage: panda edit <taskNumber|localId>")
+func editTask(ctx context.Context, ws *workspace.Workspace, args []string, client *solutions.Client, cfg *config.Config, in io.Reader, out io.Writer) error {
+	if len(args) < 1 {
+		return errors.New("usage: panda edit <taskNumber|localId> [labels [labelName...]]")
 	}
-	dir, _, err := ws.FindTask(args[0])
+	dir, metadata, err := ws.FindTask(args[0])
 	if err != nil {
 		return err
 	}
-	if err := openEditor(filepath.Join(dir, "metadata.json")); err != nil {
+	if len(args) == 2 {
+		if args[1] == "json" {
+			if err := openEditor(filepath.Join(dir, "metadata.json")); err != nil {
+				return err
+			}
+			return promptDescriptionEditor(in, out, dir)
+		}
+		if args[1] != "labels" {
+			return errors.New("field selectors are `labels` and `json`")
+		}
+		if cfg.Project == nil {
+			return errors.New("no project selected")
+		}
+		if err := requireLogin(cfg); err != nil {
+			return err
+		}
+		return editLabels(ctx, client, cfg.Project.ID, dir, metadata, nil, in, out)
+	}
+	if len(args) > 2 {
+		if args[1] != "labels" {
+			return errors.New("the only field selector is `labels`")
+		}
+		if cfg.Project == nil {
+			return errors.New("no project selected")
+		}
+		if err := requireLogin(cfg); err != nil {
+			return err
+		}
+		return editLabels(ctx, client, cfg.Project.ID, dir, metadata, args[2:], in, out)
+	}
+	if err := editMetadataInteractive(dir, metadata, in, out); err != nil {
 		return err
 	}
-	return openEditor(filepath.Join(dir, "description.md"))
+	editLabelsChoice, err := prompt(in, out, "Edit labels using project suggestions? [y/N] ")
+	if err != nil {
+		return err
+	}
+	if strings.EqualFold(editLabelsChoice, "y") || strings.EqualFold(editLabelsChoice, "yes") {
+		if cfg.Project == nil {
+			return errors.New("no project selected")
+		}
+		if err := requireLogin(cfg); err != nil {
+			return err
+		}
+		metadata, err = workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+		if err != nil {
+			return err
+		}
+		if err := editLabels(ctx, client, cfg.Project.ID, dir, metadata, nil, in, out); err != nil {
+			return err
+		}
+	}
+	return promptDescriptionEditor(in, out, dir)
+}
+
+func promptDescriptionEditor(in io.Reader, out io.Writer, dir string) error {
+	choice, err := prompt(in, out, "Type `e` to open description.md in $EDITOR, or press Enter to leave it unchanged: ")
+	if err != nil {
+		return err
+	}
+	if strings.EqualFold(choice, "e") {
+		return openEditor(filepath.Join(dir, "description.md"))
+	}
+	return nil
+}
+
+func editMetadataInteractive(dir string, metadata map[string]any, in io.Reader, out io.Writer) error {
+	title, err := prompt(in, out, fmt.Sprintf("Title [%s]: ", stringField(metadata, "title")))
+	if err != nil {
+		return err
+	}
+	if title != "" {
+		metadata["title"] = title
+	}
+	for _, option := range []struct {
+		field  string
+		values []string
+	}{
+		{field: "type", values: []string{"feature", "bug", "other", "release"}},
+		{field: "priority", values: []string{"hotfix", "high", "medium", "low"}},
+		{field: "complexity", values: []string{"xs", "s", "m", "l", "xl", "xxl"}},
+	} {
+		current := stringField(metadata, option.field)
+		fieldTitle := strings.ToUpper(option.field[:1]) + option.field[1:]
+		choice, err := prompt(in, out, fmt.Sprintf("%s [%s] (%s): ", fieldTitle, current, strings.Join(option.values, "/")))
+		if err != nil {
+			return err
+		}
+		if choice == "-" && option.field == "complexity" {
+			delete(metadata, option.field)
+			continue
+		}
+		if choice == "" {
+			continue
+		}
+		if !contains(option.values, choice) {
+			return fmt.Errorf("invalid %s %q; choose one of %s", option.field, choice, strings.Join(option.values, ", "))
+		}
+		metadata[option.field] = choice
+	}
+	if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), metadata); err != nil {
+		return err
+	}
+	return nil
+}
+
+func editLabels(ctx context.Context, client *solutions.Client, projectID, dir string, metadata map[string]any, requested []string, in io.Reader, out io.Writer) error {
+	labels, err := client.ListLabels(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	sort.Slice(labels, func(i, j int) bool {
+		return strings.ToLower(stringField(labels[i], "name")) < strings.ToLower(stringField(labels[j], "name"))
+	})
+	selected := make(map[string]map[string]any)
+	if values, ok := metadata["labels"].([]any); ok {
+		for _, value := range values {
+			if current, ok := value.(map[string]any); ok {
+				id := stringField(current, "id")
+				if id != "" {
+					selected[id] = map[string]any{"id": id, "label": stringField(current, "label")}
+				}
+			}
+		}
+	}
+	if len(requested) > 0 {
+		for _, name := range requested {
+			remove := strings.HasPrefix(name, "--remove=")
+			name = strings.TrimPrefix(name, "--remove=")
+			var match map[string]any
+			for _, label := range labels {
+				if strings.EqualFold(stringField(label, "name"), name) {
+					match = label
+					break
+				}
+			}
+			if match == nil {
+				return fmt.Errorf("label %q not found; use `panda completion labels %s` to see suggestions", name, name)
+			}
+			id := stringField(match, "id")
+			if remove {
+				delete(selected, id)
+			} else {
+				selected[id] = map[string]any{"id": id, "label": stringField(match, "name")}
+			}
+		}
+	} else {
+		for {
+			prefix, err := prompt(in, out, "Search labels by prefix (blank to finish): ")
+			if err != nil {
+				return err
+			}
+			if prefix == "" {
+				break
+			}
+			for {
+				matches := make([]map[string]any, 0)
+				for _, label := range labels {
+					if strings.HasPrefix(strings.ToLower(stringField(label, "name")), strings.ToLower(prefix)) {
+						matches = append(matches, label)
+					}
+				}
+				if len(matches) == 0 {
+					fmt.Fprintln(out, "No labels match that prefix.")
+					break
+				}
+				for i, label := range matches {
+					mark := " "
+					if _, ok := selected[stringField(label, "id")]; ok {
+						mark = "✓"
+					}
+					fmt.Fprintf(out, "  %s %d) %s\n", mark, i+1, stringField(label, "name"))
+				}
+				choice, err := prompt(in, out, "Select a number to toggle, or type a narrower prefix: ")
+				if err != nil {
+					return err
+				}
+				if choice == "" {
+					break
+				}
+				index, parseErr := strconv.Atoi(choice)
+				if parseErr != nil || index < 1 || index > len(matches) {
+					prefix = choice
+					continue
+				}
+				label := matches[index-1]
+				id := stringField(label, "id")
+				if _, exists := selected[id]; exists {
+					delete(selected, id)
+				} else {
+					selected[id] = map[string]any{"id": id, "label": stringField(label, "name")}
+				}
+				break
+			}
+		}
+	}
+	result := make([]any, 0, len(selected))
+	for _, label := range selected {
+		result = append(result, label)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		left, _ := result[i].(map[string]any)
+		right, _ := result[j].(map[string]any)
+		return stringField(left, "label") < stringField(right, "label")
+	})
+	metadata["labels"] = result
+	return workspace.WriteMap(filepath.Join(dir, "metadata.json"), metadata)
 }
 
 func viewTask(ws *workspace.Workspace, args []string, out io.Writer) error {
@@ -778,15 +1070,49 @@ func viewTask(ws *workspace.Workspace, args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "# %s — %s\n\n", taskLabel(metadata), stringField(metadata, "title"))
+	title := taskLabel(metadata) + " — " + stringField(metadata, "title")
+	fmt.Fprintf(out, "%s\n\n", colorText(out, "1;32", "# "+title))
 	for _, field := range []string{"type", "status", "priority", "complexity", "labels", "assignees", "reviewers"} {
 		if value, exists := metadata[field]; exists {
-			fmt.Fprintf(out, "**%s:** %v  \n", field, value)
+			fmt.Fprintf(out, "%s %v  \n", colorText(out, "1;36", "**"+field+":**"), value)
 		}
 	}
-	fmt.Fprintln(out, "\n## Description")
-	if description, err := os.ReadFile(filepath.Join(dir, "description.md")); err == nil {
-		fmt.Fprintln(out, string(description))
+	fmt.Fprintln(out, colorText(out, "1;32", "\n## Description"))
+	description, err := os.ReadFile(filepath.Join(dir, "description.md"))
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(out, highlightMarkdown(out, string(description)))
+	fmt.Fprintln(out, colorText(out, "1;32", "\n## Notes"))
+	notesDir := filepath.Join(dir, "notes")
+	entries, err := os.ReadDir(notesDir)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	state, _ := ws.ReadState(stateKey(dir, metadata))
+	staged := make(map[string]bool, len(state.StagedNotes))
+	for _, name := range state.StagedNotes {
+		staged[name] = true
+	}
+	printed := false
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".md" {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(notesDir, entry.Name()))
+		if err != nil {
+			return err
+		}
+		marker := ""
+		if staged[entry.Name()] {
+			marker = colorText(out, "1;33", " [staged]")
+		}
+		fmt.Fprintf(out, "%s%s\n", colorText(out, "1;36", "### "+strings.TrimSuffix(entry.Name(), ".md")), marker)
+		fmt.Fprintln(out, highlightMarkdown(out, string(body)))
+		printed = true
+	}
+	if !printed {
+		fmt.Fprintln(out, "No notes.")
 	}
 	return nil
 }
@@ -838,7 +1164,10 @@ func stageNote(ws *workspace.Workspace, dir string, metadata map[string]any, tex
 		return err
 	}
 	stamp := time.Now().UTC()
-	filename := noteFilename(stamp, "local")
+	filename, err := uniqueNoteFilename(filepath.Join(dir, "notes"), stamp, "local")
+	if err != nil {
+		return err
+	}
 	path := filepath.Join(dir, "notes", filename)
 	if err := workspace.WriteFileAtomic(path, []byte(text), 0o600); err != nil {
 		return err
@@ -925,13 +1254,14 @@ func clearNotes(dir string, remote map[string]any) error {
 		return err
 	}
 	keep := make(map[string]bool)
+	counts := make(map[string]int)
 	items, _ := remote["notes"].([]any)
 	for _, item := range items {
 		note, ok := item.(map[string]any)
 		if !ok {
 			continue
 		}
-		timestamp := time.Now()
+		timestamp := time.Unix(0, 0)
 		if raw, ok := note["timestamp"].(float64); ok && raw > 0 {
 			timestamp = time.UnixMilli(int64(raw))
 		}
@@ -939,7 +1269,9 @@ func clearNotes(dir string, remote map[string]any) error {
 		if addedBy, ok := note["addedBy"].(map[string]any); ok && stringField(addedBy, "label") != "" {
 			author = stringField(addedBy, "label")
 		}
-		keep[noteFilename(timestamp, author)] = true
+		base := noteFilename(timestamp, author, 1)
+		counts[base]++
+		keep[noteFilename(timestamp, author, counts[base])] = true
 	}
 	for _, entry := range entries {
 		if !entry.IsDir() && !keep[entry.Name()] {
@@ -1044,6 +1376,14 @@ func stringField(values map[string]any, key string) string {
 	return fmt.Sprint(values[key])
 }
 
+func relationshipID(value any) string {
+	relationship, ok := value.(map[string]any)
+	if !ok {
+		return ""
+	}
+	return stringField(relationship, "id")
+}
+
 func taskLabel(metadata map[string]any) string {
 	if number := metadata["number"]; number != nil {
 		return fmt.Sprint(number)
@@ -1051,12 +1391,24 @@ func taskLabel(metadata map[string]any) string {
 	if id := stringField(metadata, "id"); id != "" {
 		return id
 	}
+	if localID := stringField(metadata, "localId"); localID != "" {
+		return localID
+	}
 	return "local task"
 }
 
 func isConflictField(fields []string, field string) bool {
 	for _, conflict := range fields {
 		if conflict == field {
+			return true
+		}
+	}
+	return false
+}
+
+func contains(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
 			return true
 		}
 	}
@@ -1082,6 +1434,55 @@ func fprintln(out io.Writer) {
 	fmt.Fprintln(out)
 }
 
-func noteFilename(timestamp time.Time, author string) string {
-	return timestamp.UTC().Format("20060102T150405.000Z") + "-" + safeName(author) + ".md"
+func noteFilename(timestamp time.Time, author string, duplicateIndex int) string {
+	suffix := ""
+	if duplicateIndex > 1 {
+		suffix = fmt.Sprintf("-%d", duplicateIndex)
+	}
+	return timestamp.UTC().Format("20060102T150405.000Z") + "-" + safeName(author) + suffix + ".md"
+}
+
+func uniqueNoteFilename(notesDir string, timestamp time.Time, author string) (string, error) {
+	for index := 1; ; index++ {
+		filename := noteFilename(timestamp, author, index)
+		_, err := os.Stat(filepath.Join(notesDir, filename))
+		if errors.Is(err, os.ErrNotExist) {
+			return filename, nil
+		}
+		if err != nil {
+			return "", err
+		}
+	}
+}
+
+func colorText(out io.Writer, style, value string) string {
+	file, ok := out.(*os.File)
+	if !ok || os.Getenv("NO_COLOR") != "" || !term.IsTerminal(int(file.Fd())) {
+		return value
+	}
+	return "\x1b[" + style + "m" + value + "\x1b[0m"
+}
+
+func highlightMarkdown(out io.Writer, markdown string) string {
+	file, ok := out.(*os.File)
+	if !ok || os.Getenv("NO_COLOR") != "" || !term.IsTerminal(int(file.Fd())) {
+		return markdown
+	}
+	bold := regexp.MustCompile(`\*\*(.+?)\*\*`)
+	code := regexp.MustCompile("`([^`]+)`")
+	lines := strings.Split(markdown, "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "#") {
+			lines[i] = colorText(out, "1;36", line)
+			continue
+		}
+		line = bold.ReplaceAllStringFunc(line, func(match string) string {
+			return colorText(out, "1", strings.TrimSuffix(strings.TrimPrefix(match, "**"), "**"))
+		})
+		line = code.ReplaceAllStringFunc(line, func(match string) string {
+			return colorText(out, "36", strings.TrimSuffix(strings.TrimPrefix(match, "`"), "`"))
+		})
+		lines[i] = line
+	}
+	return strings.Join(lines, "\n")
 }

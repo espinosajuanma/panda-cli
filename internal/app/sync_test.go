@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,8 +12,10 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"panda-dashboard/internal/config"
+	"panda-dashboard/internal/content"
 	"panda-dashboard/internal/solutions"
 	"panda-dashboard/internal/workspace"
 )
@@ -177,6 +180,399 @@ func TestPullThenPushMergesIndependentRemoteAndLocalChanges(t *testing.T) {
 	if !reflect.DeepEqual(remote["package"], map[string]any{"id": "package-1"}) {
 		t.Fatalf("unmodified API fields were not preserved: %#v", remote["package"])
 	}
+}
+
+func TestInteractiveEditValidatesEnumsAndWritesMetadata(t *testing.T) {
+	root := t.TempDir()
+	ws := workspace.New(root)
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, "14")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	metadata := map[string]any{"id": "task-1", "number": float64(14), "title": "Original", "type": "feature", "priority": "medium", "complexity": "s"}
+	if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), metadata); err != nil {
+		t.Fatal(err)
+	}
+	input := strings.NewReader("Changed title\n\nhigh\n-\nn\n\n")
+	if err := editTask(context.Background(), ws, []string{"14"}, solutions.NewClient("http://unused", ""), &config.Config{}, input, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated["title"] != "Changed title" || updated["priority"] != "high" {
+		t.Fatalf("interactive values were not saved: %#v", updated)
+	}
+	if _, exists := updated["complexity"]; exists {
+		t.Fatalf("complexity was not cleared: %#v", updated["complexity"])
+	}
+}
+
+func TestInteractiveEditRejectsInvalidEnumWithoutSaving(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "14")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	metadata := map[string]any{"title": "Original", "type": "feature", "priority": "medium"}
+	if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), metadata); err != nil {
+		t.Fatal(err)
+	}
+	err := editMetadataInteractive(dir, metadata, strings.NewReader("Changed\ninvalid\n"), io.Discard)
+	if err == nil {
+		t.Fatal("expected invalid type error")
+	}
+	actual, readErr := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if actual["title"] != "Original" {
+		t.Fatalf("partial invalid edit was saved: %#v", actual)
+	}
+}
+
+func TestInteractiveLabelPickerAddsAndRemovesAPIRelationships(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "14")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	metadata := map[string]any{"id": "task-1", "labels": []any{}}
+	if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), metadata); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/data/dev.labels" || r.URL.Query().Get("project.id") != "project-1" {
+			t.Errorf("unexpected label request: %s?%s", r.URL.Path, r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"total":2,"items":[{"id":"l1","name":"Feature A"},{"id":"l2","name":"Feature B"}]}`))
+	}))
+	defer server.Close()
+	client := solutions.NewClient(server.URL, "token")
+	if err := editLabels(context.Background(), client, "project-1", dir, metadata, []string{"Feature A"}, strings.NewReader(""), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	metadata, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	labels, _ := metadata["labels"].([]any)
+	if len(labels) != 1 || stringField(labels[0].(map[string]any), "id") != "l1" {
+		t.Fatalf("label relationship not saved: %#v", metadata["labels"])
+	}
+	if err := editLabels(context.Background(), client, "project-1", dir, metadata, []string{"--remove=Feature A"}, strings.NewReader(""), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	metadata, err = workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	labels, _ = metadata["labels"].([]any)
+	if len(labels) != 0 {
+		t.Fatalf("label relationship not removed: %#v", labels)
+	}
+}
+
+func TestInteractiveLabelPickerSearchesPrefixes(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "14")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	metadata := map[string]any{"id": "task-1", "labels": []any{}}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"total":2,"items":[{"id":"l1","name":"Feature A"},{"id":"l2","name":"Fix"}]}`))
+	}))
+	defer server.Close()
+	input := strings.NewReader("fe\n1\n\n")
+	var output strings.Builder
+	if err := editLabels(context.Background(), solutions.NewClient(server.URL, "token"), "project-1", dir, metadata, nil, input, &output); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	labels, _ := updated["labels"].([]any)
+	if len(labels) != 1 || stringField(labels[0].(map[string]any), "label") != "Feature A" {
+		t.Fatalf("prefix selection did not add label: %#v", updated["labels"])
+	}
+	if !strings.Contains(output.String(), "Feature A") {
+		t.Fatalf("prefix suggestions missing from UI: %q", output.String())
+	}
+}
+
+func TestNoteFilenameDisambiguatesSameTimestampAndAuthor(t *testing.T) {
+	stamp := time.Unix(1_700_000_000, 0)
+	first := noteFilename(stamp, "A Person", 1)
+	second := noteFilename(stamp, "A Person", 2)
+	if first == second || !strings.Contains(second, "-2.md") {
+		t.Fatalf("duplicate note filenames are not unique: %q %q", first, second)
+	}
+}
+
+func TestPushDoesNotOverwriteAnOverlappingRemoteEdit(t *testing.T) {
+	remote := map[string]any{
+		"id": "task-1", "number": float64(14), "title": "Remote title", "type": "feature",
+		"priority": "medium", "status": "new", "description": "<p>Body</p>",
+		"project": map[string]any{"id": "project-1"}, "labels": []any{}, "assignees": []any{}, "reviewers": []any{}, "notes": []any{},
+	}
+	putCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodGet:
+			_ = json.NewEncoder(w).Encode(remote)
+		case http.MethodPut:
+			putCount++
+			_ = json.NewEncoder(w).Encode(remote)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	ws, dir := makeSyncedTask(t, map[string]any{
+		"id": "task-1", "number": float64(14), "title": "Original title", "type": "feature",
+		"priority": "medium", "status": "new", "description": "<p>Body</p>",
+		"project": map[string]any{"id": "project-1"}, "labels": []any{}, "assignees": []any{}, "reviewers": []any{}, "notes": []any{},
+	})
+	local, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	local["title"] = "Local title"
+	if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), local); err != nil {
+		t.Fatal(err)
+	}
+	if err := push(context.Background(), solutions.NewClient(server.URL, "token"), ws, &config.Project{ID: "project-1", Name: "Alpha"}, io.Discard); err == nil {
+		t.Fatal("expected a conflict")
+	}
+	if putCount != 0 {
+		t.Fatalf("conflicting push made %d update request(s)", putCount)
+	}
+}
+
+func TestPushSendsStagedNotesThroughAddNoteAction(t *testing.T) {
+	remote := map[string]any{
+		"id": "task-1", "number": float64(14), "title": "Title", "type": "feature",
+		"priority": "medium", "status": "new", "description": "<p>Body</p>",
+		"project": map[string]any{"id": "project-1"}, "labels": []any{}, "assignees": []any{}, "reviewers": []any{}, "notes": []any{},
+	}
+	addNoteCount := 0
+	var addedNote string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/data/dev.tasks/task-1":
+			_ = json.NewEncoder(w).Encode(remote)
+		case r.Method == http.MethodPut && r.URL.Path == "/data/dev.tasks/task-1/addNote":
+			addNoteCount++
+			var payload map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Error(err)
+			}
+			addedNote = payload["note"]
+			remote["notes"] = []any{map[string]any{
+				"note": payload["note"], "timestamp": float64(1_700_000_000_000),
+				"addedBy": map[string]any{"id": "user-1", "label": "Developer"},
+			}}
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	ws, dir := makeSyncedTask(t, remote)
+	state, err := ws.ReadState("task-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	filename := "20261027T120000.000Z-local.md"
+	if err := workspace.WriteFileAtomic(filepath.Join(dir, "notes", filename), []byte("New note"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state.StagedNotes = []string{filename}
+	if err := ws.WriteState("task-1", state); err != nil {
+		t.Fatal(err)
+	}
+	if err := push(context.Background(), solutions.NewClient(server.URL, "token"), ws, &config.Project{ID: "project-1", Name: "Alpha"}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if addNoteCount != 1 {
+		t.Fatalf("AddNote was called %d times, want once", addNoteCount)
+	}
+	if !strings.Contains(addedNote, "New note") {
+		t.Fatalf("Markdown note was not converted and sent: %q", addedNote)
+	}
+	state, err = ws.ReadState("task-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.StagedNotes) != 0 {
+		t.Fatalf("staged note was not cleared: %#v", state.StagedNotes)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "notes", filename)); !os.IsNotExist(err) {
+		t.Fatalf("local pending note remained after successful push: %v", err)
+	}
+	entries, err := os.ReadDir(filepath.Join(dir, "notes"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || !strings.Contains(entries[0].Name(), "Developer") {
+		t.Fatalf("authoritative server note was not written locally: %#v", entries)
+	}
+	content, err := os.ReadFile(filepath.Join(dir, "notes", entries[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "New note" {
+		t.Fatalf("server note was not converted back to Markdown: %q", content)
+	}
+}
+
+func TestCleanRestoresSyncedTaskAndRemovesPendingNote(t *testing.T) {
+	remote := map[string]any{
+		"id": "task-1", "number": float64(14), "title": "Original", "type": "feature",
+		"priority": "medium", "status": "new", "description": "<p>Original body</p>",
+		"project": map[string]any{"id": "project-1"}, "labels": []any{}, "assignees": []any{}, "reviewers": []any{}, "notes": []any{},
+	}
+	ws, dir := makeSyncedTask(t, remote)
+	local, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	local["title"] = "Changed"
+	if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), local); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "description.md"), []byte("Changed body"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	filename := "20261027T120000.000Z-local.md"
+	if err := workspace.WriteFileAtomic(filepath.Join(dir, "notes", filename), []byte("Pending"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state, err := ws.ReadState("task-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.StagedNotes = []string{filename}
+	if err := ws.WriteState("task-1", state); err != nil {
+		t.Fatal(err)
+	}
+	if err := clean(ws, []string{"14"}, strings.NewReader(""), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	cleaned, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleaned["title"] != "Original" {
+		t.Fatalf("metadata not restored: %#v", cleaned)
+	}
+	description, err := os.ReadFile(filepath.Join(dir, "description.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(description) != "Original body" {
+		t.Fatalf("description not restored: %q", description)
+	}
+	entries, err := os.ReadDir(filepath.Join(dir, "notes"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("pending note not removed: %#v", entries)
+	}
+}
+
+func TestNewTaskGetsRemoteNumberAfterSuccessfulPush(t *testing.T) {
+	var created map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/data/dev.tasks" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&created); err != nil {
+			t.Error(err)
+		}
+		created["id"] = "task-remote-15"
+		created["number"] = float64(15)
+		created["label"] = "15"
+		created["version"] = float64(1)
+		created["notes"] = []any{}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(created)
+	}))
+	defer server.Close()
+
+	ws := workspace.New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	project := &config.Project{ID: "project-1", Name: "Alpha"}
+	if err := createTask(ws, project, []string{"New", "task"}, strings.NewReader(""), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	dirs, err := ws.TaskDirectories()
+	if err != nil || len(dirs) != 1 {
+		t.Fatalf("local task was not created: dirs=%v err=%v", dirs, err)
+	}
+	if err := os.WriteFile(filepath.Join(dirs[0], "description.md"), []byte("Hello **world**"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := push(context.Background(), solutions.NewClient(server.URL, "token"), ws, project, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if created["project"].(map[string]any)["id"] != "project-1" || !strings.Contains(stringField(created, "description"), "<strong>world</strong>") {
+		t.Fatalf("remote task payload incorrect: %#v", created)
+	}
+	finalDir := filepath.Join(ws.Root, "15")
+	metadata, err := workspace.ReadMap(filepath.Join(finalDir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stringField(metadata, "id") != "task-remote-15" || stringField(metadata, "title") != "New task" {
+		t.Fatalf("remote identity was not applied locally: %#v", metadata)
+	}
+	state, err := ws.ReadState("task-remote-15")
+	if err != nil || state.LocalCreated {
+		t.Fatalf("local task did not become synced: state=%#v err=%v", state, err)
+	}
+}
+
+func makeSyncedTask(t *testing.T, remote map[string]any) (*workspace.Workspace, string) {
+	t.Helper()
+	ws := workspace.New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(ws.Root, "14")
+	if err := os.MkdirAll(filepath.Join(dir, "notes"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), workspace.MetadataFromRemote(remote)); err != nil {
+		t.Fatal(err)
+	}
+	markdown, err := content.HTMLToMarkdown(stringField(remote, "description"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := workspace.WriteFileAtomic(filepath.Join(dir, "description.md"), []byte(markdown), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ws.WriteState("task-1", workspace.State{Remote: cloneMap(remote)}); err != nil {
+		t.Fatal(err)
+	}
+	return ws, dir
 }
 
 func marshalForTest(value any) string {

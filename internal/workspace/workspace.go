@@ -26,7 +26,15 @@ func New(root string) *Workspace {
 }
 
 func (w *Workspace) Ensure() error {
-	return os.MkdirAll(filepath.Join(w.Root, ".panda", "state"), 0o700)
+	for _, dir := range []string{w.Root, filepath.Join(w.Root, ".panda"), filepath.Join(w.Root, ".panda", "state")} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return err
+		}
+		if err := os.Chmod(dir, 0o700); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (w *Workspace) TaskDirectories() ([]string, error) {

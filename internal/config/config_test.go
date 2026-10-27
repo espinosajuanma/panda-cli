@@ -21,6 +21,13 @@ func TestSaveUsesPrivateConfigFile(t *testing.T) {
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("config permissions = %o, want 600", info.Mode().Perm())
 	}
+	dirInfo, err := os.Stat(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dirInfo.Mode().Perm() != 0o700 {
+		t.Fatalf("config directory permissions = %o, want 700", dirInfo.Mode().Perm())
+	}
 	loaded, err := Load()
 	if err != nil {
 		t.Fatal(err)
