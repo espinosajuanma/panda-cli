@@ -235,7 +235,7 @@ func printCommandHelp(command string, out io.Writer) error {
 		"login":      "Usage: panda login [email]\nPrompts for credentials and stores the session token.",
 		"config":     "Usage: panda config set project <name> | panda config get project\nSelect or display the active Solutions project.",
 		"path":       "Usage: panda path\nPrint the active project's workspace path.",
-		"list":       "Usage: panda list [--status <status,...>] [--no-complexity]\nList local tasks grouped by status and sorted by rank. Discarded tasks are hidden unless selected explicitly.",
+		"list":       "Usage: panda list [--status <status,...>] [--no-complexity] [--no-description]\nList local tasks grouped by status and sorted by rank. Discarded tasks are hidden unless selected explicitly.",
 		"pull":       "Usage: panda pull\nFetch project tasks, preserve local edits, and report overlapping changes.",
 		"diff":       "Usage: panda diff [taskNumber|localId] [--verbose] [--summary]\nList local edits grouped by task for a quick check. Use --verbose to show changed Markdown description lines or --summary to print counts of edited, discarded, and new tasks. Terminal output uses the pager selected by $PAGER (defaults to less -FRX).",
 		"push":       "Usage: panda push\nCheck for remote conflicts, then apply local edits and staged actions.",
@@ -833,6 +833,7 @@ type listOptions struct {
 	statusFilter    map[string]bool
 	statusSpecified bool
 	noComplexity    bool
+	noDescription   bool
 }
 
 var taskStatusOrder = []string{"new", "toDo", "inProgress", "inReview", "completed", "staging", "released", "discarded"}
@@ -865,6 +866,15 @@ func listTasks(ws *workspace.Workspace, args []string, out io.Writer) error {
 		if options.noComplexity && !isEmptyField(metadata["complexity"]) {
 			continue
 		}
+		if options.noDescription {
+			description, err := os.ReadFile(filepath.Join(dir, "description.md"))
+			if err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("read task description in %s: %w", filepath.Base(dir), err)
+			}
+			if err == nil && strings.TrimSpace(string(description)) != "" {
+				continue
+			}
+		}
 		groups[status] = append(groups[status], metadata)
 	}
 	statuses := orderedTaskStatuses(groups)
@@ -891,9 +901,11 @@ func parseListOptions(args []string) (listOptions, error) {
 		switch {
 		case arg == "--no-complexity":
 			options.noComplexity = true
+		case arg == "--no-description":
+			options.noDescription = true
 		case arg == "--status":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
-				return options, errors.New("usage: panda list [--status <status,...>] [--no-complexity]")
+				return options, errors.New("usage: panda list [--status <status,...>] [--no-complexity] [--no-description]")
 			}
 			i++
 			if err := addStatusFilter(&options, args[i]); err != nil {
@@ -904,7 +916,7 @@ func parseListOptions(args []string) (listOptions, error) {
 				return options, err
 			}
 		default:
-			return options, errors.New("usage: panda list [--status <status,...>] [--no-complexity]")
+			return options, errors.New("usage: panda list [--status <status,...>] [--no-complexity] [--no-description]")
 		}
 	}
 	return options, nil

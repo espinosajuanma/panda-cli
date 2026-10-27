@@ -116,7 +116,7 @@ to the assigned task number.
 - `panda diff {taskNumber|localId}` limits the view to one task
 - Uses `$PAGER` (defaults to `less -FRX`) when output is interactive; piped output is printed directly
 
-### `list [--status {status,...}] [--no-complexity]`
+### `list [--status {status,...}] [--no-complexity] [--no-description]`
 
 - Lists tasks in the local project workspace, grouped by status in workflow
   order with separated sections and sorted by the fetched `rank` field
@@ -126,9 +126,10 @@ to the assigned task number.
 - Discarded tasks are hidden by default; include `discarded` in `--status` to
   display them
 - `--no-complexity` shows only tasks without a complexity value
+- `--no-description` shows only tasks whose local description is missing or blank
 - Table columns are number, priority, type, complexity, and title; release tasks
   are cyan
-- Examples: `panda list --status 'new,toDo'` and `panda list --no-complexity`
+- Examples: `panda list --status 'new,toDo'`, `panda list --no-complexity`, and `panda list --no-description`
 
 ### `create`
 

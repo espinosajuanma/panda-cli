@@ -825,6 +825,12 @@ func TestListGroupsByWorkflowStatusSortsByRankAndFilters(t *testing.T) {
 	for _, task := range fixtures {
 		addSyncedTask(t, ws, task)
 	}
+	if err := os.WriteFile(filepath.Join(ws.Root, "12", "description.md"), []byte("Has a description"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ws.Root, "13", "description.md"), []byte(" \n\t "), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	var output strings.Builder
 	if err := listTasks(ws, nil, &output); err != nil {
@@ -853,6 +859,15 @@ func TestListGroupsByWorkflowStatusSortsByRankAndFilters(t *testing.T) {
 	}
 	if strings.Index(text, "New A") > strings.Index(text, "New B") {
 		t.Fatalf("new tasks were not sorted by rank: %q", text)
+	}
+
+	output.Reset()
+	if err := listTasks(ws, []string{"--no-description"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	withoutDescriptions := output.String()
+	if !strings.Contains(withoutDescriptions, "New A") || !strings.Contains(withoutDescriptions, "To Do") || strings.Contains(withoutDescriptions, "New B") {
+		t.Fatalf("no-description filter did not keep blank descriptions and exclude populated ones: %q", withoutDescriptions)
 	}
 
 	output.Reset()
