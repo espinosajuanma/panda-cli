@@ -108,8 +108,9 @@ to the assigned task number.
 ### `diff`
 
 - If project is not set throws error
-- Displays local changes relative to the last-synced baseline that are pending
-  to be applied to the Solutions app
+- Displays pending local changes grouped under each task's number and title
+- Shows changed Markdown description lines with `-` and `+` prefixes
+- `panda diff {taskNumber|localId}` limits the view to one task
 
 ### `list [--status {status,...}] [--no-complexity]`
 

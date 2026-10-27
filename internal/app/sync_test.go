@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -601,6 +602,75 @@ func TestPushContactsOnlyTasksWithLocalChanges(t *testing.T) {
 	}
 	if strings.Contains(output.String(), "Pushed 14") || !strings.Contains(output.String(), "Pushed 15") {
 		t.Fatalf("push output included clean tasks or omitted dirty task: %q", output.String())
+	}
+}
+
+func TestDiffGroupsTaskChangesAndShowsDescriptionLines(t *testing.T) {
+	first := map[string]any{
+		"id": "task-diff-1", "number": float64(13359), "title": "Improve task diffs", "type": "feature",
+		"priority": "medium", "status": "new", "description": "<p>Original body</p>",
+		"project": map[string]any{"id": "project-1"}, "labels": []any{}, "assignees": []any{}, "reviewers": []any{}, "notes": []any{},
+	}
+	second := map[string]any{
+		"id": "task-diff-2", "number": float64(13360), "title": "Unchanged task", "type": "feature",
+		"priority": "medium", "status": "new", "description": "<p>Same body</p>",
+		"project": map[string]any{"id": "project-1"}, "labels": []any{}, "assignees": []any{}, "reviewers": []any{}, "notes": []any{},
+	}
+	ws, firstDir := makeSyncedTask(t, first)
+	secondDir := addSyncedTask(t, ws, second)
+	metadata, err := workspace.ReadMap(filepath.Join(firstDir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata["priority"] = "high"
+	if err := workspace.WriteMap(filepath.Join(firstDir, "metadata.json"), metadata); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(firstDir, "description.md"), []byte("Updated body\nA new line"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	secondMetadata, err := workspace.ReadMap(filepath.Join(secondDir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondMetadata["title"] = "Changed second title"
+	if err := workspace.WriteMap(filepath.Join(secondDir, "metadata.json"), secondMetadata); err != nil {
+		t.Fatal(err)
+	}
+
+	var output bytes.Buffer
+	if err := diff(ws, nil, &output); err != nil {
+		t.Fatal(err)
+	}
+	allTasks := output.String()
+	firstHeader := strings.Index(allTasks, "Task 13359: Improve task diffs")
+	secondHeader := strings.Index(allTasks, "Task 13360: Changed second title")
+	if firstHeader < 0 || secondHeader <= firstHeader || !strings.Contains(allTasks, "title: Unchanged task -> Changed second title") {
+		t.Fatalf("changes were not grouped under task headings:\n%s", allTasks)
+	}
+
+	output.Reset()
+	if err := diff(ws, []string{"13359"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	for _, expected := range []string{
+		"Task 13359: Improve task diffs",
+		"priority: medium -> high",
+		"description.md",
+		"-Original body",
+		"+Updated body",
+		"+A new line",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Errorf("diff output missing %q:\n%s", expected, text)
+		}
+	}
+	if strings.Contains(text, "13360") || strings.Contains(text, "description: modified") {
+		t.Fatalf("task selector or description diff was not applied:\n%s", text)
+	}
+	if err := diff(ws, []string{"missing-task"}, &output); err == nil {
+		t.Fatal("diff for an unknown task succeeded")
 	}
 }
 

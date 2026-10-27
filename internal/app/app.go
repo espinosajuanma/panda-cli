@@ -80,10 +80,7 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 			}
 			return pull(context.Background(), client, ws, cfg.Project, out)
 		case "diff":
-			if len(args) != 0 {
-				return errors.New("usage: panda diff")
-			}
-			return diff(ws, out)
+			return diff(ws, args, out)
 		case "push":
 			if len(args) != 0 {
 				return errors.New("usage: panda push")
@@ -218,7 +215,7 @@ Commands:
   path                          Print the active project's workspace path
   list [filters]                List local tasks grouped by status
   pull                          Fetch project tasks and merge local changes
-  diff                          Show local changes pending push
+  diff [taskNumber|localId]     Show local changes pending push
   push                          Apply local changes to Solutions
   create [title]                Create a local task
   edit <task|localId> [labels|json] Edit task fields, labels, or JSON
@@ -240,7 +237,7 @@ func printCommandHelp(command string, out io.Writer) error {
 		"path":       "Usage: panda path\nPrint the active project's workspace path.",
 		"list":       "Usage: panda list [--status <status,...>] [--no-complexity]\nList local tasks grouped by status and sorted by rank. Discarded tasks are hidden unless selected explicitly.",
 		"pull":       "Usage: panda pull\nFetch project tasks, preserve local edits, and report overlapping changes.",
-		"diff":       "Usage: panda diff\nShow local edits and staged actions relative to the last-synced baseline.",
+		"diff":       "Usage: panda diff [taskNumber|localId]\nShow local edits and staged actions grouped by task. A task ID limits the output to one task; description changes are shown as Markdown line diffs.",
 		"push":       "Usage: panda push\nCheck for remote conflicts, then apply local edits and staged actions.",
 		"create":     "Usage: panda create [title]\nCreate a local task with a temporary ID; push assigns its task number.",
 		"edit":       "Usage: panda edit <taskNumber|localId> [labels [labelName|--remove=labelName...]|json]\nInteractively edit title, type, priority, complexity, labels, and description. Type e to open the description in $EDITOR. Use `labels` for label-only editing or `json` to edit all metadata directly.",
@@ -481,7 +478,18 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 	return nil
 }
 
-func diff(ws *workspace.Workspace, out io.Writer) error {
+func diff(ws *workspace.Workspace, args []string, out io.Writer) error {
+	if len(args) > 1 {
+		return errors.New("usage: panda diff [taskNumber|localId]")
+	}
+	selectedDir := ""
+	if len(args) == 1 {
+		var err error
+		selectedDir, _, err = ws.FindTask(args[0])
+		if err != nil {
+			return err
+		}
+	}
 	dirs, err := ws.TaskDirectories()
 	if err != nil {
 		return err
@@ -492,37 +500,200 @@ func diff(ws *workspace.Workspace, out io.Writer) error {
 		if err != nil {
 			continue
 		}
-		key := stateKey(dir, local)
-		state, err := ws.ReadState(key)
-		if err != nil || state.LocalCreated {
-			fmt.Fprintf(out, "New task %s: %s\n", filepath.Base(dir), stringField(local, "title"))
-			changes++
+		if selectedDir != "" && dir != selectedDir {
 			continue
 		}
-		for _, field := range editableFields {
-			if !same(valueAt(local, field), valueAt(state.Remote, field)) {
-				fmt.Fprintf(out, "%s %s: %v -> %v\n", taskLabel(local), field, valueAt(state.Remote, field), valueAt(local, field))
-				changes++
+		key := stateKey(dir, local)
+		state, stateErr := ws.ReadState(key)
+		var taskChanges bytes.Buffer
+		if stateErr != nil || state.LocalCreated {
+			fmt.Fprintf(&taskChanges, "  %s\n", colorText(out, "1;32", "new task"))
+			changes++
+		} else {
+			for _, field := range editableFields {
+				if !same(valueAt(local, field), valueAt(state.Remote, field)) {
+					fmt.Fprintf(&taskChanges, "  %s: %s %s %s\n",
+						colorText(out, "1", field),
+						colorText(out, "31", formatDiffValue(valueAt(state.Remote, field))),
+						colorText(out, "2", "->"),
+						colorText(out, "32", formatDiffValue(valueAt(local, field))),
+					)
+					changes++
+				}
 			}
 		}
-		baseMarkdown, err := content.HTMLToMarkdown(stringField(state.Remote, "description"))
-		if err != nil {
-			return err
+		baseMarkdown := ""
+		if stateErr == nil && !state.LocalCreated {
+			baseMarkdown, err = content.HTMLToMarkdown(stringField(state.Remote, "description"))
+			if err != nil {
+				return err
+			}
 		}
-		localMarkdown, err := os.ReadFile(filepath.Join(dir, "description.md"))
-		if err == nil && string(localMarkdown) != baseMarkdown {
-			fmt.Fprintf(out, "%s description: modified\n", colorText(out, "1;36", taskLabel(local)))
+		localMarkdown, readErr := os.ReadFile(filepath.Join(dir, "description.md"))
+		if readErr == nil && string(localMarkdown) != baseMarkdown {
+			fmt.Fprintf(&taskChanges, "  %s\n", colorText(out, "1;36", "description.md"))
+			writeLineDiff(&taskChanges, out, baseMarkdown, string(localMarkdown))
 			changes++
 		}
-		if len(state.StagedNotes) > 0 {
-			fmt.Fprintf(out, "%s notes: %d staged\n", colorText(out, "1;36", taskLabel(local)), len(state.StagedNotes))
+		if stateErr == nil && len(state.StagedNotes) > 0 {
+			fmt.Fprintf(&taskChanges, "  %s\n", colorText(out, "36", fmt.Sprintf("notes: %d staged", len(state.StagedNotes))))
 			changes += len(state.StagedNotes)
+		}
+		if taskChanges.Len() > 0 {
+			heading := fmt.Sprintf("Task %s: %s", taskLabel(local), stringField(local, "title"))
+			fmt.Fprintln(out, colorText(out, "1;36", heading))
+			_, _ = taskChanges.WriteTo(out)
+			fmt.Fprintln(out)
 		}
 	}
 	if changes == 0 {
 		fmt.Fprintln(out, "No local changes.")
 	}
 	return nil
+}
+
+func formatDiffValue(value any) string {
+	switch value := value.(type) {
+	case nil:
+		return "(empty)"
+	case []any:
+		parts := make([]string, 0, len(value))
+		for _, item := range value {
+			parts = append(parts, formatDiffValue(item))
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	case map[string]any:
+		for _, key := range []string{"label", "name", "id"} {
+			if label := stringField(value, key); label != "" {
+				return label
+			}
+		}
+		encoded, err := json.Marshal(value)
+		if err == nil {
+			return string(encoded)
+		}
+	}
+	return fmt.Sprint(value)
+}
+
+type diffLine struct {
+	marker byte
+	text   string
+}
+
+func writeLineDiff(out, colorTarget io.Writer, before, after string) {
+	lines := myersDiff(splitDiffLines(before), splitDiffLines(after))
+	if len(lines) == 0 && before != after {
+		fmt.Fprintln(out, "    "+colorText(colorTarget, "33", "(final newline changed)"))
+		return
+	}
+	type lineRange struct{ start, end int }
+	var ranges []lineRange
+	for index, line := range lines {
+		if line.marker == ' ' {
+			continue
+		}
+		start, end := max(0, index-2), min(len(lines), index+3)
+		if len(ranges) > 0 && start <= ranges[len(ranges)-1].end {
+			ranges[len(ranges)-1].end = end
+		} else {
+			ranges = append(ranges, lineRange{start: start, end: end})
+		}
+	}
+	for index, lineRange := range ranges {
+		if index > 0 {
+			fmt.Fprintln(out, "    ...")
+		}
+		for _, line := range lines[lineRange.start:lineRange.end] {
+			text := fmt.Sprintf("%c%s", line.marker, line.text)
+			switch line.marker {
+			case '-':
+				text = colorText(colorTarget, "31", text)
+			case '+':
+				text = colorText(colorTarget, "32", text)
+			}
+			fmt.Fprintf(out, "    %s\n", text)
+		}
+	}
+}
+
+func splitDiffLines(value string) []string {
+	if value == "" {
+		return nil
+	}
+	lines := strings.Split(value, "\n")
+	if lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
+}
+
+func myersDiff(before, after []string) []diffLine {
+	n, m := len(before), len(after)
+	max := n + m
+	v := map[int]int{1: 0}
+	trace := make([]map[int]int, 0, max+1)
+	for distance := 0; distance <= max; distance++ {
+		state := make(map[int]int, len(v))
+		for diagonal, x := range v {
+			state[diagonal] = x
+		}
+		trace = append(trace, state)
+		for diagonal := -distance; diagonal <= distance; diagonal += 2 {
+			var x int
+			if diagonal == -distance || (diagonal != distance && v[diagonal-1] < v[diagonal+1]) {
+				x = v[diagonal+1]
+			} else {
+				x = v[diagonal-1] + 1
+			}
+			y := x - diagonal
+			for x < n && y < m && before[x] == after[y] {
+				x++
+				y++
+			}
+			v[diagonal] = x
+			if x >= n && y >= m {
+				return backtrackDiff(trace, before, after, distance)
+			}
+		}
+	}
+	return nil
+}
+
+func backtrackDiff(trace []map[int]int, before, after []string, distance int) []diffLine {
+	x, y := len(before), len(after)
+	reversed := make([]diffLine, 0, x+y)
+	for d := distance; d >= 0; d-- {
+		state := trace[d]
+		diagonal := x - y
+		var previousDiagonal int
+		if diagonal == -d || (diagonal != d && state[diagonal-1] < state[diagonal+1]) {
+			previousDiagonal = diagonal + 1
+		} else {
+			previousDiagonal = diagonal - 1
+		}
+		previousX := state[previousDiagonal]
+		previousY := previousX - previousDiagonal
+		for x > previousX && y > previousY {
+			x--
+			y--
+			reversed = append(reversed, diffLine{marker: ' ', text: before[x]})
+		}
+		if d == 0 {
+			break
+		}
+		if x == previousX {
+			y--
+			reversed = append(reversed, diffLine{marker: '+', text: after[y]})
+		} else {
+			x--
+			reversed = append(reversed, diffLine{marker: '-', text: before[x]})
+		}
+	}
+	for left, right := 0, len(reversed)-1; left < right; left, right = left+1, right-1 {
+		reversed[left], reversed[right] = reversed[right], reversed[left]
+	}
+	return reversed
 }
 
 type listOptions struct {
