@@ -8,7 +8,7 @@ to update them using the file system.
 
 - Go 1.26+
 - No database
-- File system
+- File system, stored under the operating system's user config directory
 
 ## Capabilities
 
@@ -20,18 +20,44 @@ to update them using the file system.
 
 ## Commands
 
-Read assets/solutions-api.json for the whole `paths` documentation
+Read `assets/solutions-openapi.json` for the whole `paths` documentation.
+The CLI uses the operating system's user config directory (Go's
+`os.UserConfigDir()`), under `panda-dashboard/`, for configuration and the
+global workspace.
+
+For example, the directory layout is:
+
+```text
+{user-config-dir}/panda-dashboard/
+  config.json
+  workspaces/
+    {projectName}/
+      .panda/
+        state/
+      {taskNumber-or-localId}/
+        description.md
+        metadata.json
+        notes/
+          {timeStamp}-{authorName}.md
+```
+
+The `.panda/state` directory stores the last-synced baseline and remote task
+IDs needed for synchronization. A task created locally uses a temporary local
+ID until a successful push creates it remotely; then its directory is renamed
+to the assigned task number.
 
 ### `login`
 
 - Read User Input Email and Password
 - HTTP POST `/auth/login` `{email,password}`
 - Saves the `token` in a local configuration file
+- Stores credentials/configuration under the OS config directory with
+  user-only permissions where supported
 - Use that token as header for the subsequent HTTP requests
 
 ### `config set project {projectName}`
 
-- Validates project exist -> `/projects?name={projectName}`
+- Validates the project exists by querying `/data/projects` by name
 - Updates the project id and name in local configuration
 
 ### `config get project`
@@ -41,20 +67,26 @@ Read assets/solutions-api.json for the whole `paths` documentation
 ### `pull`
 
 - If project is not set throws error
-- Fetch all the changes from the solutions app
-- The user can edit the files locally using the commands
-- Changes remain local until a `push` is proceeded
+- Fetch all tasks for the selected project from the Solutions app, following
+  API pagination
+- Compare the fetched tasks with the last-synced baseline
+- Apply remote-only changes locally and preserve local-only changes
+- Report conflicts when the same field changed both locally and remotely
+- Changes remain local until a `push` is performed
 
 ### `push`
 
 - If project is not set throws error
-- Takes all the local changes and impact them in solutions app using the API
+- Detects remote changes since the last pull and reports overlapping edits as
+  conflicts rather than overwriting them
+- Applies local changes and staged actions to the Solutions app
+- Updates the local baseline only after successful API operations
 
 ### `diff`
 
 - If project is not set throws error
-- It display all the changes locally that are going to be impacted in the
-  solutions app
+- Displays local changes relative to the last-synced baseline that are pending
+  to be applied to the Solutions app
 
 ### `create`
 
@@ -62,8 +94,8 @@ Read assets/solutions-api.json for the whole `paths` documentation
 
 ### `discard {taskNumber}`
 
-- Mark a task to discard locally
-- Add optional markdown note (to be transformed to html)
+- Stage a change to the task's status to `discarded`
+- Optionally stage a markdown note (to be transformed to HTML) with the change
 
 ### `edit {taskNumber}`
 
@@ -75,7 +107,17 @@ Read assets/solutions-api.json for the whole `paths` documentation
 
 ### `add-note {taskNumber}`
 
-- Add a note locally
+- Stage a markdown note locally; it is sent to the Solutions app on `push`
+
+### `clean [taskNumber]`
+
+- Discards local edits and staged actions for one task, or for the whole
+  project when no task number is provided
+- Restores the last-synced local version; run `pull` afterward to fetch any
+  newer remote changes
+- Removes unpushed locally-created tasks when cleaning them by local ID or
+  cleaning the whole project
+- Requires confirmation when cleaning the whole project
 
 ## Tasks
 
@@ -85,7 +127,7 @@ I want to be able to edit these:
 - Type (Enum)
 - Priority (Enum)
 - Complexity (Enum)
-- Details (HMTL)
+- Details (HTML)
 - Labels (Relationship -> `dev.labels`)
 
 And track these:
@@ -99,12 +141,13 @@ And track these:
 
 - Must be intuitive and easy to see the tasks metadata
 
-- `{projectName}`
-  - `{taskNumber`
+- `{user-config-dir}/panda-dashboard/workspaces/{projectName}`
+  - `.panda/state` (last-synced baselines and remote IDs)
+  - `{taskNumber}` or `{localId}` for an unpushed task
     - description.md
     - metadata.json
     - notes
-      - {timeStamp} - {authorName}.md
+      - `{timeStamp}-{authorName}.md`
 
 ## CLI
 
