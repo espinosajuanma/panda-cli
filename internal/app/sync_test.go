@@ -1280,6 +1280,64 @@ func TestListGroupsByWorkflowStatusSortsByRankAndFilters(t *testing.T) {
 	}
 }
 
+func TestListShowsStoryPointsHoursAndVisibleTotals(t *testing.T) {
+	ws := workspace.New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	fixtures := []map[string]any{
+		listTask("new-xs", 21, "new", "a", "xs", "Extra small", "feature"),
+		listTask("new-s", 22, "new", "b", "s", "Small", "feature"),
+		listTask("new-unknown", 23, "new", "c", "unknown", "Unknown", "feature"),
+		listTask("progress-m", 24, "inProgress", "a", "m", "Medium", "feature"),
+		listTask("progress-l", 25, "inProgress", "b", "l", "Large", "feature"),
+		listTask("progress-xl", 26, "inProgress", "c", "xl", "Extra large", "feature"),
+		listTask("progress-xxl", 27, "inProgress", "d", "xxl", "Double extra large", "feature"),
+		listTask("discarded-xs", 28, "discarded", "a", "xs", "Hidden by default", "feature"),
+	}
+	for _, task := range fixtures {
+		addSyncedTask(t, ws, task)
+	}
+
+	var output strings.Builder
+	if err := listTasks(ws, nil, &output); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	for _, expected := range []string{
+		"COMPLEXITY", "SP", "HOURS", "xs", "1", "4", "xxl", "13", "52",
+		"unknown", "Subtotal: 3 SP, 12 hours", "Subtotal: 29 SP, 116 hours",
+		"TOTAL (visible tasks): 32 SP, 128 hours",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Errorf("list output missing %q:\n%s", expected, text)
+		}
+	}
+	if strings.Contains(text, "Hidden by default") {
+		t.Fatalf("default filtering or unknown-complexity row was incorrect:\n%s", text)
+	}
+	unknownRowFound := false
+	for _, line := range strings.Split(text, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 7 && fields[0] == "23" {
+			unknownRowFound = reflect.DeepEqual(fields[:7], []string{"23", "medium", "feature", "unknown", "-", "-", "Unknown"})
+			break
+		}
+	}
+	if !unknownRowFound {
+		t.Fatalf("unrecognized complexity should show dashes in both calculated columns:\n%s", text)
+	}
+
+	output.Reset()
+	if err := listTasks(ws, []string{"--status", "new"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	filtered := output.String()
+	if !strings.Contains(filtered, "Subtotal: 3 SP, 12 hours") || !strings.Contains(filtered, "TOTAL (visible tasks): 3 SP, 12 hours") || strings.Contains(filtered, "Medium") {
+		t.Fatalf("filtered list totals should include only visible tasks:\n%s", filtered)
+	}
+}
+
 func listTask(id string, number float64, status, rank string, complexity any, title, taskType string) map[string]any {
 	return map[string]any{
 		"id": id, "number": number, "title": title, "type": taskType,

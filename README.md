@@ -132,8 +132,12 @@ and directories at the root are left in place.
   display them
 - `--no-complexity` shows only tasks without a complexity value
 - `--no-description` shows only tasks whose local description is missing or blank
-- Table columns are number, priority, type, complexity, and title; release tasks
-  are cyan
+- Table columns are number, priority, type, complexity, SP, Hours, and title;
+  complexity maps to estimates xs=1 SP/4 hours, s=2/8, m=3/12, l=5/20,
+  xl=8/32, and xxl=13/52
+- Shows a subtotal for each status group and a grand total for all visible tasks;
+  tasks without a recognized complexity show `-` for SP and Hours and add zero
+  to totals
 - Examples: `panda list --status 'new,toDo'`, `panda list --no-complexity`, and `panda list --no-description`
 
 ### `create`

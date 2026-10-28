@@ -243,7 +243,7 @@ func printCommandHelp(command string, out io.Writer) error {
 		"login":      "Usage: panda login [email]\nPrompts for credentials and stores the session token.",
 		"config":     "Usage: panda config set project <name> | panda config get project\nSelect or display the active Solutions project.",
 		"path":       "Usage: panda path\nPrint the active project's workspace path.",
-		"list":       "Usage: panda list [--status <status,...>] [--no-complexity] [--no-description]\nList local tasks grouped by status and sorted by rank. Discarded tasks are hidden unless selected explicitly.",
+		"list":       "Usage: panda list [--status <status,...>] [--no-complexity] [--no-description]\nList local tasks grouped by status and sorted by rank. Shows story points and hours from each task's complexity, with group subtotals and a total for visible tasks. Discarded tasks are hidden unless selected explicitly.",
 		"pull":       "Usage: panda pull\nFetch project tasks, preserve local edits, and report overlapping changes.",
 		"diff":       "Usage: panda diff [taskNumber|localId] [--verbose] [--summary]\nList local edits grouped by task for a quick check. Use --verbose to show changed Markdown description and note lines or --summary to print counts of edited, discarded, and new tasks. Terminal output uses the pager selected by $PAGER (defaults to less -FRX).",
 		"push":       "Usage: panda push\nCheck for remote conflicts, then apply local edits and staged actions.",
@@ -1018,6 +1018,20 @@ type listOptions struct {
 
 var taskStatusOrder = []string{"new", "toDo", "inProgress", "inReview", "completed", "staging", "released", "discarded"}
 
+type effortEstimate struct {
+	storyPoints int
+	hours       int
+}
+
+var complexityEffort = map[string]effortEstimate{
+	"xs":  {storyPoints: 1, hours: 4},
+	"s":   {storyPoints: 2, hours: 8},
+	"m":   {storyPoints: 3, hours: 12},
+	"l":   {storyPoints: 5, hours: 20},
+	"xl":  {storyPoints: 8, hours: 32},
+	"xxl": {storyPoints: 13, hours: 52},
+}
+
 func listTasks(ws *workspace.Workspace, args []string, out io.Writer) error {
 	options, err := parseListOptions(args)
 	if err != nil {
@@ -1062,15 +1076,20 @@ func listTasks(ws *workspace.Workspace, args []string, out io.Writer) error {
 		fmt.Fprintln(out, "No tasks match the filters.")
 		return nil
 	}
+	var total effortEstimate
 	for i, status := range statuses {
 		if i > 0 {
 			fmt.Fprintln(out, colorText(out, "2", "----------------------------------------"))
 		}
 		sortTasksByRank(groups[status])
-		if err := printTaskGroup(out, status, groups[status]); err != nil {
+		groupTotal, err := printTaskGroup(out, status, groups[status])
+		if err != nil {
 			return err
 		}
+		total.storyPoints += groupTotal.storyPoints
+		total.hours += groupTotal.hours
 	}
+	fmt.Fprintf(out, "TOTAL (visible tasks): %d SP, %d hours\n", total.storyPoints, total.hours)
 	return nil
 }
 
@@ -1177,7 +1196,7 @@ func compareTaskNumbers(left, right any) int {
 	return strings.Compare(fmt.Sprint(left), fmt.Sprint(right))
 }
 
-func printTaskGroup(out io.Writer, status string, tasks []map[string]any) error {
+func printTaskGroup(out io.Writer, status string, tasks []map[string]any) (effortEstimate, error) {
 	style := "1;32"
 	if status == "released" {
 		style = "1;36"
@@ -1185,9 +1204,10 @@ func printTaskGroup(out io.Writer, status string, tasks []map[string]any) error 
 	fmt.Fprintln(out, colorText(out, style, displayStatus(status)))
 	var table bytes.Buffer
 	writer := tabwriter.NewWriter(&table, 0, 4, 2, ' ', 0)
-	if _, err := fmt.Fprintln(writer, "NUMBER\tPRIORITY\tTYPE\tCOMPLEXITY\tTITLE"); err != nil {
-		return err
+	if _, err := fmt.Fprintln(writer, "NUMBER\tPRIORITY\tTYPE\tCOMPLEXITY\tSP\tHOURS\tTITLE"); err != nil {
+		return effortEstimate{}, err
 	}
+	var total effortEstimate
 	for _, task := range tasks {
 		number := stringField(task, "number")
 		if number == "" {
@@ -1197,14 +1217,22 @@ func printTaskGroup(out io.Writer, status string, tasks []map[string]any) error 
 		if complexity == "" {
 			complexity = "-"
 		}
-		_, err := fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\n",
-			tableCell(number), tableCell(task["priority"]), tableCell(task["type"]), complexity, tableCell(task["title"]))
+		storyPoints, hours := "-", "-"
+		if estimate, ok := complexityEffort[strings.ToLower(strings.TrimSpace(complexity))]; ok {
+			storyPoints = strconv.Itoa(estimate.storyPoints)
+			hours = strconv.Itoa(estimate.hours)
+			total.storyPoints += estimate.storyPoints
+			total.hours += estimate.hours
+		}
+		_, err := fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			tableCell(number), tableCell(task["priority"]), tableCell(task["type"]), complexity,
+			storyPoints, hours, tableCell(task["title"]))
 		if err != nil {
-			return err
+			return effortEstimate{}, err
 		}
 	}
 	if err := writer.Flush(); err != nil {
-		return err
+		return effortEstimate{}, err
 	}
 	lines := strings.Split(strings.TrimSuffix(table.String(), "\n"), "\n")
 	for i, line := range lines {
@@ -1216,7 +1244,8 @@ func printTaskGroup(out io.Writer, status string, tasks []map[string]any) error 
 		}
 		fmt.Fprintln(out, line)
 	}
-	return nil
+	fmt.Fprintf(out, "Subtotal: %d SP, %d hours\n", total.storyPoints, total.hours)
+	return total, nil
 }
 
 func displayStatus(status string) string {
