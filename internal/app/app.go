@@ -37,14 +37,18 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 		return nil
 	}
 	if args[0] == "help" {
-		if len(args) > 1 && args[1] != "--help" && args[1] != "-h" {
-			return printCommandHelp(args[1], out)
+		commandArgs := args[1:]
+		if len(commandArgs) > 0 && (commandArgs[len(commandArgs)-1] == "--help" || commandArgs[len(commandArgs)-1] == "-h") {
+			commandArgs = commandArgs[:len(commandArgs)-1]
+		}
+		if len(commandArgs) > 0 {
+			return printCommandHelp(strings.Join(commandArgs, " "), out)
 		}
 		printHelp(out)
 		return nil
 	}
 	if len(args) > 1 && (args[len(args)-1] == "--help" || args[len(args)-1] == "-h") {
-		return printCommandHelp(args[0], out)
+		return printCommandHelp(commandHelpKey(args[:len(args)-1]), out)
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -208,62 +212,6 @@ const fishCompletion = `complete -c panda -f -n '__fish_seen_subcommand_from edi
 complete -c panda -f -n '__fish_seen_subcommand_from edit; and test (count (commandline -opc)) -eq 3' -a labels
 complete -c panda -f -n '__fish_seen_subcommand_from completion; and test (commandline -opc)[3] = labels' -a '(panda completion labels (commandline -ct) 2>/dev/null)'
 complete -c panda -f -n 'not __fish_seen_subcommand_from login config path list pull diff push create edit edit-note view add-note discard clean completion' -a 'login config path list pull diff push create edit edit-note view add-note discard clean completion'`
-
-func printHelp(out io.Writer) {
-	fmt.Fprintf(out, "\x1b[1;32mPANDA DASHBOARD\x1b[0m — sync Solutions tasks with local files\n\n")
-	fmt.Fprintln(out, `Usage:
-
-  panda <command> [arguments]
-
-Commands:
-  login                         Authenticate with Solutions
-  config set project <name>     Select the active project
-  config get project            Show the active project
-  path                          Print the active project's workspace path
-  list [filters]                List local tasks grouped by status
-  pull                          Fetch project tasks and merge local changes
-  diff [taskNumber|localId] [--verbose] [--summary]  List local changes
-  push                          Apply local changes to Solutions
-  create [title]                Create a local task
-  edit <task|localId> [labels|json] Edit task fields, labels, or JSON
-  edit-note <task> <note-file>  Edit one of your synced task notes
-  view <taskNumber|localId>     Display a task
-  add-note <task> [text]        Stage a task note
-  discard <task> [note]         Stage task discard and optional note
-  clean [taskNumber] [--yes]    Discard local changes (all tasks if omitted)
-  completion <shell>             Print bash, zsh, or fish completion setup
-  completion labels [prefix]    Print matching project labels
-
-Task files and configuration are stored below the OS user config directory in
-panda-dashboard/. Set EDITOR to choose the editor used by edit and note commands.`)
-}
-
-func printCommandHelp(command string, out io.Writer) error {
-	help := map[string]string{
-		"login":      "Usage: panda login [email]\nPrompts for credentials and stores the session token.",
-		"config":     "Usage: panda config set project <name> | panda config get project\nSelect or display the active Solutions project.",
-		"path":       "Usage: panda path\nPrint the active project's workspace path.",
-		"list":       "Usage: panda list [--current] [--staging] [--released] [--discarded] [--all] [--status <status,...>] [--no-complexity] [--no-description]\nList local tasks grouped by status and sorted by rank. Quick status filters can be combined; without a status filter, shows new, toDo, inProgress, inReview, and completed tasks. Shows story points and hours from each task's complexity, with group subtotals and a total for visible tasks.",
-		"pull":       "Usage: panda pull\nFetch project tasks, preserve local edits, and report overlapping changes.",
-		"diff":       "Usage: panda diff [taskNumber|localId] [--verbose] [--summary]\nList local edits grouped by task for a quick check. Use --verbose to show changed Markdown description and note lines or --summary to print counts of edited, discarded, and new tasks. Terminal output uses the pager selected by $PAGER (defaults to less -FRX).",
-		"push":       "Usage: panda push\nCheck for remote conflicts, then apply local edits and staged actions.",
-		"create":     "Usage: panda create [title]\nCreate a local task with a temporary ID; push assigns its task number.",
-		"edit":       "Usage: panda edit <taskNumber|localId> [labels [labelName|--remove=labelName...]|json]\nInteractively edit title, type, priority, complexity, labels, and description. Type e to open the description in $EDITOR. Use `labels` for label-only editing or `json` to edit all metadata directly.",
-		"edit-note":  "Usage: panda edit-note <taskNumber|localId> <note-file>\nOpen one of your existing synced notes in $EDITOR. Use `panda view <task>` to find the note filename (the .md extension is optional); review with `panda diff --verbose` and send it with `panda push`.",
-		"view":       "Usage: panda view <taskNumber|localId>\nDisplay task metadata and its Markdown description.",
-		"add-note":   "Usage: panda add-note <taskNumber|localId> [text]\nStage a Markdown note for the next push.",
-		"discard":    "Usage: panda discard <taskNumber|localId> [note]\nStage status=discarded and an optional Markdown note.",
-		"clean":      "Usage: panda clean [taskNumber|localId] [--yes]\nDiscard local edits; without a task ID, confirm before cleaning the project.",
-		"completion": "Usage: panda completion <bash|zsh|fish> | panda completion labels [prefix]\nInstall shell completion or print matching project labels.",
-	}
-	text, ok := help[command]
-	if !ok {
-		return fmt.Errorf("no help available for %q", command)
-	}
-	fmt.Fprintf(out, "\x1b[1;32m%s\x1b[0m\n\n", strings.ToUpper(command))
-	fmt.Fprintln(out, text)
-	return nil
-}
 
 func login(ctx context.Context, cfg *config.Config, client *solutions.Client, args []string, in io.Reader, out io.Writer) error {
 	var email string
