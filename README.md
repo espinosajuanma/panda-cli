@@ -116,10 +116,10 @@ and directories at the root are left in place.
 - Displays pending local changes grouped under each task's number and title
 - By default, lists changed fields and marks a changed description as `updated`
 - Shows type, priority, and complexity for newly created tasks
-- `--verbose` shows changed Markdown description lines with `-` and `+` prefixes
+- `--verbose` shows changed Markdown description lines and staged note contents with `-` and `+` prefixes
 - `--summary` prints counts of edited, discarded, and new tasks instead of task details
 - `panda diff {taskNumber|localId}` limits the view to one task
-- Uses `$PAGER` (defaults to `less -FRX`) when output is interactive; piped output is printed directly
+- Uses `$PAGER` (defaults to `less -FRX`) for interactive output that exceeds the terminal height; shorter output and piped output are printed directly
 
 ### `list [--status {status,...}] [--no-complexity] [--no-description]`
 

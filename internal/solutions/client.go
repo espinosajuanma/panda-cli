@@ -205,6 +205,9 @@ func (c *Client) request(ctx context.Context, method, path string, body, output 
 		return err
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		if c.Token != "" && path != "/auth/login" && isInvalidTokenResponse(data) {
+			return fmt.Errorf("your Solutions login token is invalid or expired; run `panda login` to sign in again")
+		}
 		message := strings.TrimSpace(string(data))
 		if message == "" {
 			message = response.Status
@@ -218,4 +221,20 @@ func (c *Client) request(ctx context.Context, method, path string, body, output 
 		return fmt.Errorf("decode Solutions API response: %w", err)
 	}
 	return nil
+}
+
+func isInvalidTokenResponse(data []byte) bool {
+	var response struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(data, &response); err != nil {
+		return false
+	}
+	code := strings.ToLower(strings.TrimSpace(response.Code))
+	message := strings.ToLower(strings.TrimSpace(response.Message))
+	if strings.Contains(message, "invalid token") || strings.Contains(message, "expired token") || strings.Contains(message, "token expired") {
+		return true
+	}
+	return (code == "unauthorize" || code == "unauthorized") && strings.Contains(message, "token") && strings.Contains(message, "login")
 }

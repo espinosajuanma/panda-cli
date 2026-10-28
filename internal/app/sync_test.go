@@ -765,6 +765,51 @@ func TestDiffGroupsTaskChangesAndShowsDescriptionLines(t *testing.T) {
 	}
 }
 
+func TestVerboseDiffShowsStagedNoteContent(t *testing.T) {
+	remote := map[string]any{
+		"id": "task-note-diff", "number": float64(13765), "title": "Follow up on partnership request", "type": "feature",
+		"priority": "medium", "status": "new", "description": "",
+		"project": map[string]any{"id": "project-1"}, "labels": []any{}, "assignees": []any{}, "reviewers": []any{}, "notes": []any{},
+	}
+	ws, dir := makeSyncedTask(t, remote)
+	filename := "20261028T120000.000Z-local.md"
+	if err := workspace.WriteFileAtomic(filepath.Join(dir, "notes", filename), []byte("Reached out to the partner.\nThey will reply next week."), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state, err := ws.ReadState("task-note-diff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.StagedNotes = []string{filename}
+	if err := ws.WriteState("task-note-diff", state); err != nil {
+		t.Fatal(err)
+	}
+
+	var output bytes.Buffer
+	if err := diff(ws, []string{"--verbose"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	for _, expected := range []string{
+		"Task 13765: Follow up on partnership request",
+		"staged note: notes/" + filename,
+		"+Reached out to the partner.",
+		"+They will reply next week.",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Errorf("verbose diff output missing %q:\n%s", expected, text)
+		}
+	}
+
+	output.Reset()
+	if err := diff(ws, nil, &output); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "notes: 1 staged") || strings.Contains(output.String(), "Reached out to the partner") {
+		t.Fatalf("default diff should summarize staged notes only:\n%s", output.String())
+	}
+}
+
 func TestDiffShowsKeyFieldsForNewTasks(t *testing.T) {
 	ws := workspace.New(t.TempDir())
 	if err := ws.Ensure(); err != nil {
@@ -842,11 +887,23 @@ func TestDiffSummaryCountsEditedDiscardedAndNewTasks(t *testing.T) {
 }
 
 func TestSummaryDiffSkipsPager(t *testing.T) {
-	if shouldPageDiff([]string{"--summary"}, true) {
+	if shouldPageDiff([]string{"--summary"}, true, []byte("summary\n"), 80, 24) {
 		t.Fatal("summary diff should not use the pager")
 	}
-	if !shouldPageDiff([]string{"--verbose"}, true) {
-		t.Fatal("terminal detail diff should use the pager")
+	if shouldPageDiff([]string{"--verbose"}, true, []byte("small diff\n"), 80, 24) {
+		t.Fatal("detail diff that fits the terminal should not use the pager")
+	}
+	if !shouldPageDiff([]string{"--verbose"}, true, []byte(strings.Repeat("line\n", 25)), 80, 24) {
+		t.Fatal("detail diff longer than the terminal should use the pager")
+	}
+}
+
+func TestOutputFitsScreenAccountsForWrappingAndANSI(t *testing.T) {
+	if !outputFitsScreen([]byte("\x1b[1;36mheading\x1b[0m\nbody\n"), 10, 2) {
+		t.Fatal("ANSI color codes should not count as screen columns")
+	}
+	if outputFitsScreen([]byte("12345678901\n"), 10, 1) {
+		t.Fatal("wrapped output should count as multiple screen rows")
 	}
 }
 

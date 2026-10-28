@@ -17,6 +17,7 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/term"
 
@@ -549,18 +550,55 @@ func formatPullProgress(current, total int) string {
 }
 
 func diff(ws *workspace.Workspace, args []string, out io.Writer) error {
-	if !shouldPageDiff(args, isTerminal(out)) {
+	if !isTerminal(out) || contains(args, "--summary") {
 		return renderDiff(ws, args, out, out)
 	}
 	var output bytes.Buffer
 	if err := renderDiff(ws, args, &output, out); err != nil {
 		return err
 	}
+	if file, ok := out.(*os.File); ok {
+		width, height, err := term.GetSize(int(file.Fd()))
+		if err == nil && !shouldPageDiff(args, true, output.Bytes(), width, height) {
+			_, writeErr := io.Copy(out, &output)
+			return writeErr
+		}
+	}
 	return pageOutput(out, output.Bytes())
 }
 
-func shouldPageDiff(args []string, terminal bool) bool {
-	return terminal && !contains(args, "--summary")
+func shouldPageDiff(args []string, terminal bool, output []byte, width, height int) bool {
+	if !terminal || contains(args, "--summary") {
+		return false
+	}
+	return !outputFitsScreen(output, width, height)
+}
+
+var ansiEscapeSequence = regexp.MustCompile("\\x1b\\[[0-?]*[ -/]*[@-~]")
+
+func outputFitsScreen(output []byte, width, height int) bool {
+	if width <= 0 || height <= 0 {
+		return false
+	}
+	text := strings.ReplaceAll(string(output), "\r", "")
+	lines := strings.Split(text, "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	rows := 0
+	for _, line := range lines {
+		visible := ansiEscapeSequence.ReplaceAllString(line, "")
+		columns := utf8.RuneCountInString(visible)
+		if columns == 0 {
+			rows++
+		} else {
+			rows += (columns + width - 1) / width
+		}
+		if rows > height {
+			return false
+		}
+	}
+	return true
 }
 
 func renderDiff(ws *workspace.Workspace, args []string, out, colorTarget io.Writer) error {
@@ -637,7 +675,19 @@ func renderDiff(ws *workspace.Workspace, args []string, out, colorTarget io.Writ
 			taskChanged = true
 		}
 		if stateErr == nil && len(state.StagedNotes) > 0 {
-			fmt.Fprintf(&taskChanges, "  %s\n", colorText(colorTarget, "36", fmt.Sprintf("notes: %d staged", len(state.StagedNotes))))
+			if options.verbose {
+				for _, filename := range state.StagedNotes {
+					note, noteErr := os.ReadFile(filepath.Join(dir, "notes", filename))
+					if noteErr != nil {
+						return fmt.Errorf("read staged note %q: %w", filename, noteErr)
+					}
+					notePath := filepath.ToSlash(filepath.Join("notes", filename))
+					fmt.Fprintf(&taskChanges, "  %s\n", colorText(colorTarget, "1;36", "staged note: "+notePath))
+					writeLineDiff(&taskChanges, colorTarget, "", string(note))
+				}
+			} else {
+				fmt.Fprintf(&taskChanges, "  %s\n", colorText(colorTarget, "36", fmt.Sprintf("notes: %d staged", len(state.StagedNotes))))
+			}
 			changes += len(state.StagedNotes)
 			taskChanged = true
 		}

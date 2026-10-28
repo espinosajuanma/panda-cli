@@ -98,3 +98,33 @@ func TestListStopsWhenTotalIsSatisfiedEvenIfOffsetIsPresent(t *testing.T) {
 		t.Fatalf("made %d requests, want exactly one", requests)
 	}
 }
+
+func TestInvalidTokenResponsePromptsUserToLoginAgain(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"code":"unauthorize","message":"Invalid token. Try to log in again."}`, http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	_, err := NewClient(server.URL, "expired-token").ListTasks(context.Background(), "project-7")
+	if err == nil {
+		t.Fatal("ListTasks unexpectedly succeeded")
+	}
+	if got, want := err.Error(), "your Solutions login token is invalid or expired; run `panda login` to sign in again"; got != want {
+		t.Fatalf("error = %q, want %q", got, want)
+	}
+}
+
+func TestLoginErrorsAreNotReportedAsExpiredTokens(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"code":"unauthorize","message":"Invalid token. Try to log in again."}`, http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	_, err := NewClient(server.URL, "existing-token").Login(context.Background(), "dev@example.com", "wrong")
+	if err == nil {
+		t.Fatal("Login unexpectedly succeeded")
+	}
+	if strings.Contains(err.Error(), "panda login") {
+		t.Fatalf("login error was incorrectly reported as an expired token: %v", err)
+	}
+}
