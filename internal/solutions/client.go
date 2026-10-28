@@ -15,6 +15,7 @@ import (
 type Client struct {
 	BaseURL string
 	Token   string
+	Email   string
 	HTTP    *http.Client
 }
 
@@ -132,6 +133,34 @@ func (c *Client) AddNote(ctx context.Context, id, note string) error {
 	return c.request(ctx, http.MethodPut, "/data/dev.tasks/"+url.PathEscape(id)+"/addNote", map[string]string{"note": note}, nil)
 }
 
+func (c *Client) FindUser(ctx context.Context, email string) (map[string]any, error) {
+	items, err := c.list(ctx, "/data/sys.users", url.Values{
+		"email":   []string{email},
+		"_fields": []string{"id,email,label"},
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range items {
+		var user map[string]any
+		if err := json.Unmarshal(item, &user); err != nil {
+			return nil, err
+		}
+		if strings.EqualFold(stringValue(user["email"]), email) {
+			return user, nil
+		}
+	}
+	return nil, fmt.Errorf("user %q was not found", email)
+}
+
+func (c *Client) EditMyNotes(ctx context.Context, id string, myNotes []map[string]any) (map[string]any, error) {
+	var updated map[string]any
+	err := c.request(ctx, http.MethodPut, "/data/dev.tasks/"+url.PathEscape(id)+"/editMyNotes", map[string]any{
+		"myNotes": myNotes,
+	}, &updated)
+	return updated, err
+}
+
 func (c *Client) list(ctx context.Context, endpoint string, query url.Values) ([]json.RawMessage, error) {
 	items := make([]json.RawMessage, 0)
 	seenOffsets := make(map[string]bool)
@@ -221,6 +250,13 @@ func (c *Client) request(ctx context.Context, method, path string, body, output 
 		return fmt.Errorf("decode Solutions API response: %w", err)
 	}
 	return nil
+}
+
+func stringValue(value any) string {
+	if value == nil {
+		return ""
+	}
+	return fmt.Sprint(value)
 }
 
 func isInvalidTokenResponse(data []byte) bool {

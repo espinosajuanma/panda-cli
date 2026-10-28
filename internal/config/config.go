@@ -17,6 +17,7 @@ type Project struct {
 type Config struct {
 	APIURL  string   `json:"api_url,omitempty"`
 	Token   string   `json:"token,omitempty"`
+	Email   string   `json:"email,omitempty"`
 	Project *Project `json:"project,omitempty"`
 }
 

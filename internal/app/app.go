@@ -51,6 +51,7 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 		return fmt.Errorf("load configuration: %w", err)
 	}
 	client := solutions.NewClient(cfg.APIURL, cfg.Token)
+	client.Email = cfg.Email
 	command, args := args[0], args[1:]
 	switch command {
 	case "login":
@@ -64,7 +65,7 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 			return errors.New("usage: panda path")
 		}
 		return printWorkspacePath(cfg, out)
-	case "list", "pull", "diff", "push", "create", "edit", "view", "add-note", "discard", "clean":
+	case "list", "pull", "diff", "push", "create", "edit", "edit-note", "view", "add-note", "discard", "clean":
 		ws, err := projectWorkspace(cfg)
 		if err != nil {
 			return err
@@ -94,6 +95,11 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 			return createTask(ws, cfg.Project, args, in, out)
 		case "edit":
 			return editTask(context.Background(), ws, args, client, cfg, in, out)
+		case "edit-note":
+			if err := requireLogin(cfg); err != nil {
+				return err
+			}
+			return editNote(ws, args, client, out)
 		case "view":
 			return viewTask(ws, args, out)
 		case "add-note":
@@ -178,7 +184,7 @@ const bashCompletion = `_panda_complete() {
     COMPREPLY=()
     while IFS= read -r candidate; do COMPREPLY+=("$candidate"); done < <(panda completion labels "$cur" 2>/dev/null)
   else
-    COMPREPLY=( $(compgen -W "login config path list pull diff push create edit view add-note discard clean completion" -- "$cur") )
+    COMPREPLY=( $(compgen -W "login config path list pull diff push create edit edit-note view add-note discard clean completion" -- "$cur") )
   fi
 }
 complete -F _panda_complete panda`
@@ -193,7 +199,7 @@ _panda() {
   elif [[ "${words[2]}" == "completion" && "${words[3]}" == "labels" ]]; then
     compadd -- "${(@f)$(panda completion labels "$cur" 2>/dev/null)}"
   else
-    compadd -- login config path list pull diff push create edit view add-note discard clean completion
+    compadd -- login config path list pull diff push create edit edit-note view add-note discard clean completion
   fi
 }
 compdef _panda panda`
@@ -201,7 +207,7 @@ compdef _panda panda`
 const fishCompletion = `complete -c panda -f -n '__fish_seen_subcommand_from edit; and test (count (commandline -opc)) -ge 4; and test (commandline -opc)[4] = labels' -a '(panda completion labels (commandline -ct) 2>/dev/null)'
 complete -c panda -f -n '__fish_seen_subcommand_from edit; and test (count (commandline -opc)) -eq 3' -a labels
 complete -c panda -f -n '__fish_seen_subcommand_from completion; and test (commandline -opc)[3] = labels' -a '(panda completion labels (commandline -ct) 2>/dev/null)'
-complete -c panda -f -n 'not __fish_seen_subcommand_from login config path list pull diff push create edit view add-note discard clean completion' -a 'login config path list pull diff push create edit view add-note discard clean completion'`
+complete -c panda -f -n 'not __fish_seen_subcommand_from login config path list pull diff push create edit edit-note view add-note discard clean completion' -a 'login config path list pull diff push create edit edit-note view add-note discard clean completion'`
 
 func printHelp(out io.Writer) {
 	fmt.Fprintf(out, "\x1b[1;32mPANDA DASHBOARD\x1b[0m — sync Solutions tasks with local files\n\n")
@@ -220,6 +226,7 @@ Commands:
   push                          Apply local changes to Solutions
   create [title]                Create a local task
   edit <task|localId> [labels|json] Edit task fields, labels, or JSON
+  edit-note <task> <note-file>  Edit one of your synced task notes
   view <taskNumber|localId>     Display a task
   add-note <task> [text]        Stage a task note
   discard <task> [note]         Stage task discard and optional note
@@ -238,10 +245,11 @@ func printCommandHelp(command string, out io.Writer) error {
 		"path":       "Usage: panda path\nPrint the active project's workspace path.",
 		"list":       "Usage: panda list [--status <status,...>] [--no-complexity] [--no-description]\nList local tasks grouped by status and sorted by rank. Discarded tasks are hidden unless selected explicitly.",
 		"pull":       "Usage: panda pull\nFetch project tasks, preserve local edits, and report overlapping changes.",
-		"diff":       "Usage: panda diff [taskNumber|localId] [--verbose] [--summary]\nList local edits grouped by task for a quick check. Use --verbose to show changed Markdown description lines or --summary to print counts of edited, discarded, and new tasks. Terminal output uses the pager selected by $PAGER (defaults to less -FRX).",
+		"diff":       "Usage: panda diff [taskNumber|localId] [--verbose] [--summary]\nList local edits grouped by task for a quick check. Use --verbose to show changed Markdown description and note lines or --summary to print counts of edited, discarded, and new tasks. Terminal output uses the pager selected by $PAGER (defaults to less -FRX).",
 		"push":       "Usage: panda push\nCheck for remote conflicts, then apply local edits and staged actions.",
 		"create":     "Usage: panda create [title]\nCreate a local task with a temporary ID; push assigns its task number.",
 		"edit":       "Usage: panda edit <taskNumber|localId> [labels [labelName|--remove=labelName...]|json]\nInteractively edit title, type, priority, complexity, labels, and description. Type e to open the description in $EDITOR. Use `labels` for label-only editing or `json` to edit all metadata directly.",
+		"edit-note":  "Usage: panda edit-note <taskNumber|localId> <note-file>\nOpen one of your existing synced notes in $EDITOR. Use `panda view <task>` to find the note filename (the .md extension is optional); review with `panda diff --verbose` and send it with `panda push`.",
 		"view":       "Usage: panda view <taskNumber|localId>\nDisplay task metadata and its Markdown description.",
 		"add-note":   "Usage: panda add-note <taskNumber|localId> [text]\nStage a Markdown note for the next push.",
 		"discard":    "Usage: panda discard <taskNumber|localId> [note]\nStage status=discarded and an optional Markdown note.",
@@ -292,6 +300,7 @@ func login(ctx context.Context, cfg *config.Config, client *solutions.Client, ar
 		return err
 	}
 	cfg.Token = token
+	cfg.Email = email
 	if err := cfg.Save(); err != nil {
 		return fmt.Errorf("save configuration: %w", err)
 	}
@@ -386,7 +395,7 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 				return err
 			}
 			state := workspace.State{Remote: cloneMap(remote)}
-			if err := syncRemoteNotes(dir, remote, state.StagedNotes); err != nil {
+			if err := syncRemoteNotes(dir, remote, state.StagedNotes, nil); err != nil {
 				return err
 			}
 			if err := ws.WriteState(id, state); err != nil {
@@ -450,10 +459,29 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 				return err
 			}
 		}
-		if err := syncRemoteNotes(dir, remote, state.StagedNotes); err != nil {
+		localNoteNames, err := changedNoteFilenames(dir, state.Remote)
+		if err != nil {
 			return err
 		}
-		state.Remote = advanceBaseline(state.Remote, remote, fields, descriptionConflict)
+		noteConflicts, err := localNoteConflicts(dir, state.Remote, remote)
+		if err != nil {
+			return err
+		}
+		if len(noteConflicts) > 0 {
+			conflictCount += len(noteConflicts)
+			progress.Pause()
+			labels := make([]string, len(noteConflicts))
+			for index, filename := range noteConflicts {
+				labels[index] = filepath.ToSlash(filepath.Join("notes", filename))
+			}
+			fmt.Fprintf(out, "%s task %s: %s\n", colorText(out, "1;31", "Conflict"), taskLabel(local), strings.Join(labels, ", "))
+		}
+		if err := syncRemoteNotes(dir, remote, state.StagedNotes, localNoteNames); err != nil {
+			return err
+		}
+		baseline := state.Remote
+		state.Remote = advanceBaseline(baseline, remote, fields, descriptionConflict)
+		state.Remote = advanceNotesBaseline(baseline, state.Remote, noteConflicts)
 		if err := ws.WriteState(id, state); err != nil {
 			return err
 		}
@@ -673,6 +701,38 @@ func renderDiff(ws *workspace.Workspace, args []string, out, colorTarget io.Writ
 			}
 			changes++
 			taskChanged = true
+		}
+		if stateErr == nil && !state.LocalCreated {
+			noteChanges, noteErr := localNoteChanges(dir, state.Remote)
+			if noteErr != nil {
+				return fmt.Errorf("inspect notes for %s: %w", taskLabel(local), noteErr)
+			}
+			filenames := make([]string, 0, len(noteChanges))
+			for filename := range noteChanges {
+				filenames = append(filenames, filename)
+			}
+			sort.Strings(filenames)
+			for _, filename := range filenames {
+				if options.verbose {
+					baseNotes, noteErr := getRemoteNotes(state.Remote)
+					if noteErr != nil {
+						return noteErr
+					}
+					before := ""
+					for _, note := range baseNotes {
+						if note.filename == filename {
+							before = note.markdown
+							break
+						}
+					}
+					fmt.Fprintf(&taskChanges, "  %s\n", colorText(colorTarget, "1;36", "edited note: "+filepath.ToSlash(filepath.Join("notes", filename))))
+					writeLineDiff(&taskChanges, colorTarget, before, noteChanges[filename])
+				} else {
+					fmt.Fprintf(&taskChanges, "  %s %s\n", colorText(colorTarget, "1", "note:"), colorText(colorTarget, "32", filepath.ToSlash(filepath.Join("notes", filename))+" updated"))
+				}
+				changes++
+				taskChanged = true
+			}
 		}
 		if stateErr == nil && len(state.StagedNotes) > 0 {
 			if options.verbose {
@@ -1262,6 +1322,19 @@ func push(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 				problems = append(problems, fmt.Sprintf("%s: conflict in %s; use `panda clean %s` then pull to take the remote version, or resolve the files manually", taskLabel(local), strings.Join(conflicts, ", "), taskLabel(local)))
 				continue
 			}
+			noteChanges, err := changedNoteFilenames(dir, state.Remote)
+			if err != nil {
+				problems = append(problems, fmt.Sprintf("%s: inspect edited notes: %v", taskLabel(local), err))
+				continue
+			}
+			var myNotes []map[string]any
+			if len(noteChanges) > 0 {
+				myNotes, err = buildMyNotesPayload(ctx, client, dir, remote, state.Remote)
+				if err != nil {
+					problems = append(problems, fmt.Sprintf("%s: edit notes: %v", taskLabel(local), err))
+					continue
+				}
+			}
 			payload, changed, err := mergeForPush(local, remote, state.Remote, dir)
 			if err != nil {
 				problems = append(problems, fmt.Sprintf("%s: %v", taskLabel(local), err))
@@ -1271,6 +1344,24 @@ func push(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 				remote, err = client.UpdateTask(ctx, id, payload)
 				if err != nil {
 					problems = append(problems, fmt.Sprintf("%s: update: %v", taskLabel(local), err))
+					continue
+				}
+			}
+			if len(myNotes) > 0 {
+				remote, err = client.EditMyNotes(ctx, id, myNotes)
+				if err != nil {
+					problems = append(problems, fmt.Sprintf("%s: edit notes: %v", taskLabel(local), err))
+					continue
+				}
+				if remote == nil || remote["notes"] == nil {
+					remote, err = client.GetTask(ctx, id)
+					if err != nil {
+						problems = append(problems, fmt.Sprintf("%s: refresh edited notes: %v", taskLabel(local), err))
+						continue
+					}
+				}
+				if err := syncRemoteNotes(dir, remote, state.StagedNotes, nil); err != nil {
+					problems = append(problems, fmt.Sprintf("%s: refresh edited notes: %v", taskLabel(local), err))
 					continue
 				}
 			}
@@ -1317,7 +1408,14 @@ func taskHasLocalChanges(local map[string]any, state workspace.State, dir string
 	if err != nil {
 		return false, err
 	}
-	return string(localMarkdown) != baselineMarkdown, nil
+	if string(localMarkdown) != baselineMarkdown {
+		return true, nil
+	}
+	noteChanges, err := localNoteChanges(dir, state.Remote)
+	if err != nil {
+		return false, err
+	}
+	return len(noteChanges) > 0, nil
 }
 
 func createRemoteTask(ctx context.Context, client *solutions.Client, dir string, metadata map[string]any, project *config.Project) (map[string]any, error) {
@@ -1394,6 +1492,14 @@ func taskConflicts(local, baseline, remote map[string]any, dir string) []string 
 			conflicts = append(conflicts, "description")
 		}
 	}
+	noteConflicts, err := localNoteConflicts(dir, baseline, remote)
+	if err != nil {
+		conflicts = append(conflicts, "notes")
+	} else {
+		for _, filename := range noteConflicts {
+			conflicts = append(conflicts, filepath.ToSlash(filepath.Join("notes", filename)))
+		}
+	}
 	return conflicts
 }
 
@@ -1427,6 +1533,58 @@ func advanceBaseline(baseline, remote map[string]any, conflicts []string, descri
 	return advanced
 }
 
+func advanceNotesBaseline(baseline, remote map[string]any, conflicts []string) map[string]any {
+	if len(conflicts) == 0 {
+		return remote
+	}
+	baseNotes, err := getRemoteNotes(baseline)
+	if err != nil {
+		return remote
+	}
+	conflicted := make(map[string]map[string]any, len(conflicts))
+	for _, filename := range conflicts {
+		for _, note := range baseNotes {
+			if note.filename == filename {
+				conflicted[filename] = note.raw
+				break
+			}
+		}
+	}
+	if len(conflicted) == 0 {
+		return remote
+	}
+	remoteNotes, _ := remote["notes"].([]any)
+	current, err := getRemoteNotes(remote)
+	if err != nil {
+		return remote
+	}
+	updatedNotes := make([]any, 0, len(remoteNotes))
+	retained := make(map[string]bool, len(conflicted))
+	for index, item := range remoteNotes {
+		if index < len(current) {
+			if baseNote, ok := conflicted[current[index].filename]; ok {
+				updatedNotes = append(updatedNotes, baseNote)
+				retained[current[index].filename] = true
+				continue
+			}
+		}
+		updatedNotes = append(updatedNotes, item)
+	}
+	for filename, baseNote := range conflicted {
+		if !retained[filename] {
+			updatedNotes = append(updatedNotes, baseNote)
+		}
+	}
+	advanced := cloneMap(remote)
+	advanced["notes"] = updatedNotes
+	if version, exists := baseline["version"]; exists {
+		advanced["version"] = version
+	} else {
+		delete(advanced, "version")
+	}
+	return advanced
+}
+
 func writeRemoteToLocal(dir string, remote map[string]any) error {
 	if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), workspace.MetadataFromRemote(remote)); err != nil {
 		return err
@@ -1439,6 +1597,59 @@ func writeRemoteToLocal(dir string, remote map[string]any) error {
 		return err
 	}
 	return nil
+}
+
+func buildMyNotesPayload(ctx context.Context, client *solutions.Client, dir string, remote, baseline map[string]any) ([]map[string]any, error) {
+	if client.Email == "" {
+		return nil, errors.New("your login email is not saved; run `panda login` to enable editing your notes")
+	}
+	user, err := client.FindUser(ctx, client.Email)
+	if err != nil {
+		return nil, err
+	}
+	changes, err := localNoteChanges(dir, baseline)
+	if err != nil {
+		return nil, err
+	}
+	remoteNotes, err := getRemoteNotes(remote)
+	if err != nil {
+		return nil, err
+	}
+	myNotes := make([]map[string]any, 0)
+	matchedChanges := make(map[string]bool)
+	for _, note := range remoteNotes {
+		if !noteOwnedBy(note, user, client.Email) {
+			continue
+		}
+		body := note.html
+		if markdown, changed := changes[note.filename]; changed {
+			body, err = content.MarkdownToHTML(markdown)
+			if err != nil {
+				return nil, fmt.Errorf("convert %s: %w", note.filename, err)
+			}
+			matchedChanges[note.filename] = true
+		}
+		timestamp, ok := timestampMillis(note.timestamp)
+		if !ok {
+			return nil, fmt.Errorf("note %s has no valid epoch-millisecond timestamp", note.filename)
+		}
+		myNotes = append(myNotes, map[string]any{
+			"note":      body,
+			"timestamp": timestamp,
+		})
+	}
+	for filename := range changes {
+		if !matchedChanges[filename] {
+			return nil, fmt.Errorf("%s is not one of the current user's notes; only your own notes can be edited", filename)
+		}
+	}
+	if len(changes) == 0 {
+		return nil, nil
+	}
+	if len(myNotes) == 0 {
+		return nil, errors.New("the current user has no notes to edit on this task")
+	}
+	return myNotes, nil
 }
 
 func pushStagedNotes(ctx context.Context, client *solutions.Client, ws *workspace.Workspace, dir string, local map[string]any, key string, state workspace.State) (workspace.State, error) {
@@ -1465,7 +1676,7 @@ func pushStagedNotes(ctx context.Context, client *solutions.Client, ws *workspac
 			return state, err
 		}
 		state.Remote = cloneMap(updated)
-		if err := syncRemoteNotes(dir, updated, state.StagedNotes); err != nil {
+		if err := syncRemoteNotes(dir, updated, state.StagedNotes, nil); err != nil {
 			return state, err
 		}
 		_ = os.Remove(filepath.Join(dir, "notes", filename))
@@ -1476,39 +1687,172 @@ func pushStagedNotes(ctx context.Context, client *solutions.Client, ws *workspac
 	return state, ws.WriteState(key, state)
 }
 
-func syncRemoteNotes(dir string, remote map[string]any, stagedNotes []string) error {
+type remoteNote struct {
+	filename     string
+	html         string
+	markdown     string
+	timestamp    any
+	addedByID    string
+	addedByEmail string
+	raw          map[string]any
+}
+
+func getRemoteNotes(remote map[string]any) ([]remoteNote, error) {
 	items, _ := remote["notes"].([]any)
 	counts := make(map[string]int)
-	staged := make(map[string]bool, len(stagedNotes))
-	for _, filename := range stagedNotes {
-		staged[filename] = true
-	}
+	notes := make([]remoteNote, 0, len(items))
 	for _, item := range items {
 		note, ok := item.(map[string]any)
 		if !ok {
 			continue
 		}
-		text := stringField(note, "note")
+		html := stringField(note, "note")
 		timestamp := time.Unix(0, 0)
-		if raw, ok := note["timestamp"].(float64); ok && raw > 0 {
-			timestamp = time.UnixMilli(int64(raw))
+		timestampValue := note["timestamp"]
+		if millis, ok := timestampMillis(timestampValue); ok && millis > 0 {
+			timestamp = time.UnixMilli(millis)
 		}
 		author := "unknown"
-		if addedBy, ok := note["addedBy"].(map[string]any); ok && stringField(addedBy, "label") != "" {
-			author = stringField(addedBy, "label")
-		}
-		markdown, err := content.HTMLToMarkdown(text)
-		if err != nil {
-			return err
+		addedByID, addedByEmail := "", strings.TrimSpace(stringField(note, "addedByEmail"))
+		if addedBy, ok := note["addedBy"].(map[string]any); ok {
+			addedByID = stringField(addedBy, "id")
+			if stringField(addedBy, "label") != "" {
+				author = stringField(addedBy, "label")
+			}
 		}
 		base := noteFilename(timestamp, author, 1)
 		counts[base]++
-		filename := noteFilename(timestamp, author, counts[base])
-		path := filepath.Join(dir, "notes", filename)
-		if staged[filename] {
+		markdown, err := content.HTMLToMarkdown(html)
+		if err != nil {
+			return nil, err
+		}
+		notes = append(notes, remoteNote{
+			filename: noteFilename(timestamp, author, counts[base]),
+			html:     html, markdown: markdown, timestamp: timestampValue,
+			addedByID: addedByID, addedByEmail: addedByEmail,
+			raw: note,
+		})
+	}
+	return notes, nil
+}
+
+func timestampMillis(value any) (int64, bool) {
+	switch timestamp := value.(type) {
+	case float64:
+		return int64(timestamp), true
+	case float32:
+		return int64(timestamp), true
+	case int64:
+		return timestamp, true
+	case int:
+		return int64(timestamp), true
+	case json.Number:
+		millis, err := timestamp.Int64()
+		return millis, err == nil
+	case string:
+		millis, err := strconv.ParseInt(timestamp, 10, 64)
+		return millis, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func noteOwnedBy(note remoteNote, user map[string]any, email string) bool {
+	if note.addedByID != "" {
+		return note.addedByID == stringField(user, "id")
+	}
+	return note.addedByEmail != "" && strings.EqualFold(note.addedByEmail, email)
+}
+
+func localNoteChanges(dir string, baseline map[string]any) (map[string]string, error) {
+	notes, err := getRemoteNotes(baseline)
+	if err != nil {
+		return nil, err
+	}
+	changed := make(map[string]string)
+	for _, note := range notes {
+		data, err := os.ReadFile(filepath.Join(dir, "notes", note.filename))
+		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
-		if err := workspace.WriteFileAtomic(path, []byte(markdown), 0o600); err != nil {
+		if err != nil {
+			return nil, err
+		}
+		if string(data) != note.markdown {
+			changed[note.filename] = string(data)
+		}
+	}
+	return changed, nil
+}
+
+func localNoteConflicts(dir string, baseline, remote map[string]any) ([]string, error) {
+	localChanges, err := localNoteChanges(dir, baseline)
+	if err != nil {
+		return nil, err
+	}
+	if len(localChanges) == 0 {
+		return nil, nil
+	}
+	baselineNotes, err := getRemoteNotes(baseline)
+	if err != nil {
+		return nil, err
+	}
+	remoteNotes, err := getRemoteNotes(remote)
+	if err != nil {
+		return nil, err
+	}
+	baseByFilename := make(map[string]remoteNote, len(baselineNotes))
+	remoteByFilename := make(map[string]remoteNote, len(remoteNotes))
+	for _, note := range baselineNotes {
+		baseByFilename[note.filename] = note
+	}
+	for _, note := range remoteNotes {
+		remoteByFilename[note.filename] = note
+	}
+	var conflicts []string
+	for filename, localMarkdown := range localChanges {
+		base, exists := baseByFilename[filename]
+		current, stillExists := remoteByFilename[filename]
+		if !exists || !stillExists || (current.markdown != base.markdown && current.markdown != localMarkdown) {
+			conflicts = append(conflicts, filename)
+		}
+	}
+	sort.Strings(conflicts)
+	return conflicts, nil
+}
+
+func changedNoteFilenames(dir string, baseline map[string]any) ([]string, error) {
+	changes, err := localNoteChanges(dir, baseline)
+	if err != nil {
+		return nil, err
+	}
+	filenames := make([]string, 0, len(changes))
+	for filename := range changes {
+		filenames = append(filenames, filename)
+	}
+	sort.Strings(filenames)
+	return filenames, nil
+}
+
+func syncRemoteNotes(dir string, remote map[string]any, stagedNotes, preservedNotes []string) error {
+	notes, err := getRemoteNotes(remote)
+	if err != nil {
+		return err
+	}
+	staged := make(map[string]bool, len(stagedNotes))
+	for _, filename := range stagedNotes {
+		staged[filename] = true
+	}
+	preserved := make(map[string]bool, len(preservedNotes))
+	for _, filename := range preservedNotes {
+		preserved[filename] = true
+	}
+	for _, note := range notes {
+		path := filepath.Join(dir, "notes", note.filename)
+		if staged[note.filename] || preserved[note.filename] {
+			continue
+		}
+		if err := workspace.WriteFileAtomic(path, []byte(note.markdown), 0o600); err != nil {
 			return err
 		}
 	}
@@ -1828,6 +2172,58 @@ func viewTask(ws *workspace.Workspace, args []string, out io.Writer) error {
 	return nil
 }
 
+func editNote(ws *workspace.Workspace, args []string, client *solutions.Client, out io.Writer) error {
+	if len(args) != 2 {
+		return errors.New("usage: panda edit-note <taskNumber|localId> <note-file>")
+	}
+	if client.Email == "" {
+		return errors.New("your login email is not saved; run `panda login` to enable editing your notes")
+	}
+	dir, metadata, err := ws.FindTask(args[0])
+	if err != nil {
+		return err
+	}
+	key := stateKey(dir, metadata)
+	state, err := ws.ReadState(key)
+	if err != nil {
+		return err
+	}
+	user, err := client.FindUser(context.Background(), client.Email)
+	if err != nil {
+		return err
+	}
+	filename := filepath.Base(args[1])
+	if filename != args[1] {
+		return errors.New("note-file must be an existing Markdown filename from the task's notes directory")
+	}
+	if !strings.HasSuffix(filename, ".md") {
+		filename += ".md"
+	}
+	remoteNotes, err := getRemoteNotes(state.Remote)
+	if err != nil {
+		return err
+	}
+	owned := false
+	for _, note := range remoteNotes {
+		if note.filename == filename && noteOwnedBy(note, user, client.Email) {
+			owned = true
+			break
+		}
+	}
+	if !owned {
+		return fmt.Errorf("note %q was not found among your synced notes for task %s", filename, taskLabel(metadata))
+	}
+	path := filepath.Join(dir, "notes", filename)
+	if _, err := os.Stat(path); err != nil {
+		return fmt.Errorf("open note %q: %w", filename, err)
+	}
+	if err := openEditor(path); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "Edited %s. Review with `panda diff --verbose`; run `panda push` to apply it.\n", filepath.ToSlash(filepath.Join("notes", filename)))
+	return nil
+}
+
 func addNote(ws *workspace.Workspace, args []string, in io.Reader, out io.Writer) error {
 	if len(args) < 1 {
 		return errors.New("usage: panda add-note <taskNumber|localId> [text]")
@@ -1948,6 +2344,9 @@ func clean(ws *workspace.Workspace, args []string, in io.Reader, out io.Writer) 
 		}
 		state.StagedNotes = nil
 		if err := clearNotes(dir, state.Remote); err != nil {
+			return err
+		}
+		if err := syncRemoteNotes(dir, state.Remote, nil, nil); err != nil {
 			return err
 		}
 		if err := ws.WriteState(key, state); err != nil {
