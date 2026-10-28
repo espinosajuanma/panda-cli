@@ -121,10 +121,16 @@ and directories at the root are left in place.
 - `panda diff {taskNumber|localId}` limits the view to one task
 - Uses `$PAGER` (defaults to `less -FRX`) for interactive output that exceeds the terminal height; shorter output and piped output are printed directly
 
-### `list [--status {status,...}] [--no-complexity] [--no-description]`
+### `list [status filters] [--no-complexity] [--no-description]`
 
 - Lists tasks in the local project workspace, grouped by status in workflow
   order with separated sections and sorted by the fetched `rank` field
+- By default, shows `new`, `toDo`, `inProgress`, `inReview`, and `completed`
+  tasks; `staging`, `released`, and `discarded` are hidden
+- `--current` shows `toDo`, `inProgress`, `inReview`, and `completed`
+- `--staging`, `--released`, and `--discarded` show only tasks with the matching
+  status; `--all` includes tasks of every status
+- Status filters can be combined, and `--status {status,...}` remains available
 - Status headings are uppercase with camel case separated into words (for
   example, `IN PROGRESS`)
 - Run `pull` to refresh local task data and rank values from Solutions
@@ -138,7 +144,9 @@ and directories at the root are left in place.
 - Shows a subtotal for each status group and a grand total for all visible tasks;
   tasks without a recognized complexity show `-` for SP and Hours and add zero
   to totals
-- Examples: `panda list --status 'new,toDo'`, `panda list --no-complexity`, and `panda list --no-description`
+- Examples: `panda list --current`, `panda list --staging`,
+  `panda list --status 'new,toDo' --no-complexity`, and
+  `panda list --no-description`
 
 ### `create`
 

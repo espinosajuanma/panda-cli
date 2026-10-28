@@ -1235,8 +1235,6 @@ func TestListGroupsByWorkflowStatusSortsByRankAndFilters(t *testing.T) {
 		strings.Index(text, "IN PROGRESS\n"),
 		strings.Index(text, "IN REVIEW\n"),
 		strings.Index(text, "COMPLETED\n"),
-		strings.Index(text, "STAGING\n"),
-		strings.Index(text, "RELEASED\n"),
 	}
 	for i, position := range statusPositions {
 		if position < 0 || (i > 0 && position <= statusPositions[i-1]) {
@@ -1246,8 +1244,10 @@ func TestListGroupsByWorkflowStatusSortsByRankAndFilters(t *testing.T) {
 	if got := strings.Count(text, "----------------------------------------"); got != len(statusPositions)-1 {
 		t.Fatalf("got %d status dividers, want %d", got, len(statusPositions)-1)
 	}
-	if strings.Contains(text, "Discarded") {
-		t.Fatalf("discarded task appeared without an explicit status filter: %q", text)
+	for _, hiddenStatus := range []string{"STAGING\n", "RELEASED\n", "DISCARDED\n"} {
+		if strings.Contains(text, hiddenStatus) {
+			t.Fatalf("default list included excluded status %q: %q", hiddenStatus, text)
+		}
 	}
 	if strings.Index(text, "New A") > strings.Index(text, "New B") {
 		t.Fatalf("new tasks were not sorted by rank: %q", text)
@@ -1277,6 +1277,63 @@ func TestListGroupsByWorkflowStatusSortsByRankAndFilters(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "Discarded") {
 		t.Fatalf("explicit discarded filter did not show discarded tasks: %q", output.String())
+	}
+}
+
+func TestListQuickFiltersCoverAllStatusesAndCombine(t *testing.T) {
+	ws := workspace.New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	fixtures := []map[string]any{
+		listTask("quick-new", 31, "new", "a", "xs", "New task", "feature"),
+		listTask("quick-todo", 32, "toDo", "a", "s", "To do task", "feature"),
+		listTask("quick-progress", 33, "inProgress", "a", "m", "In progress task", "feature"),
+		listTask("quick-review", 34, "inReview", "a", "l", "In review task", "feature"),
+		listTask("quick-completed", 35, "completed", "a", "xl", "Completed task", "feature"),
+		listTask("quick-staging", 36, "staging", "a", "xxl", "Staging task", "feature"),
+		listTask("quick-released", 37, "released", "a", "xs", "Released task", "feature"),
+		listTask("quick-discarded", 38, "discarded", "a", "s", "Discarded task", "feature"),
+		listTask("quick-custom", 39, "blocked", "a", "m", "Custom status task", "feature"),
+	}
+	for _, task := range fixtures {
+		addSyncedTask(t, ws, task)
+	}
+
+	tests := []struct {
+		name      string
+		args      []string
+		wantTasks []string
+		omitTasks []string
+	}{
+		{name: "default active", wantTasks: []string{"New task", "To do task", "In progress task", "In review task", "Completed task"}, omitTasks: []string{"Staging task", "Released task", "Discarded task", "Custom status task"}},
+		{name: "current", args: []string{"--current"}, wantTasks: []string{"To do task", "In progress task", "In review task", "Completed task"}, omitTasks: []string{"New task", "Staging task", "Released task", "Discarded task", "Custom status task"}},
+		{name: "staging", args: []string{"--staging"}, wantTasks: []string{"Staging task"}, omitTasks: []string{"New task", "Released task", "Discarded task", "Custom status task"}},
+		{name: "released", args: []string{"--released"}, wantTasks: []string{"Released task"}, omitTasks: []string{"New task", "Staging task", "Discarded task", "Custom status task"}},
+		{name: "discarded", args: []string{"--discarded"}, wantTasks: []string{"Discarded task"}, omitTasks: []string{"New task", "Staging task", "Released task", "Custom status task"}},
+		{name: "all includes custom statuses", args: []string{"--all"}, wantTasks: []string{"New task", "To do task", "In progress task", "In review task", "Completed task", "Staging task", "Released task", "Discarded task", "Custom status task"}},
+		{name: "quick filters combine", args: []string{"--current", "--staging"}, wantTasks: []string{"To do task", "In progress task", "In review task", "Completed task", "Staging task"}, omitTasks: []string{"New task", "Released task", "Discarded task", "Custom status task"}},
+		{name: "status and quick filter combine", args: []string{"--status", "new", "--released"}, wantTasks: []string{"New task", "Released task"}, omitTasks: []string{"Staging task", "Discarded task", "Custom status task"}},
+		{name: "other filters remain composable", args: []string{"--current", "--no-complexity", "--no-description"}, omitTasks: []string{"New task", "Staging task", "Released task", "Discarded task", "Custom status task"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var output strings.Builder
+			if err := listTasks(ws, test.args, &output); err != nil {
+				t.Fatal(err)
+			}
+			text := output.String()
+			for _, want := range test.wantTasks {
+				if !strings.Contains(text, want) {
+					t.Errorf("list output missing %q:\n%s", want, text)
+				}
+			}
+			for _, omit := range test.omitTasks {
+				if strings.Contains(text, omit) {
+					t.Errorf("list output unexpectedly contains %q:\n%s", omit, text)
+				}
+			}
+		})
 	}
 }
 

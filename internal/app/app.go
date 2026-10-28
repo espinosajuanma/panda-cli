@@ -243,7 +243,7 @@ func printCommandHelp(command string, out io.Writer) error {
 		"login":      "Usage: panda login [email]\nPrompts for credentials and stores the session token.",
 		"config":     "Usage: panda config set project <name> | panda config get project\nSelect or display the active Solutions project.",
 		"path":       "Usage: panda path\nPrint the active project's workspace path.",
-		"list":       "Usage: panda list [--status <status,...>] [--no-complexity] [--no-description]\nList local tasks grouped by status and sorted by rank. Shows story points and hours from each task's complexity, with group subtotals and a total for visible tasks. Discarded tasks are hidden unless selected explicitly.",
+		"list":       "Usage: panda list [--current] [--staging] [--released] [--discarded] [--all] [--status <status,...>] [--no-complexity] [--no-description]\nList local tasks grouped by status and sorted by rank. Quick status filters can be combined; without a status filter, shows new, toDo, inProgress, inReview, and completed tasks. Shows story points and hours from each task's complexity, with group subtotals and a total for visible tasks.",
 		"pull":       "Usage: panda pull\nFetch project tasks, preserve local edits, and report overlapping changes.",
 		"diff":       "Usage: panda diff [taskNumber|localId] [--verbose] [--summary]\nList local edits grouped by task for a quick check. Use --verbose to show changed Markdown description and note lines or --summary to print counts of edited, discarded, and new tasks. Terminal output uses the pager selected by $PAGER (defaults to less -FRX).",
 		"push":       "Usage: panda push\nCheck for remote conflicts, then apply local edits and staged actions.",
@@ -1012,11 +1012,14 @@ func backtrackDiff(trace []map[int]int, before, after []string, distance int) []
 type listOptions struct {
 	statusFilter    map[string]bool
 	statusSpecified bool
+	allStatuses     bool
 	noComplexity    bool
 	noDescription   bool
 }
 
 var taskStatusOrder = []string{"new", "toDo", "inProgress", "inReview", "completed", "staging", "released", "discarded"}
+var defaultListStatuses = []string{"new", "toDo", "inProgress", "inReview", "completed"}
+var currentListStatuses = []string{"toDo", "inProgress", "inReview", "completed"}
 
 type effortEstimate struct {
 	storyPoints int
@@ -1051,10 +1054,7 @@ func listTasks(ws *workspace.Workspace, args []string, out io.Writer) error {
 		if status == "" {
 			status = "new"
 		}
-		if status == "discarded" && !options.statusSpecified {
-			continue
-		}
-		if options.statusSpecified && !options.statusFilter[status] {
+		if !options.allStatuses && !options.statusFilter[status] {
 			continue
 		}
 		if options.noComplexity && !isEmptyField(metadata["complexity"]) {
@@ -1095,16 +1095,30 @@ func listTasks(ws *workspace.Workspace, args []string, out io.Writer) error {
 
 func parseListOptions(args []string) (listOptions, error) {
 	options := listOptions{statusFilter: make(map[string]bool)}
+	for _, status := range defaultListStatuses {
+		options.statusFilter[status] = true
+	}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
+		case arg == "--current":
+			addQuickStatusFilter(&options, currentListStatuses)
+		case arg == "--staging":
+			addQuickStatusFilter(&options, []string{"staging"})
+		case arg == "--released":
+			addQuickStatusFilter(&options, []string{"released"})
+		case arg == "--discarded":
+			addQuickStatusFilter(&options, []string{"discarded"})
+		case arg == "--all":
+			options.statusSpecified = true
+			options.allStatuses = true
 		case arg == "--no-complexity":
 			options.noComplexity = true
 		case arg == "--no-description":
 			options.noDescription = true
 		case arg == "--status":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
-				return options, errors.New("usage: panda list [--status <status,...>] [--no-complexity] [--no-description]")
+				return options, listUsageError()
 			}
 			i++
 			if err := addStatusFilter(&options, args[i]); err != nil {
@@ -1115,13 +1129,33 @@ func parseListOptions(args []string) (listOptions, error) {
 				return options, err
 			}
 		default:
-			return options, errors.New("usage: panda list [--status <status,...>] [--no-complexity] [--no-description]")
+			return options, listUsageError()
 		}
 	}
 	return options, nil
 }
 
+func listUsageError() error {
+	return errors.New("usage: panda list [--current] [--staging] [--released] [--discarded] [--all] [--status <status,...>] [--no-complexity] [--no-description]")
+}
+
+func addQuickStatusFilter(options *listOptions, statuses []string) {
+	beginExplicitStatusFilter(options)
+	for _, status := range statuses {
+		options.statusFilter[status] = true
+	}
+}
+
+func beginExplicitStatusFilter(options *listOptions) {
+	if options.statusSpecified {
+		return
+	}
+	options.statusSpecified = true
+	options.statusFilter = make(map[string]bool)
+}
+
 func addStatusFilter(options *listOptions, value string) error {
+	beginExplicitStatusFilter(options)
 	known := make(map[string]bool, len(taskStatusOrder))
 	for _, status := range taskStatusOrder {
 		known[status] = true
