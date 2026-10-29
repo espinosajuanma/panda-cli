@@ -98,6 +98,9 @@ Complexity totals map `xs` to 1 SP/4 hours, `s` to 2/8, `m` to 3/12, `l` to
 5/20, `xl` to 8/32, and `xxl` to 13/52. Unknown values contribute zero and
 display dashes.
 
+Long terminal output uses `$PAGER` (default `less -FRX`) and remains visible
+after leaving the pager. Piped output is printed directly.
+
 ```sh
 panda list --current
 panda list --staging

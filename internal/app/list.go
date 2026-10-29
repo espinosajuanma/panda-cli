@@ -29,6 +29,12 @@ type listOptions struct {
 type effortEstimate = task.Effort
 
 func listTasks(ws *workspace.Workspace, args []string, out io.Writer) error {
+	return writePagedOutput(out, func(rendered io.Writer) error {
+		return renderListTasks(ws, args, rendered, out)
+	})
+}
+
+func renderListTasks(ws *workspace.Workspace, args []string, out, colorTarget io.Writer) error {
 	options, err := parseListOptions(args)
 	if err != nil {
 		return err
@@ -88,10 +94,10 @@ func listTasks(ws *workspace.Workspace, args []string, out io.Writer) error {
 	var total effortEstimate
 	for i, status := range statuses {
 		if i > 0 {
-			fmt.Fprintln(out, colorText(out, "2", "----------------------------------------"))
+			fmt.Fprintln(out, colorText(colorTarget, "2", "----------------------------------------"))
 		}
 		sortTasksByRank(groups[status])
-		groupTotal, err := printTaskGroup(out, status, groups[status], labelNames, packageNames)
+		groupTotal, err := printTaskGroup(out, colorTarget, status, groups[status], labelNames, packageNames)
 		if err != nil {
 			return err
 		}
@@ -243,12 +249,12 @@ func compareTaskNumbers(left, right any) int {
 	return strings.Compare(fmt.Sprint(left), fmt.Sprint(right))
 }
 
-func printTaskGroup(out io.Writer, status string, tasks []map[string]any, labelNames, packageNames map[string]string) (effortEstimate, error) {
+func printTaskGroup(out, colorTarget io.Writer, status string, tasks []map[string]any, labelNames, packageNames map[string]string) (effortEstimate, error) {
 	style := "1;32"
 	if status == "released" {
 		style = "1;36"
 	}
-	fmt.Fprintln(out, colorText(out, style, displayStatus(status)))
+	fmt.Fprintln(out, colorText(colorTarget, style, displayStatus(status)))
 	var table bytes.Buffer
 	writer := tabwriter.NewWriter(&table, 0, 4, 2, ' ', 0)
 	if _, err := fmt.Fprintln(writer, "NUMBER\tPRIORITY\tTYPE\tCOMPLEXITY\tSP\tHOURS\tPACKAGE\tLABELS\tTITLE"); err != nil {
@@ -293,7 +299,7 @@ func printTaskGroup(out io.Writer, status string, tasks []map[string]any, labelN
 		if i > 0 {
 			currentTask := tasks[i-1]
 			if stringField(currentTask, "type") == "release" || status == "released" {
-				line = colorText(out, "36", line)
+				line = colorText(colorTarget, "36", line)
 			}
 		}
 		fmt.Fprintln(out, line)

@@ -179,6 +179,7 @@ var manualPages = map[string]manualPage{
 			"List tasks in the active project's local workspace, grouped by workflow status and sorted by rank. The default view includes new, toDo, inProgress, inReview, and completed tasks.",
 			"Status selectors are combined as a union. --all includes every status, including statuses not otherwise recognized by Panda. The existing --status selector accepts one or more comma-separated known statuses.",
 			"Complexity maps to story points and estimated hours. Package and label names are shown with each task. Each group has a subtotal, followed by a total for all tasks visible after status and content filters are applied.",
+			"Long terminal output uses $PAGER (default less -FRX) and remains visible after leaving the pager; piped output is printed directly.",
 		},
 		options: []manualOption{
 			{"--current", "Show toDo, inProgress, inReview, and completed tasks."},
