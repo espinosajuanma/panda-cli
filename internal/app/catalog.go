@@ -192,6 +192,9 @@ func catalogRecordForAPI(kind catalogKind, record map[string]any) (map[string]an
 }
 
 func mergeCatalogRecords(kind catalogKind, local, baseline, remote []map[string]any) ([]map[string]any, []map[string]any, []string) {
+	local = dedupeCatalogRecords(local)
+	baseline = dedupeCatalogRecords(baseline)
+	remote = dedupeCatalogRecords(remote)
 	fields := catalogFields(kind)
 	localByID := make(map[string]map[string]any)
 	remoteByID := make(map[string]map[string]any)
@@ -277,10 +280,14 @@ func mergeCatalogRecords(kind catalogKind, local, baseline, remote []map[string]
 			continue
 		}
 		id := stringField(record, "id")
+		if remoteByID[id] != nil {
+			continue
+		}
 		if id == "" || !handledLocal[id] {
 			merged = append(merged, cloneMap(record))
 		}
 	}
+	merged = dedupeCatalogRecords(merged)
 	sort.SliceStable(merged, func(i, j int) bool {
 		return strings.ToLower(catalogRecordName(kind, merged[i])) < strings.ToLower(catalogRecordName(kind, merged[j]))
 	})
@@ -380,40 +387,89 @@ func projectCatalogDiff(ws *workspace.Workspace) ([]string, int, int, error) {
 }
 
 func pullProjectCatalogs(ctx context.Context, client *solutions.Client, ws *workspace.Workspace, project *config.Project, out io.Writer) (int, error) {
+	remote := make(map[catalogKind][]map[string]any, 2)
+	for _, kind := range []catalogKind{labelCatalog, packageCatalog} {
+		records, err := catalogRecords(ctx, client, project.ID, kind)
+		if err != nil {
+			return 0, fmt.Errorf("pull project %s: %w", kind, err)
+		}
+		remote[kind] = records
+	}
+	return pullProjectCatalogsFromRecords(ws, remote, out, nil)
+}
+
+func pullProjectCatalogsFromRecords(ws *workspace.Workspace, records map[catalogKind][]map[string]any, out io.Writer, progress *pullProgress) (int, error) {
 	conflicts := 0
 	counts := make(map[catalogKind]int, 2)
-	for _, kind := range []catalogKind{labelCatalog, packageCatalog} {
-		remote, err := catalogRecords(ctx, client, project.ID, kind)
-		if err != nil {
-			return conflicts, fmt.Errorf("pull project %s: %w", kind, err)
-		}
-		remote, err = normalizeCatalogRecords(kind, remote)
-		if err != nil {
-			return conflicts, err
-		}
-		baseline, err := readCatalogBaseline(ws, kind)
+	var reports []string
+	for index, kind := range []catalogKind{labelCatalog, packageCatalog} {
+		start, end := index*50, (index+1)*50
+		kindConflicts, count, err := pullProjectCatalogKind(ws, kind, records[kind], out, progress, start, end, &reports)
+		conflicts += kindConflicts
 		if err != nil {
 			return conflicts, err
 		}
-		local, err := readLocalCatalogForSync(ws, kind, baseline)
-		if err != nil {
-			return conflicts, err
-		}
-		merged, advanced, issues := mergeCatalogRecords(kind, local, baseline, remote)
-		for _, issue := range issues {
-			conflicts++
-			fmt.Fprintf(out, "%s project %s: %s\n", colorText(out, "1;31", "Conflict"), kind, issue)
-		}
-		if err := writeCatalog(ws, kind, merged); err != nil {
-			return conflicts, err
-		}
-		if err := writeCatalogBaseline(ws, kind, advanced); err != nil {
-			return conflicts, err
-		}
-		counts[kind] = len(merged)
+		counts[kind] = count
+	}
+	if progress != nil {
+		progress.Finish()
+	}
+	for _, report := range reports {
+		fmt.Fprintln(out, report)
 	}
 	fmt.Fprintf(out, "Synchronized project catalogs: %d labels, %d packages.\n", counts[labelCatalog], counts[packageCatalog])
 	return conflicts, nil
+}
+
+func pullProjectCatalogKind(ws *workspace.Workspace, kind catalogKind, remoteRecords []map[string]any, out io.Writer, progress *pullProgress, start, end int, reports *[]string) (int, int, error) {
+	remoteRecords = dedupeCatalogRecords(remoteRecords)
+	remote, err := normalizeCatalogRecords(kind, remoteRecords)
+	if err != nil {
+		return 0, 0, err
+	}
+	baseline, err := readCatalogBaseline(ws, kind)
+	if err != nil {
+		return 0, 0, err
+	}
+	local, err := readLocalCatalogForSync(ws, kind, baseline)
+	if err != nil {
+		return 0, 0, err
+	}
+	merged, advanced, issues := mergeCatalogRecords(kind, local, baseline, remote)
+	for _, issue := range issues {
+		*reports = append(*reports, fmt.Sprintf("%s project %s: %s", colorText(out, "1;31", "Conflict"), kind, issue))
+	}
+	if err := writeCatalog(ws, kind, merged); err != nil {
+		return len(issues), 0, err
+	}
+	if err := writeCatalogBaseline(ws, kind, advanced); err != nil {
+		return len(issues), 0, err
+	}
+	if progress != nil {
+		for index := range remote {
+			updatePullStage(progress, start, end, index+1, len(remote))
+		}
+		if len(remote) == 0 {
+			progress.Update(end)
+		}
+	}
+	return len(issues), len(merged), nil
+}
+
+func dedupeCatalogRecords(records []map[string]any) []map[string]any {
+	seen := make(map[string]bool, len(records))
+	unique := make([]map[string]any, 0, len(records))
+	for _, record := range records {
+		id := stringField(record, "id")
+		if id != "" && seen[id] {
+			continue
+		}
+		if id != "" {
+			seen[id] = true
+		}
+		unique = append(unique, record)
+	}
+	return unique
 }
 
 func pushProjectCatalog(ctx context.Context, client *solutions.Client, ws *workspace.Workspace, project *config.Project, kind catalogKind) (map[string]string, *catalogPushPlan, bool, error) {
@@ -1174,6 +1230,241 @@ func editTaskPackage(ws *workspace.Workspace, dir string, metadata map[string]an
 	return workspace.WriteMap(filepath.Join(dir, "metadata.json"), metadata)
 }
 
+var assignableTeamRoles = []string{"teamLead", "developer", "qa"}
+
+func projectMembers(ws *workspace.Workspace) ([]map[string]any, error) {
+	data, err := os.ReadFile(filepath.Join(ws.Root, ".panda", "members.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, errors.New("project members are not synced; run `panda pull` first")
+	}
+	if err != nil {
+		return nil, err
+	}
+	var members []map[string]any
+	if err := json.Unmarshal(data, &members); err != nil {
+		return nil, fmt.Errorf("parse project members: %w", err)
+	}
+	return members, nil
+}
+
+func memberUser(member map[string]any) map[string]any {
+	user, _ := member["user"].(map[string]any)
+	return user
+}
+
+func memberDisplayName(member map[string]any) string {
+	user := memberUser(member)
+	for _, field := range []string{"label", "name", "email", "id"} {
+		if value := strings.TrimSpace(stringField(user, field)); value != "" {
+			return value
+		}
+	}
+	return "(unnamed member)"
+}
+
+func editAssignees(ws *workspace.Workspace, dir string, metadata map[string]any, requested []string, in io.Reader, out io.Writer) error {
+	if len(requested) == 1 && isNoneSelector(requested[0]) {
+		metadata["assignees"] = []any{}
+		return workspace.WriteMap(filepath.Join(dir, "metadata.json"), metadata)
+	}
+	allMembers, err := projectMembers(ws)
+	if err != nil {
+		return err
+	}
+	members := eligibleProjectMembers(allMembers)
+	sort.Slice(members, func(i, j int) bool {
+		return strings.ToLower(memberDisplayName(members[i])) < strings.ToLower(memberDisplayName(members[j]))
+	})
+	byID := make(map[string]map[string]any, len(members))
+	for _, member := range members {
+		user := memberUser(member)
+		if id := relationshipID(user); id != "" {
+			byID[id] = user
+		}
+	}
+	selected := make(map[string]map[string]any)
+	if current, ok := metadata["assignees"].([]any); ok {
+		for _, item := range current {
+			if relation, ok := item.(map[string]any); ok {
+				if id := relationshipID(relation); id != "" && byID[id] != nil {
+					selected[id] = cloneMap(relation)
+				}
+			}
+		}
+	}
+	if len(requested) > 0 {
+		selected = make(map[string]map[string]any)
+		for _, name := range requested {
+			name = strings.TrimSpace(name)
+			match := findProjectMember(members, name)
+			if match == nil {
+				if findProjectMember(allMembers, name) != nil {
+					return fmt.Errorf("project member %q is not eligible for assignment; eligible roles are %s", name, strings.Join(assignableTeamRoles, ", "))
+				}
+				return fmt.Errorf("project member %q not found; run `panda pull` to refresh members", name)
+			}
+			user := memberUser(match)
+			selected[relationshipID(user)] = map[string]any{"id": relationshipID(user), "label": memberDisplayName(match)}
+		}
+	} else if isInteractiveTerminal(in, out) {
+		choices := make([]selectorOption, 0, len(members))
+		for _, member := range members {
+			id := relationshipID(memberUser(member))
+			choices = append(choices, selectorOption{value: id, label: memberDisplayName(member) + " (" + stringField(member, "role") + ")"})
+		}
+		selectedIDs := make(map[string]bool, len(selected))
+		for id := range selected {
+			selectedIDs[id] = true
+		}
+		selectedIDs, err = selectMultipleOptions(in, out, "Assignees", choices, selectedIDs)
+		if err != nil {
+			return err
+		}
+		selected = make(map[string]map[string]any, len(selectedIDs))
+		for id, isSelected := range selectedIDs {
+			if !isSelected {
+				continue
+			}
+			if user := byID[id]; user != nil {
+				selected[id] = map[string]any{"id": id, "label": memberDisplayName(map[string]any{"user": user})}
+			}
+		}
+	} else {
+		fmt.Fprintln(out, "Project team members:")
+		for index, member := range members {
+			fmt.Fprintf(out, "  %d) %s (%s)\n", index+1, memberDisplayName(member), stringField(member, "role"))
+		}
+		choice, err := prompt(in, out, "Assignees (comma-separated names, `none` to clear, Enter to keep): ")
+		if err != nil {
+			return err
+		}
+		if choice != "" {
+			if isNoneSelector(choice) {
+				selected = make(map[string]map[string]any)
+			} else {
+				selected = make(map[string]map[string]any)
+				for _, name := range strings.Split(choice, ",") {
+					match := findProjectMember(members, strings.TrimSpace(name))
+					if match == nil {
+						return fmt.Errorf("project member %q not found", strings.TrimSpace(name))
+					}
+					user := memberUser(match)
+					selected[relationshipID(user)] = map[string]any{"id": relationshipID(user), "label": memberDisplayName(match)}
+				}
+			}
+		}
+	}
+	result := make([]any, 0, len(selected))
+	for _, relation := range selected {
+		result = append(result, relation)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		left, _ := result[i].(map[string]any)
+		right, _ := result[j].(map[string]any)
+		return strings.ToLower(relationshipDisplayName(left)) < strings.ToLower(relationshipDisplayName(right))
+	})
+	metadata["assignees"] = result
+	return workspace.WriteMap(filepath.Join(dir, "metadata.json"), metadata)
+}
+
+func findProjectMember(members []map[string]any, selector string) map[string]any {
+	for _, member := range members {
+		user := memberUser(member)
+		if strings.EqualFold(memberDisplayName(member), selector) || strings.EqualFold(stringField(user, "email"), selector) || relationshipID(user) == selector {
+			return member
+		}
+	}
+	return nil
+}
+
+func assignableRole(role string) (string, bool) {
+	for _, candidate := range assignableTeamRoles {
+		if strings.EqualFold(candidate, role) {
+			return candidate, true
+		}
+	}
+	return "", false
+}
+
+func eligibleProjectMembers(members []map[string]any) []map[string]any {
+	eligible := make([]map[string]any, 0, len(members))
+	for _, member := range members {
+		if _, ok := assignableRole(stringField(member, "role")); ok {
+			eligible = append(eligible, member)
+		}
+	}
+	return eligible
+}
+
+func assignTask(ws *workspace.Workspace, args []string, out io.Writer) error {
+	if len(args) < 2 {
+		return errors.New("usage: panda assign <taskNumber|localId> <role[,role...]|none>")
+	}
+	dir, metadata, err := ws.FindTask(args[0])
+	if err != nil {
+		return err
+	}
+	if len(args) == 2 && isNoneSelector(args[1]) {
+		metadata["assignees"] = []any{}
+		if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), metadata); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "Cleared assignees for task %s.\n", taskLabel(metadata))
+		return nil
+	}
+	members, err := projectMembers(ws)
+	if err != nil {
+		return err
+	}
+	roles := make(map[string]bool)
+	for _, arg := range args[1:] {
+		for _, value := range strings.Split(arg, ",") {
+			role, ok := assignableRole(strings.TrimSpace(value))
+			if !ok {
+				return fmt.Errorf("unknown role %q; valid roles are %s", strings.TrimSpace(value), strings.Join(assignableTeamRoles, ", "))
+			}
+			roles[role] = true
+		}
+	}
+	assigned := make(map[string]map[string]any)
+	for _, member := range members {
+		if !roles[stringField(member, "role")] {
+			continue
+		}
+		user := memberUser(member)
+		id := relationshipID(user)
+		if id != "" {
+			assigned[id] = map[string]any{"id": id, "label": memberDisplayName(member)}
+		}
+	}
+	if len(assigned) == 0 {
+		return fmt.Errorf("no project members found for role(s) %s; run `panda pull` to refresh members", strings.Join(sortedRoleNames(roles), ", "))
+	}
+	result := make([]any, 0, len(assigned))
+	for _, relation := range assigned {
+		result = append(result, relation)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return strings.ToLower(relationshipDisplayName(result[i])) < strings.ToLower(relationshipDisplayName(result[j]))
+	})
+	metadata["assignees"] = result
+	if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), metadata); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "Assigned %d member(s) to task %s.\n", len(result), taskLabel(metadata))
+	return nil
+}
+
+func sortedRoleNames(roles map[string]bool) []string {
+	var names []string
+	for _, role := range assignableTeamRoles {
+		if roles[role] {
+			names = append(names, role)
+		}
+	}
+	return names
+}
+
 func findCatalogRecordByName(records []map[string]any, kind catalogKind, name string) map[string]any {
 	for _, record := range records {
 		if strings.EqualFold(catalogRecordName(kind, record), strings.TrimSpace(name)) || catalogRecordID(record) == name {
@@ -1241,6 +1532,18 @@ func labelsDisplayWithCatalog(value any, catalogNames map[string]string) string 
 	names := make([]string, 0, len(items))
 	for _, item := range items {
 		if name := relationshipDisplayNameWithCatalog(item, catalogNames); name != "" {
+			names = append(names, name)
+		}
+	}
+	sort.Slice(names, func(i, j int) bool { return strings.ToLower(names[i]) < strings.ToLower(names[j]) })
+	return strings.Join(names, ", ")
+}
+
+func assigneesDisplay(value any) string {
+	items, _ := value.([]any)
+	var names []string
+	for _, item := range items {
+		if name := relationshipDisplayName(item); name != "" {
 			names = append(names, name)
 		}
 	}

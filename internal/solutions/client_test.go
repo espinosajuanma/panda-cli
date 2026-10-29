@@ -78,6 +78,32 @@ func TestListTasksFollowsOffsetAndSendsProjectFilter(t *testing.T) {
 	}
 }
 
+func TestListProjectMembersFetchesEmbeddedMembersAndRoles(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/data/projects/project-7" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+		if r.URL.Query().Get("_fields") != "id,members" {
+			t.Fatalf("project members were not requested: %v", r.URL.Query())
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"project-7","members":[{"user":{"id":"user-1","label":"Developer"},"role":"developer"}]}`))
+	}))
+	defer server.Close()
+
+	members, err := NewClient(server.URL, "session-token").ListProjectMembers(context.Background(), "project-7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(members) != 1 || members[0]["role"] != "developer" {
+		t.Fatalf("unexpected members: %#v", members)
+	}
+	user, _ := members[0]["user"].(map[string]any)
+	if user["id"] != "user-1" || user["label"] != "Developer" {
+		t.Fatalf("unexpected member user: %#v", user)
+	}
+}
+
 func TestListStopsWhenTotalIsSatisfiedEvenIfOffsetIsPresent(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

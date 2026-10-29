@@ -102,6 +102,18 @@ func (c *Client) ListPackages(ctx context.Context, projectID string) ([]map[stri
 	return c.listProjectRecords(ctx, "dev.packages", projectID)
 }
 
+func (c *Client) ListProjectMembers(ctx context.Context, projectID string) ([]map[string]any, error) {
+	query := url.Values{"_fields": []string{"id,members"}}
+	path := "/data/projects/" + url.PathEscape(projectID) + "?" + query.Encode()
+	var project struct {
+		Members []map[string]any `json:"members"`
+	}
+	if err := c.request(ctx, http.MethodGet, path, nil, &project); err != nil {
+		return nil, err
+	}
+	return project.Members, nil
+}
+
 func (c *Client) listProjectRecords(ctx context.Context, entity, projectID string) ([]map[string]any, error) {
 	items, err := c.list(ctx, "/data/"+entity, url.Values{"project.id": []string{projectID}})
 	if err != nil {

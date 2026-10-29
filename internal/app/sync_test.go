@@ -126,6 +126,8 @@ func TestPullThenPushMergesIndependentRemoteAndLocalChanges(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/data/projects/project-1":
+			_, _ = fmt.Fprint(w, `{"members":[]}`)
 		case r.Method == http.MethodGet && (r.URL.Path == "/data/dev.labels" || r.URL.Path == "/data/dev.packages"):
 			_, _ = fmt.Fprint(w, `{"total":0,"items":[]}`)
 		case r.Method == http.MethodGet && r.URL.Path == "/data/dev.tasks":
@@ -193,6 +195,11 @@ func TestPullSkipsTasksWithUnchangedVersion(t *testing.T) {
 		"labels": []any{}, "assignees": []any{}, "reviewers": []any{}, "notes": []any{},
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/data/projects/project-1" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{"members":[]}`)
+			return
+		}
 		if r.Method == http.MethodGet && (r.URL.Path == "/data/dev.labels" || r.URL.Path == "/data/dev.packages") {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = fmt.Fprint(w, `{"total":0,"items":[]}`)
@@ -244,6 +251,9 @@ func TestPullSkipsTasksWithUnchangedVersion(t *testing.T) {
 	if !strings.Contains(output.String(), "1 updated") {
 		t.Fatalf("changed version was not counted as updated: %q", output.String())
 	}
+	if !strings.Contains(output.String(), "Pulled project data: 1 task(s): 0 new, 1 updated; 0 labels, 0 packages, 0 members synchronized") || strings.Contains(output.String(), "Synchronized project") {
+		t.Fatalf("pull should emit one final project-wide summary: %q", output.String())
+	}
 	local, err = workspace.ReadMap(filepath.Join(dir, "metadata.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -274,16 +284,45 @@ func TestSameTaskVersionStillChecksLabelAndPackageRelationships(t *testing.T) {
 }
 
 func TestPullProgressBarFormattingAndNonTerminalOutput(t *testing.T) {
-	if got, want := formatPullProgress(5, 10), "Pulling tasks: [##########----------] 5/10 (50%)"; got != want {
+	if got, want := formatPullProgress(0), "Pulling project data: [--------------------] 0%"; got != want {
+		t.Fatalf("initial progress bar = %q, want %q", got, want)
+	}
+	if got, want := formatPullProgress(50), "Pulling project data: [##########----------] 50%"; got != want {
 		t.Fatalf("progress bar = %q, want %q", got, want)
 	}
 	var output strings.Builder
-	progress := newPullProgress(&output, 3)
+	progress := newPullProgress(&output)
 	progress.Update(0)
-	progress.Advance()
+	progress.Update(50)
 	progress.Finish()
 	if output.Len() != 0 {
 		t.Fatalf("non-terminal output included a progress bar: %q", output.String())
+	}
+}
+
+func TestProjectCatalogAndMemberSyncDeduplicatesByIdentity(t *testing.T) {
+	label := map[string]any{"id": "label-1", "name": "Security"}
+	labels := dedupeCatalogRecords([]map[string]any{
+		label,
+		{"id": "label-1", "name": "Duplicate"},
+		{"id": "label-2", "name": "Support"},
+	})
+	if len(labels) != 2 {
+		t.Fatalf("catalog records were not deduplicated by ID: %#v", labels)
+	}
+	merged, _, _ := mergeCatalogRecords(labelCatalog, []map[string]any{label}, nil, labels)
+	if len(merged) != 2 {
+		t.Fatalf("catalog merge duplicated an existing project record: %#v", merged)
+	}
+
+	member := map[string]any{"user": map[string]any{"id": "user-1", "label": "Ada"}, "role": "developer"}
+	members := dedupeProjectMembers([]map[string]any{
+		member,
+		{"user": map[string]any{"id": "user-1", "label": "Ada"}, "role": "developer"},
+		{"user": map[string]any{"id": "user-1", "label": "Ada"}, "role": "qa"},
+	})
+	if len(members) != 2 {
+		t.Fatalf("project members were not deduplicated by user ID and role: %#v", members)
 	}
 }
 
@@ -426,6 +465,82 @@ func TestPackageSelectorSupportsOneOrNone(t *testing.T) {
 	}
 	if hasPackageAssignment(metadata["package"]) {
 		t.Fatalf("none selector did not clear package: %#v", metadata["package"])
+	}
+}
+
+func TestRoleAssignmentAndCreateEditAssigneesSupportMultipleMembers(t *testing.T) {
+	remote := map[string]any{
+		"id": "task-assign", "number": float64(14), "title": "Assignable", "type": "feature",
+		"priority": "medium", "status": "new", "description": "", "assignees": []any{},
+	}
+	ws, _ := makeSyncedTask(t, remote)
+	members := []map[string]any{
+		{"user": map[string]any{"id": "user-lead", "label": "Ada Lovelace", "email": "ada@example.com"}, "role": "teamLead"},
+		{"user": map[string]any{"id": "user-dev", "label": "Grace Hopper", "email": "grace@example.com"}, "role": "developer"},
+		{"user": map[string]any{"id": "user-qa", "label": "Linus Torvalds", "email": "linus@example.com"}, "role": "qa"},
+		{"user": map[string]any{"id": "user-ux", "label": "Ursula UX", "email": "ursula@example.com"}, "role": "ux"},
+		{"user": map[string]any{"id": "user-support", "label": "Sam Support", "email": "sam@example.com"}, "role": "support"},
+	}
+	if err := writeProjectMembers(ws, members); err != nil {
+		t.Fatal(err)
+	}
+	syncedMembers, err := projectMembers(ws)
+	if err != nil || len(syncedMembers) != 5 {
+		t.Fatalf("non-assignee roles should remain synced: members=%#v error=%v", syncedMembers, err)
+	}
+	if eligible := eligibleProjectMembers(syncedMembers); len(eligible) != 3 {
+		t.Fatalf("assignee eligibility included unsupported roles: %#v", eligible)
+	}
+
+	if err := assignTask(ws, []string{"14", "teamLead,developer"}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	dir, metadata, err := ws.FindTask("14")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assignees, _ := metadata["assignees"].([]any)
+	if len(assignees) != 2 || relationshipID(assignees[0]) != "user-lead" || relationshipID(assignees[1]) != "user-dev" {
+		t.Fatalf("role assignment did not select all matching members: %#v", metadata["assignees"])
+	}
+
+	if err := editTask(ws, []string{"14", "assignees", "Ada Lovelace", "Linus Torvalds"}, strings.NewReader(""), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if err := editTask(ws, []string{"14", "assignees", "Ursula UX"}, strings.NewReader(""), io.Discard); err == nil || !strings.Contains(err.Error(), "not eligible for assignment") {
+		t.Fatalf("an ineligible member was accepted as an assignee: %v", err)
+	}
+	metadata, err = workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assignees, _ = metadata["assignees"].([]any)
+	if len(assignees) != 2 || relationshipID(assignees[0]) != "user-lead" || relationshipID(assignees[1]) != "user-qa" {
+		t.Fatalf("edit assignees did not save explicit members: %#v", metadata["assignees"])
+	}
+
+	project := &config.Project{ID: "project-1", Name: "Alpha"}
+	if err := createTask(ws, project, []string{"New", "task", "--assignee", "Ada Lovelace,Grace Hopper"}, strings.NewReader(""), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	dirs, err := ws.TaskDirectories()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var created map[string]any
+	for _, taskDir := range dirs {
+		candidate, readErr := workspace.ReadMap(filepath.Join(taskDir, "metadata.json"))
+		if readErr == nil && stringField(candidate, "title") == "New task" {
+			created = candidate
+			break
+		}
+	}
+	if created == nil {
+		t.Fatal("create did not save task metadata")
+	}
+	assignees, _ = created["assignees"].([]any)
+	if len(assignees) != 2 {
+		t.Fatalf("create did not save multiple assignees: %#v", created["assignees"])
 	}
 }
 
@@ -637,6 +752,8 @@ func TestPullMergesTaskLabelAndPackageAssignments(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
+		case "/data/projects/project-1":
+			_, _ = fmt.Fprint(w, `{"members":[{"user":{"id":"user-lead","label":"Ada Lovelace","email":"ada@example.com"},"role":"teamLead"},{"user":{"id":"user-dev","label":"Grace Hopper","email":"grace@example.com"},"role":"developer"}]}`)
 		case "/data/dev.labels", "/data/dev.packages":
 			_, _ = fmt.Fprint(w, `{"total":0,"items":[]}`)
 		case "/data/dev.tasks":
@@ -652,6 +769,10 @@ func TestPullMergesTaskLabelAndPackageAssignments(t *testing.T) {
 	project := &config.Project{ID: "project-1", Name: "Alpha"}
 	if err := pull(context.Background(), client, ws, project, io.Discard); err != nil {
 		t.Fatal(err)
+	}
+	projectTeam, err := projectMembers(ws)
+	if err != nil || len(projectTeam) != 2 || stringField(projectTeam[0], "role") != "teamLead" {
+		t.Fatalf("project members were not synced with roles: %#v, error=%v", projectTeam, err)
 	}
 	local, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
 	if err != nil {
@@ -1396,6 +1517,11 @@ func TestPullPreservesEditedNotesAndReportsOverlappingRemoteEdits(t *testing.T) 
 		"addedBy": map[string]any{"id": "user-1", "label": "Juan"},
 	}}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/data/projects/project-1" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{"members":[]}`)
+			return
+		}
 		if r.Method == http.MethodGet && (r.URL.Path == "/data/dev.labels" || r.URL.Path == "/data/dev.packages") {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = fmt.Fprint(w, `{"total":0,"items":[]}`)

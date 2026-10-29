@@ -67,7 +67,7 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 			return errors.New("usage: panda path")
 		}
 		return printWorkspacePath(cfg, out)
-	case "list", "pull", "diff", "push", "create", "edit", "edit-note", "view", "add-note", "discard", "clean", "labels", "packages":
+	case "list", "pull", "diff", "push", "create", "edit", "assign", "edit-note", "view", "add-note", "discard", "clean", "labels", "packages":
 		ws, err := projectWorkspace(cfg)
 		if err != nil {
 			return err
@@ -97,6 +97,8 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 			return createTask(ws, cfg.Project, args, in, out)
 		case "edit":
 			return editTask(ws, args, in, out)
+		case "assign":
+			return assignTask(ws, args, out)
 		case "edit-note":
 			if err := requireLogin(cfg); err != nil {
 				return err
@@ -157,13 +159,13 @@ const bashCompletion = `_panda_complete() {
   local cur="${COMP_WORDS[COMP_CWORD]}"
   local candidate
   if [[ "${COMP_WORDS[1]}" == "edit" && $COMP_CWORD -eq 3 ]]; then
-    COMPREPLY=( $(compgen -W "labels package json" -- "$cur") )
+    COMPREPLY=( $(compgen -W "labels package assignees json" -- "$cur") )
   elif [[ "${COMP_WORDS[1]}" == "edit" && ( "${COMP_WORDS[3]}" == "labels" || "${COMP_WORDS[3]}" == "package" ) ]]; then
     COMPREPLY=( $(compgen -W "none" -- "$cur") )
   elif [[ ( "${COMP_WORDS[1]}" == "labels" || "${COMP_WORDS[1]}" == "packages" ) && $COMP_CWORD -eq 2 ]]; then
     COMPREPLY=( $(compgen -W "list create edit delete" -- "$cur") )
   else
-    COMPREPLY=( $(compgen -W "login config path list pull diff push create edit edit-note view add-note discard clean labels packages completion" -- "$cur") )
+    COMPREPLY=( $(compgen -W "login config path list pull diff push create edit assign edit-note view add-note discard clean labels packages completion" -- "$cur") )
   fi
 }
 complete -F _panda_complete panda`
@@ -172,18 +174,18 @@ const zshCompletion = `#compdef panda
 _panda() {
   local cur="${words[CURRENT]}"
   if [[ "${words[2]}" == "edit" && $CURRENT -eq 4 ]]; then
-    compadd -- labels package json
+    compadd -- labels package assignees json
   elif [[ ( "${words[2]}" == "labels" || "${words[2]}" == "packages" ) && $CURRENT -eq 3 ]]; then
     compadd -- list create edit delete
   else
-    compadd -- login config path list pull diff push create edit edit-note view add-note discard clean labels packages completion
+    compadd -- login config path list pull diff push create edit assign edit-note view add-note discard clean labels packages completion
   fi
 }
 compdef _panda panda`
 
-const fishCompletion = `complete -c panda -f -n '__fish_seen_subcommand_from edit; and test (count (commandline -opc)) -eq 3' -a 'labels package json'
+const fishCompletion = `complete -c panda -f -n '__fish_seen_subcommand_from edit; and test (count (commandline -opc)) -eq 3' -a 'labels package assignees json'
 complete -c panda -f -n '__fish_seen_subcommand_from labels packages; and test (count (commandline -opc)) -eq 2' -a 'list create edit delete'
-complete -c panda -f -n 'not __fish_seen_subcommand_from login config path list pull diff push create edit edit-note view add-note discard clean labels packages completion' -a 'login config path list pull diff push create edit edit-note view add-note discard clean labels packages completion'`
+complete -c panda -f -n 'not __fish_seen_subcommand_from login config path list pull diff push create edit assign edit-note view add-note discard clean labels packages completion' -a 'login config path list pull diff push create edit assign edit-note view add-note discard clean labels packages completion'`
 
 func login(ctx context.Context, cfg *config.Config, client *solutions.Client, args []string, in io.Reader, out io.Writer) error {
 	var email string
@@ -278,23 +280,54 @@ func requireLogin(cfg *config.Config) error {
 }
 
 func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace, project *config.Project, out io.Writer) error {
-	catalogConflictCount, err := pullProjectCatalogs(ctx, client, ws, project, out)
+	progress := newPullProgress(out)
+	defer progress.Finish()
+	progress.Update(0)
+	labels, err := client.ListLabels(ctx, project.ID)
+	if err != nil {
+		return fmt.Errorf("fetch project labels: %w", err)
+	}
+	var reports []string
+	labelConflicts, labelCount, err := pullProjectCatalogKind(ws, labelCatalog, labels, out, progress, 0, 25, &reports)
 	if err != nil {
 		return err
+	}
+	packages, err := client.ListPackages(ctx, project.ID)
+	if err != nil {
+		return fmt.Errorf("fetch project packages: %w", err)
+	}
+	packageConflicts, packageCount, err := pullProjectCatalogKind(ws, packageCatalog, packages, out, progress, 25, 50, &reports)
+	if err != nil {
+		return err
+	}
+	members, err := client.ListProjectMembers(ctx, project.ID)
+	if err != nil {
+		return fmt.Errorf("fetch project members: %w", err)
+	}
+	members = dedupeProjectMembers(members)
+	if err := writeProjectMembers(ws, members); err != nil {
+		return fmt.Errorf("save project members: %w", err)
+	}
+	if len(members) == 0 {
+		updatePullStage(progress, 50, 75, 0, 0)
+	} else {
+		for index := range members {
+			updatePullStage(progress, 50, 75, index+1, len(members))
+		}
 	}
 	tasks, err := client.ListTasks(ctx, project.ID)
 	if err != nil {
-		return err
+		return fmt.Errorf("fetch project tasks: %w", err)
 	}
-	updated, created, conflictCount := 0, 0, catalogConflictCount
+	if len(tasks) == 0 {
+		progress.Update(95)
+	}
+	updated, created, conflictCount := 0, 0, labelConflicts+packageConflicts
 	remoteIDs := make(map[string]bool, len(tasks))
-	progress := newPullProgress(out, len(tasks))
-	defer progress.Finish()
-	progress.Update(0)
-	for _, remote := range tasks {
+	for taskIndex, remote := range tasks {
 		id := stringField(remote, "id")
 		if id == "" {
-			progress.Advance()
+			updatePullStage(progress, 75, 95, taskIndex+1, len(tasks))
 			continue
 		}
 		remoteIDs[id] = true
@@ -326,7 +359,7 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 				return err
 			}
 			created++
-			progress.Advance()
+			updatePullStage(progress, 75, 95, taskIndex+1, len(tasks))
 			continue
 		}
 		if err != nil {
@@ -337,14 +370,13 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 			return fmt.Errorf("task %s has no sync baseline; run clean then pull: %w", id, err)
 		}
 		if sameTaskVersion(remote, state.Remote) {
-			progress.Advance()
+			updatePullStage(progress, 75, 95, taskIndex+1, len(tasks))
 			continue
 		}
 		fields := mergeMetadata(local, state.Remote, remote)
 		if len(fields) != 0 {
 			conflictCount += len(fields)
-			progress.Pause()
-			fmt.Fprintf(out, "%s task %s: %s\n", colorText(out, "1;31", "Conflict"), taskLabel(local), strings.Join(fields, ", "))
+			reports = append(reports, fmt.Sprintf("%s task %s: %s", colorText(out, "1;31", "Conflict"), taskLabel(local), strings.Join(fields, ", ")))
 		}
 		merged := workspace.MetadataFromRemote(remote)
 		for _, field := range editableFields {
@@ -376,8 +408,7 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 		descriptionConflict := string(localMarkdown) != baseMarkdown && remoteHTML != baseHTML && string(localMarkdown) != remoteMarkdown
 		if descriptionConflict {
 			conflictCount++
-			progress.Pause()
-			fmt.Fprintf(out, "%s task %s: description\n", colorText(out, "1;31", "Conflict"), taskLabel(local))
+			reports = append(reports, fmt.Sprintf("%s task %s: description", colorText(out, "1;31", "Conflict"), taskLabel(local)))
 		} else if string(localMarkdown) == baseMarkdown {
 			if err := workspace.WriteFileAtomic(filepath.Join(dir, "description.md"), []byte(remoteMarkdown), 0o600); err != nil {
 				return err
@@ -393,12 +424,11 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 		}
 		if len(noteConflicts) > 0 {
 			conflictCount += len(noteConflicts)
-			progress.Pause()
 			labels := make([]string, len(noteConflicts))
 			for index, filename := range noteConflicts {
 				labels[index] = filepath.ToSlash(filepath.Join("notes", filename))
 			}
-			fmt.Fprintf(out, "%s task %s: %s\n", colorText(out, "1;31", "Conflict"), taskLabel(local), strings.Join(labels, ", "))
+			reports = append(reports, fmt.Sprintf("%s task %s: %s", colorText(out, "1;31", "Conflict"), taskLabel(local), strings.Join(labels, ", ")))
 		}
 		if err := syncRemoteNotes(dir, remote, state.StagedNotes, localNoteNames); err != nil {
 			return err
@@ -410,9 +440,8 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 			return err
 		}
 		updated++
-		progress.Advance()
+		updatePullStage(progress, 75, 95, taskIndex+1, len(tasks))
 	}
-	progress.Finish()
 	missingRemote := 0
 	localDirs, err := ws.TaskDirectories()
 	if err != nil {
@@ -427,11 +456,15 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 		if id == "" || remoteIDs[id] {
 			continue
 		}
-		progress.Pause()
-		fmt.Fprintf(out, "%s task %s is no longer returned for this project; kept local files.\n", colorText(out, "1;33", "Warning:"), taskLabel(metadata))
+		reports = append(reports, fmt.Sprintf("%s task %s is no longer returned for this project; kept local files.", colorText(out, "1;33", "Warning:"), taskLabel(metadata)))
 		missingRemote++
 	}
-	fmt.Fprintf(out, "%s %d task(s): %d new, %d updated", colorText(out, "1;32", "Pulled"), len(tasks), created, updated)
+	progress.Update(100)
+	progress.Finish()
+	for _, report := range reports {
+		fmt.Fprintln(out, report)
+	}
+	fmt.Fprintf(out, "%s project data: %d task(s): %d new, %d updated; %d labels, %d packages, %d members synchronized", colorText(out, "1;32", "Pulled"), len(tasks), created, updated, labelCount, packageCount, len(members))
 	if missingRemote > 0 {
 		fmt.Fprintf(out, "; %d missing remotely", missingRemote)
 	}
@@ -445,6 +478,38 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 	return nil
 }
 
+func writeProjectMembers(ws *workspace.Workspace, members []map[string]any) error {
+	members = dedupeProjectMembers(members)
+	data, err := json.MarshalIndent(members, "", "  ")
+	if err != nil {
+		return err
+	}
+	return workspace.WriteFileAtomic(filepath.Join(ws.Root, ".panda", "members.json"), append(data, '\n'), 0o600)
+}
+
+func dedupeProjectMembers(members []map[string]any) []map[string]any {
+	type membership struct {
+		userID string
+		role   string
+	}
+	seen := make(map[membership]bool, len(members))
+	unique := make([]map[string]any, 0, len(members))
+	for _, member := range members {
+		user, _ := member["user"].(map[string]any)
+		id := relationshipID(user)
+		role := strings.TrimSpace(stringField(member, "role"))
+		key := membership{userID: id, role: role}
+		if id != "" && role != "" {
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+		}
+		unique = append(unique, member)
+	}
+	return unique
+}
+
 func sameTaskVersion(remote, baseline map[string]any) bool {
 	remoteVersion, remoteHasVersion := remote["version"]
 	baseVersion, baselineHasVersion := baseline["version"]
@@ -455,34 +520,31 @@ func sameTaskVersion(remote, baseline map[string]any) bool {
 
 type pullProgress struct {
 	out     io.Writer
-	total   int
 	current int
 	active  bool
 	drawn   bool
 }
 
-func newPullProgress(out io.Writer, total int) *pullProgress {
-	return &pullProgress{out: out, total: total, active: total > 0 && isTerminal(out)}
+func newPullProgress(out io.Writer) *pullProgress {
+	return &pullProgress{out: out, active: isTerminal(out)}
 }
 
-func (p *pullProgress) Update(current int) {
+func (p *pullProgress) Update(percent int) {
 	if !p.active {
 		return
 	}
-	p.current = min(max(current, 0), p.total)
-	fmt.Fprintf(p.out, "\r%s", colorText(p.out, "1;36", formatPullProgress(p.current, p.total)))
+	p.current = min(max(percent, 0), 100)
+	fmt.Fprintf(p.out, "\r%s", colorText(p.out, "1;36", formatPullProgress(p.current)))
 	p.drawn = true
 }
 
-func (p *pullProgress) Advance() {
-	p.Update(p.current + 1)
-}
-
-func (p *pullProgress) Pause() {
-	if p.active && p.drawn {
-		fmt.Fprint(p.out, "\r\x1b[K")
-		p.drawn = false
+func updatePullStage(progress *pullProgress, start, end, current, total int) {
+	if total <= 0 {
+		progress.Update(end)
+		return
 	}
+	percent := start + (end-start)*min(max(current, 0), total)/total
+	progress.Update(percent)
 }
 
 func (p *pullProgress) Finish() {
@@ -492,15 +554,11 @@ func (p *pullProgress) Finish() {
 	}
 }
 
-func formatPullProgress(current, total int) string {
-	if total <= 0 {
-		return "Pulling tasks: [--------------------] 0/0 (0%)"
-	}
-	current = min(max(current, 0), total)
+func formatPullProgress(percent int) string {
+	percent = min(max(percent, 0), 100)
 	const width = 20
-	filled := current * width / total
-	percentage := current * 100 / total
-	return fmt.Sprintf("Pulling tasks: [%s%s] %d/%d (%d%%)", strings.Repeat("#", filled), strings.Repeat("-", width-filled), current, total, percentage)
+	filled := percent * width / 100
+	return fmt.Sprintf("Pulling project data: [%s%s] %d%%", strings.Repeat("#", filled), strings.Repeat("-", width-filled), percent)
 }
 
 func diff(ws *workspace.Workspace, args []string, out io.Writer) error {
@@ -1948,7 +2006,28 @@ func syncRemoteNotes(dir string, remote map[string]any, stagedNotes, preservedNo
 }
 
 func createTask(ws *workspace.Workspace, project *config.Project, args []string, in io.Reader, out io.Writer) error {
-	title := strings.TrimSpace(strings.Join(args, " "))
+	var titleParts, requestedAssignees []string
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		if arg == "--assignee" || arg == "--assignees" {
+			if index+1 >= len(args) || strings.HasPrefix(args[index+1], "--") {
+				return errors.New("--assignee requires a project member name, email, or ID")
+			}
+			index++
+			requestedAssignees = append(requestedAssignees, strings.Split(args[index], ",")...)
+			continue
+		}
+		if strings.HasPrefix(arg, "--assignee=") || strings.HasPrefix(arg, "--assignees=") {
+			value := strings.TrimPrefix(strings.TrimPrefix(arg, "--assignees="), "--assignee=")
+			if strings.TrimSpace(value) == "" {
+				return errors.New("--assignee requires a project member name, email, or ID")
+			}
+			requestedAssignees = append(requestedAssignees, strings.Split(value, ",")...)
+			continue
+		}
+		titleParts = append(titleParts, arg)
+	}
+	title := strings.TrimSpace(strings.Join(titleParts, " "))
 	if title == "" {
 		var err error
 		title, err = prompt(in, out, fmt.Sprintf("%s: ", colorText(out, "1", "Title")))
@@ -1982,6 +2061,13 @@ func createTask(ws *workspace.Workspace, project *config.Project, args []string,
 		if err := editTaskPackage(ws, dir, metadata, nil, in, out); err != nil {
 			return err
 		}
+		if err := editAssignees(ws, dir, metadata, requestedAssignees, in, out); err != nil {
+			return err
+		}
+	} else if len(requestedAssignees) > 0 {
+		if err := editAssignees(ws, dir, metadata, requestedAssignees, in, out); err != nil {
+			return err
+		}
 	}
 	if err := os.MkdirAll(filepath.Join(dir, "notes"), 0o700); err != nil {
 		return err
@@ -2007,7 +2093,7 @@ func createTask(ws *workspace.Workspace, project *config.Project, args []string,
 
 func editTask(ws *workspace.Workspace, args []string, in io.Reader, out io.Writer) error {
 	if len(args) < 1 {
-		return errors.New("usage: panda edit <taskNumber|localId> [labels [labelName...]|package [name|none]|json]")
+		return errors.New("usage: panda edit <taskNumber|localId> [labels [labelName...]|package [name|none]|assignees [member...|none]|json]")
 	}
 	dir, metadata, err := ws.FindTask(args[0])
 	if err != nil {
@@ -2025,8 +2111,10 @@ func editTask(ws *workspace.Workspace, args []string, in io.Reader, out io.Write
 			return editLabels(ws, dir, metadata, nil, in, out)
 		case "package":
 			return editTaskPackage(ws, dir, metadata, nil, in, out)
+		case "assignees", "assign":
+			return editAssignees(ws, dir, metadata, nil, in, out)
 		default:
-			return errors.New("field selectors are `labels`, `package`, and `json`")
+			return errors.New("field selectors are `labels`, `package`, `assignees`, and `json`")
 		}
 	}
 	if len(args) > 2 {
@@ -2035,8 +2123,10 @@ func editTask(ws *workspace.Workspace, args []string, in io.Reader, out io.Write
 			return editLabels(ws, dir, metadata, args[2:], in, out)
 		case "package":
 			return editTaskPackage(ws, dir, metadata, args[2:], in, out)
+		case "assignees", "assign":
+			return editAssignees(ws, dir, metadata, args[2:], in, out)
 		default:
-			return errors.New("the field selectors are `labels` and `package`")
+			return errors.New("the field selectors are `labels`, `package`, and `assignees`")
 		}
 	}
 	if err := editMetadataInteractive(dir, metadata, in, out); err != nil {
@@ -2069,6 +2159,13 @@ func editTask(ws *workspace.Workspace, args []string, in io.Reader, out io.Write
 				return err
 			}
 		}
+		metadata, err = workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+		if err != nil {
+			return err
+		}
+		if err := editAssignees(ws, dir, metadata, nil, in, out); err != nil {
+			return err
+		}
 	} else {
 		editLabelsChoice, err := prompt(in, out, "Edit labels from the local project catalog? [y/N] ")
 		if err != nil {
@@ -2096,6 +2193,19 @@ func editTask(ws *workspace.Workspace, args []string, in io.Reader, out io.Write
 				if err := editTaskPackage(ws, dir, metadata, nil, in, out); err != nil {
 					return err
 				}
+			}
+		}
+		assigneeChoice, err := prompt(in, out, "Edit assignees? [y/N] ")
+		if err != nil {
+			return err
+		}
+		if strings.EqualFold(assigneeChoice, "y") || strings.EqualFold(assigneeChoice, "yes") {
+			metadata, err = workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+			if err != nil {
+				return err
+			}
+			if err := editAssignees(ws, dir, metadata, nil, in, out); err != nil {
+				return err
 			}
 		}
 	}
@@ -2217,6 +2327,8 @@ func viewTask(ws *workspace.Workspace, args []string, out io.Writer) error {
 				value = relationshipDisplayNameWithCatalog(value, packageNames)
 			} else if field == "labels" {
 				value = labelsDisplayWithCatalog(value, labelNames)
+			} else if field == "assignees" {
+				value = assigneesDisplay(value)
 			}
 			fmt.Fprintf(out, "%s %v  \n", colorText(out, "1;36", "**"+field+":**"), value)
 		}

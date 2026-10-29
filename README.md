@@ -93,13 +93,15 @@ and directories at the root are left in place.
 ### `pull`
 
 - If project is not set throws error
-- Fetch all tasks for the selected project from the Solutions app, following
-  API pagination
+- Fetch project tasks, labels, packages, and members from the Solutions app,
+  following API pagination
 - Compare the fetched tasks with the last-synced baseline
 - Pull project labels and packages into `.panda/labels.json` and
-  `.panda/packages.json`, preserving local changes and reporting conflicts
+  `.panda/packages.json`, preserving local changes and reporting conflicts;
+  save team members and roles in `.panda/members.json`
 - Skip rewriting tasks whose remote `version` matches the stored baseline
-- Shows an in-place progress bar when output is a terminal
+- Shows an in-place progress bar for every fetched label, package, member, and
+  task when output is a terminal
 - Apply remote-only changes locally and preserve local-only changes
 - Report conflicts when the same field changed both locally and remotely
 - Changes remain local until a `push` is performed
@@ -167,14 +169,25 @@ and directories at the root are left in place.
 - Package editing also supports start date and estimation fields
 - Catalog changes are local until `panda push`; `panda pull` merges remote
   catalog changes and reports conflicts
-- Assign none, one, or multiple labels, and one optional package, with
-  `panda edit` or the interactive selectors during `panda create`
+- Assign none, one, or multiple labels and team members, and one optional
+  package, with `panda edit` or the interactive selectors during `panda create`
 
 ### `create`
 
 - Creates a task locally; interactive terminals offer arrow-key selectors for
-  type, priority, complexity, labels, and optional package, then an optional
-  description editor (`e` opens `$EDITOR`, Enter skips)
+  type, priority, complexity, labels, optional package, and multiple assignees,
+  then an optional description editor (`e` opens `$EDITOR`, Enter skips)
+- `--assignee {member}` accepts a synced member name, email, or ID and can be
+  repeated or given comma-separated members
+
+### `assign {taskNumber} {role...}`
+
+- Assigns all synced members matching one or more roles to the local task;
+  eligible roles are `teamLead`, `developer`, and `qa`
+- Roles may be space- or comma-separated, for example
+  `panda assign 12345 teamLead,qa`; `none` clears all assignees
+- Run `panda pull` first to sync current team members; changes are published by
+  `panda push`
 
 ### `discard {taskNumber}`
 
@@ -182,6 +195,10 @@ and directories at the root are left in place.
 - Optionally stage a markdown note (to be transformed to HTML) with the change
 
 ### `edit {taskNumber}`
+
+- `panda edit {taskNumber} assignees {member...}` sets multiple assignees by
+  synced member name, email, or ID; use `none` to remove all assignees
+- Interactive edit offers a multi-select list of project members
 
 - Interactively edit title, type, priority, and complexity
 - Press `e` by itself when prompted to open `description.md` in `$EDITOR` (no
