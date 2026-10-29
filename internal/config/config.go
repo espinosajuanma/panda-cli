@@ -8,10 +8,12 @@ import (
 )
 
 const DefaultAPIURL = "https://solutions.slingrs.io/prod/runtime/api"
+const DefaultProjectViewID = "680b8e41805d3740e97cfecb"
 
 type Project struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	ViewID string `json:"view_id,omitempty"`
 }
 
 type Config struct {
@@ -55,6 +57,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.APIURL == "" {
 		cfg.APIURL = DefaultAPIURL
+	}
+	if cfg.Project != nil && cfg.Project.ViewID == "" {
+		cfg.Project.ViewID = DefaultProjectViewID
 	}
 	return cfg, nil
 }

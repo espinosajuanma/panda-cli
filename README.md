@@ -177,8 +177,18 @@ and directories at the root are left in place.
 - Creates a task locally; interactive terminals offer arrow-key selectors for
   type, priority, complexity, labels, optional package, and multiple assignees,
   then an optional description editor (`e` opens `$EDITOR`, Enter skips)
-- `--assignee {member}` accepts a synced member name, email, or ID and can be
-  repeated or given comma-separated members
+- Supplying task field options enables noninteractive mode; it never prompts or
+  launches an editor. Provide a title with `--title` or positional text.
+- `--type`, `--priority`, `--complexity`, `--package`, repeatable `--assignee`,
+  repeatable `--label` / `--remove-label`, and `--description-file` set fields
+  explicitly. Use `none` to clear optional fields; `--label none` clears all
+  labels.
+- Assignees are selected from synced team members with the `developer`,
+  `teamLead`, or `qa` role.
+- `--description-file {path}` reads Markdown from a UTF-8 file;
+  `--description-file -` reads it from stdin. Supplied content is preserved
+  byte-for-byte, including trailing newlines; empty content is rejected.
+- Creation remains local until an explicit `panda push`.
 
 ### `assign {taskNumber} {role...}`
 
@@ -196,6 +206,14 @@ and directories at the root are left in place.
 
 ### `edit {taskNumber}`
 
+- `panda edit {taskNumber} --priority high --label urgent` applies only the
+  supplied fields; omitted fields, including null, empty, and absent metadata,
+  remain unchanged.
+- Supports the same field options as noninteractive `create`, including
+  `--description-file {path|-}`. Supplying options never prompts or launches
+  an editor.
+- Assignees must be synced members with eligible `developer`, `teamLead`, or
+  `qa` roles.
 - `panda edit {taskNumber} assignees {member...}` sets multiple assignees by
   synced member name, email, or ID; use `none` to remove all assignees
 - Interactive edit offers a multi-select list of project members
@@ -209,6 +227,16 @@ and directories at the root are left in place.
 - In interactive terminals, use arrow keys and Enter for single-choice fields;
   use Space to toggle labels and Enter to finish the multi-select
 - `edit {taskNumber} json` opens `metadata.json` directly for advanced fields
+
+### `link {taskNumber}`
+
+- Prints a Markdown link using the task's verified local sync ID and the active
+  project's configured view ID. Unsynced or unverifiable tasks cannot be linked.
+- The default view ID is `680b8e41805d3740e97cfecb`; configure a different one with
+  `panda config set project-view {viewId}` and inspect it with
+  `panda config get project-view`.
+- Generate all task references with `panda link`; the canonical form is
+  `[#12345](https://solutions.slingrs.io/prod/runtime/#views/680b8e41805d3740e97cfecb/readOnly/{taskId})`.
 
 ### `view {taskNumber}`
 

@@ -48,6 +48,9 @@ func TestListTasksFollowsOffsetAndSendsProjectFilter(t *testing.T) {
 		if r.URL.Query().Get("project.id") != "project-7" {
 			t.Fatalf("missing project filter: %v", r.URL.Query())
 		}
+		if got := r.URL.Query().Get("_size"); got != "1000" {
+			t.Fatalf("page size = %q, want 1000", got)
+		}
 		if !strings.Contains(r.URL.Query().Get("_fields"), "rank") {
 			t.Fatalf("rank field was not explicitly requested: %v", r.URL.Query())
 		}
@@ -75,6 +78,44 @@ func TestListTasksFollowsOffsetAndSendsProjectFilter(t *testing.T) {
 	}
 	if requests != 2 {
 		t.Fatalf("made %d requests, want 2", requests)
+	}
+}
+
+func TestListLabelsAndPackagesRequestMaximumPageSize(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		path string
+	}{
+		{name: "labels", path: "/data/dev.labels"},
+		{name: "packages", path: "/data/dev.packages"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != test.path {
+					t.Fatalf("request path = %q, want %q", r.URL.Path, test.path)
+				}
+				if r.URL.Query().Get("project.id") != "project-7" {
+					t.Fatalf("project filter missing: %v", r.URL.Query())
+				}
+				if got := r.URL.Query().Get("_size"); got != "1000" {
+					t.Fatalf("page size = %q, want 1000", got)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"total":0,"items":[]}`))
+			}))
+			defer server.Close()
+
+			client := NewClient(server.URL, "token")
+			var list func(context.Context, string) ([]map[string]any, error)
+			if test.name == "labels" {
+				list = client.ListLabels
+			} else {
+				list = client.ListPackages
+			}
+			if _, err := list(context.Background(), "project-7"); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 

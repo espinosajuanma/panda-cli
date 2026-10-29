@@ -31,6 +31,7 @@ type listResponse struct {
 }
 
 const taskListFields = "id,label,version,project,number,title,type,package,labels,priority,complexity,workload,status,assignees,reviewers,reviewFeedbacks,github,createdBy,createdAt,release,releaseInformation,releaseNotes,description,files,notes,checklist,rank,reviewStatus,relatedFiles"
+const maxProjectPageSize = "1000"
 
 func NewClient(baseURL, token string) *Client {
 	return &Client{
@@ -78,6 +79,7 @@ func (c *Client) ListTasks(ctx context.Context, projectID string) ([]map[string]
 	query := url.Values{
 		"project.id": []string{projectID},
 		"_fields":    []string{taskListFields},
+		"_size":      []string{maxProjectPageSize},
 	}
 	items, err := c.list(ctx, "/data/dev.tasks", query)
 	if err != nil {
@@ -115,7 +117,10 @@ func (c *Client) ListProjectMembers(ctx context.Context, projectID string) ([]ma
 }
 
 func (c *Client) listProjectRecords(ctx context.Context, entity, projectID string) ([]map[string]any, error) {
-	items, err := c.list(ctx, "/data/"+entity, url.Values{"project.id": []string{projectID}})
+	items, err := c.list(ctx, "/data/"+entity, url.Values{
+		"project.id": []string{projectID},
+		"_size":      []string{maxProjectPageSize},
+	})
 	if err != nil {
 		return nil, err
 	}

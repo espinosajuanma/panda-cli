@@ -25,6 +25,20 @@ type manualPage struct {
 	seeAlso     []string
 }
 
+func taskFieldOptionsManual() []manualOption {
+	return []manualOption{
+		{"--title <text>", "Set or replace the title. Noninteractive create requires this option or positional title text."},
+		{"--type <value>", "Set one of feature, bug, other, or release."},
+		{"--priority <value>", "Set one of hotfix, high, medium, or low."},
+		{"--complexity <value|none>", "Set xs, s, m, l, xl, or xxl; none clears the field."},
+		{"--package <name|none>", "Set a package by local catalog name or ID, or clear it with none."},
+		{"--assignee <member>", "Set an eligible synced member by name, email, or ID. Repeat for multiple assignees; none clears all."},
+		{"--label, --add-label <name|none>", "Add a label from the local project catalog. Repeat to add multiple labels; use none by itself to clear all labels."},
+		{"--remove-label <name>", "Remove a label from the task. Repeat to remove multiple labels."},
+		{"--description-file <path|->", "Read UTF-8 Markdown from a file, or read it from stdin when the path is -. Empty descriptions are rejected when this option is used."},
+	}
+}
+
 var manualPages = map[string]manualPage{
 	"help": {
 		name:        "panda help - display command manuals",
@@ -43,15 +57,15 @@ var manualPages = map[string]manualPage{
 	},
 	"config": {
 		name:        "panda config - manage project configuration",
-		synopsis:    []string{"panda config set project <name>", "panda config get project"},
-		description: []string{"Select a Solutions project or display the currently selected project. Project selection is stored in the local Panda configuration."},
-		examples:    []string{"panda config set project \"Project Name\"", "panda config get project"},
+		synopsis:    []string{"panda config set project <name>", "panda config get project", "panda config set project-view <viewId>", "panda config get project-view"},
+		description: []string{"Select a Solutions project, configure its task view ID, or display either value. Configuration is stored locally. The default task view ID is the verified Solutions task view used by Panda links."},
+		examples:    []string{"panda config set project \"Project Name\"", "panda config get project", "panda config get project-view", "panda config set project-view 680b8e41805d3740e97cfecb"},
 		seeAlso:     []string{"panda-login(1)", "panda-path(1)"},
 	},
 	"config set": {
 		name:        "panda config set - set a configuration value",
-		synopsis:    []string{"panda config set project <name>"},
-		description: []string{"Validate the named Solutions project and make it the active project. Requires a successful login."},
+		synopsis:    []string{"panda config set project <name>", "panda config set project-view <viewId>"},
+		description: []string{"Select a Solutions project or configure the active project's task view ID."},
 		arguments:   []manualOption{{"name", "Name of the Solutions project to select."}},
 		examples:    []string{"panda config set project \"Project Name\""},
 		seeAlso:     []string{"panda config get(1)", "panda-login(1)"},
@@ -59,16 +73,24 @@ var manualPages = map[string]manualPage{
 	"config set project": {
 		name:        "panda config set project - select the active project",
 		synopsis:    []string{"panda config set project <name>"},
-		description: []string{"Look up a Solutions project by name and save its ID and name as the active project. Requires a successful login."},
+		description: []string{"Look up a Solutions project by name and save its ID, name, and default task view ID as the active project. Requires a successful login."},
 		arguments:   []manualOption{{"name", "Name of the Solutions project to select."}},
 		examples:    []string{"panda config set project \"Project Name\""},
 		seeAlso:     []string{"panda-config-get-project(1)", "panda-login(1)"},
 	},
+	"config set project-view": {
+		name:        "panda config set project-view - configure the task view ID",
+		synopsis:    []string{"panda config set project-view <viewId>"},
+		description: []string{"Set the active project's Solutions task view ID. Panda uses this ID in the views segment of canonical task links."},
+		arguments:   []manualOption{{"viewId", "Solutions project view ID used for task links."}},
+		examples:    []string{"panda config set project-view 680b8e41805d3740e97cfecb"},
+		seeAlso:     []string{"panda-config-get-project-view(1)", "panda-link(1)"},
+	},
 	"config get": {
 		name:        "panda config get - display a configuration value",
-		synopsis:    []string{"panda config get project"},
-		description: []string{"Print the active project name and ID, or report that no project is selected."},
-		examples:    []string{"panda config get project"},
+		synopsis:    []string{"panda config get project", "panda config get project-view"},
+		description: []string{"Print the active project name and ID or its task view ID."},
+		examples:    []string{"panda config get project", "panda config get project-view"},
 		seeAlso:     []string{"panda config set(1)"},
 	},
 	"config get project": {
@@ -77,6 +99,13 @@ var manualPages = map[string]manualPage{
 		description: []string{"Print the active project name and ID, or report that no project is selected."},
 		examples:    []string{"panda config get project"},
 		seeAlso:     []string{"panda-config-set-project(1)"},
+	},
+	"config get project-view": {
+		name:        "panda config get project-view - display the task view ID",
+		synopsis:    []string{"panda config get project-view"},
+		description: []string{"Print the active project's configured Solutions task view ID."},
+		examples:    []string{"panda config get project-view"},
+		seeAlso:     []string{"panda-config-set-project-view(1)", "panda-link(1)"},
 	},
 	"path": {
 		name:        "panda path - print the active workspace path",
@@ -225,18 +254,19 @@ var manualPages = map[string]manualPage{
 	},
 	"create": {
 		name:        "panda create - create a local task",
-		synopsis:    []string{"panda create [title] [--assignee <member>]..."},
-		description: []string{"Create a task in the local workspace with a temporary local ID. If title is omitted, Panda prompts for it. In a terminal, use arrow-key selectors for type, priority, complexity, labels, package, and multiple project members as assignees. Use --assignee one or more times to set assignees by name, email, or ID. The description prompt opens $EDITOR when e is pressed. A successful push creates the task in Solutions and assigns its task number."},
-		arguments:   []manualOption{{"title", "Optional task title; if omitted, Panda prompts for it."}},
-		options:     []manualOption{{"--assignee <member>", "Assign a project member by name, email, or ID. Repeat the option or use comma-separated members for multiple assignees."}},
-		examples:    []string{"panda create", "panda create \"Improve task search\" --assignee \"Ada Lovelace\"", "panda push"},
+		synopsis:    []string{"panda create [title]", "panda create --title <text> [task field options]"},
+		description: []string{"Create a task in the local workspace with a temporary local ID. Existing interactive selectors remain available. Supplying task field options selects noninteractive mode; title is required and no prompts or editor are opened. Changes remain local until an explicit panda push."},
+		arguments:   []manualOption{{"title", "Optional positional title; noninteractive option mode requires a title and does not prompt."}},
+		options:     taskFieldOptionsManual(),
+		examples:    []string{"panda create", "panda create --title \"Improve task search\" --type feature --assignee \"Ada Lovelace\" --description-file description.md", "panda create --title \"Scripted task\" --description-file - < description.md"},
 		seeAlso:     []string{"panda-edit(1)", "panda-push(1)"},
 	},
 	"edit": {
 		name:     "panda edit - edit a task's fields and description",
-		synopsis: []string{"panda edit <taskNumber|localId>", "panda edit <taskNumber|localId> labels [labelName|--remove=labelName ...|none]", "panda edit <taskNumber|localId> package [name|none]", "panda edit <taskNumber|localId> assignees [member ...|none]", "panda edit <taskNumber|localId> json"},
+		synopsis: []string{"panda edit <taskNumber|localId>", "panda edit <taskNumber|localId> [task field options]", "panda edit <taskNumber|localId> labels [labelName|--remove=labelName ...|none]", "panda edit <taskNumber|localId> package [name|none]", "panda edit <taskNumber|localId> assignees [member ...|none]", "panda edit <taskNumber|localId> json"},
 		description: []string{
 			"Interactively edit a task's title, type, priority, and complexity. On terminals, use arrow keys and Enter for single-choice fields; use Space to toggle labels and assignees and Enter to save each multi-select. Assign at most one optional package.",
+			"For scripts, pass any supported field options to apply only the supplied fields. Option-driven edits do not prompt or open an editor, preserve omitted metadata, and remain local until panda push.",
 			"Press e (without Enter) to open the task description in $EDITOR when prompted.",
 			"The json selector opens metadata.json for advanced metadata editing and then offers the description editor prompt.",
 		},
@@ -247,7 +277,8 @@ var manualPages = map[string]manualPage{
 			{"assignees", "Open the multi-select assignee picker, or follow with one or more project member names, emails, or IDs; none clears all assignees."},
 			{"json", "Open metadata.json in $EDITOR for advanced metadata editing."},
 		},
-		examples: []string{"panda edit 12345", "panda edit 12345 labels", "panda edit 12345 labels urgent --remove=bug", "panda edit 12345 package backend", "panda edit 12345 assignees \"Ada Lovelace\" \"Grace Hopper\"", "panda edit 12345 json"},
+		options:  taskFieldOptionsManual(),
+		examples: []string{"panda edit 12345", "panda edit 12345 --priority high", "panda edit 12345 --label urgent --remove-label bug", "panda edit 12345 --description-file description.md", "panda edit 12345 labels urgent --remove=bug", "panda edit 12345 json"},
 		seeAlso:  []string{"panda-edit-note(1)", "panda-view(1)", "panda-diff(1)"},
 	},
 	"assign": {
@@ -279,6 +310,14 @@ var manualPages = map[string]manualPage{
 		arguments:   []manualOption{{"taskNumber|localId", "Identifier of the task to display."}},
 		examples:    []string{"panda view 12345"},
 		seeAlso:     []string{"panda-edit(1)", "panda-edit-note(1)", "panda-diff(1)"},
+	},
+	"link": {
+		name:        "panda link - print a canonical Solutions task link",
+		synopsis:    []string{"panda link <taskNumber|localId>"},
+		description: []string{"Print a Markdown link using the active project's configured view ID and the task ID verified by its local sync baseline. Local, unsynced tasks and tasks without a verified ID cannot be linked."},
+		arguments:   []manualOption{{"taskNumber|localId", "Identifier of the synced task."}},
+		examples:    []string{"panda link 12345", "[#12345](https://solutions.slingrs.io/prod/runtime/#views/680b8e41805d3740e97cfecb/readOnly/task-id)"},
+		seeAlso:     []string{"panda-config-set-project-view(1)", "panda-view(1)"},
 	},
 	"add-note": {
 		name:        "panda add-note - stage a new task note",
@@ -326,6 +365,8 @@ var mainCommands = []mainCommand{
 	{"login", "[email]", "Authenticate with Solutions and save a session."},
 	{"config set project <name>", "", "Validate and select the active project."},
 	{"config get project", "", "Display the active project."},
+	{"config set project-view <viewId>", "", "Configure the view ID used in canonical task links."},
+	{"config get project-view", "", "Display the configured task view ID."},
 	{"path", "", "Print the selected project's workspace path."},
 	{"completion <bash|zsh|fish>", "", "Print shell completion setup code."},
 	{"labels [list|create|edit|delete]", "", "Manage project labels locally."},
@@ -334,9 +375,10 @@ var mainCommands = []mainCommand{
 	{"pull", "", "Fetch project tasks, catalogs, and members into the workspace."},
 	{"diff", "[task] [--verbose|-v] [--summary|-s]", "Review pending local changes."},
 	{"push", "", "Publish local edits and staged actions to Solutions."},
-	{"create", "[title] [--assignee <member>]...", "Create a task locally and optionally assign team members."},
-	{"edit", "<task> [labels ...|package ...|assignees ...|json]", "Edit task fields, labels, package, assignees, or metadata."},
+	{"create", "[title] [task field options]", "Create a task locally with interactive or noninteractive options."},
+	{"edit", "<task> [task field options|labels ...|package ...|assignees ...|json]", "Edit task fields interactively or with safe partial options."},
 	{"assign", "<task> <teamLead|developer|qa|none>", "Assign eligible project members to a task by role."},
+	{"link", "<task>", "Print a canonical Markdown link to a verified synced task."},
 	{"edit-note", "<task> <note-file>", "Edit one of your synced notes."},
 	{"view", "<task>", "Display task metadata, description, and notes."},
 	{"add-note", "<task> [text]", "Stage a new task note."},
@@ -431,8 +473,8 @@ func commandHelpKey(args []string) string {
 		if len(args) > 1 {
 			switch args[1] {
 			case "get", "set":
-				if len(args) > 2 && args[2] == "project" {
-					return "config " + args[1] + " project"
+				if len(args) > 2 && (args[2] == "project" || args[2] == "project-view") {
+					return "config " + args[1] + " " + args[2]
 				}
 				return "config " + args[1]
 			}

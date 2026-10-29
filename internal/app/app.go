@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -67,7 +69,7 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 			return errors.New("usage: panda path")
 		}
 		return printWorkspacePath(cfg, out)
-	case "list", "pull", "diff", "push", "create", "edit", "assign", "edit-note", "view", "add-note", "discard", "clean", "labels", "packages":
+	case "list", "pull", "diff", "push", "create", "edit", "assign", "link", "edit-note", "view", "add-note", "discard", "clean", "labels", "packages":
 		ws, err := projectWorkspace(cfg)
 		if err != nil {
 			return err
@@ -99,6 +101,8 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 			return editTask(ws, args, in, out)
 		case "assign":
 			return assignTask(ws, args, out)
+		case "link":
+			return linkTask(ws, args, cfg.Project.ViewID, out)
 		case "edit-note":
 			if err := requireLogin(cfg); err != nil {
 				return err
@@ -165,7 +169,7 @@ const bashCompletion = `_panda_complete() {
   elif [[ ( "${COMP_WORDS[1]}" == "labels" || "${COMP_WORDS[1]}" == "packages" ) && $COMP_CWORD -eq 2 ]]; then
     COMPREPLY=( $(compgen -W "list create edit delete" -- "$cur") )
   else
-    COMPREPLY=( $(compgen -W "login config path list pull diff push create edit assign edit-note view add-note discard clean labels packages completion" -- "$cur") )
+    COMPREPLY=( $(compgen -W "login config path list pull diff push create edit assign link edit-note view add-note discard clean labels packages completion" -- "$cur") )
   fi
 }
 complete -F _panda_complete panda`
@@ -178,14 +182,14 @@ _panda() {
   elif [[ ( "${words[2]}" == "labels" || "${words[2]}" == "packages" ) && $CURRENT -eq 3 ]]; then
     compadd -- list create edit delete
   else
-    compadd -- login config path list pull diff push create edit assign edit-note view add-note discard clean labels packages completion
+    compadd -- login config path list pull diff push create edit assign link edit-note view add-note discard clean labels packages completion
   fi
 }
 compdef _panda panda`
 
 const fishCompletion = `complete -c panda -f -n '__fish_seen_subcommand_from edit; and test (count (commandline -opc)) -eq 3' -a 'labels package assignees json'
 complete -c panda -f -n '__fish_seen_subcommand_from labels packages; and test (count (commandline -opc)) -eq 2' -a 'list create edit delete'
-complete -c panda -f -n 'not __fish_seen_subcommand_from login config path list pull diff push create edit assign edit-note view add-note discard clean labels packages completion' -a 'login config path list pull diff push create edit assign edit-note view add-note discard clean labels packages completion'`
+complete -c panda -f -n 'not __fish_seen_subcommand_from login config path list pull diff push create edit assign link edit-note view add-note discard clean labels packages completion' -a 'login config path list pull diff push create edit assign link edit-note view add-note discard clean labels packages completion'`
 
 func login(ctx context.Context, cfg *config.Config, client *solutions.Client, args []string, in io.Reader, out io.Writer) error {
 	var email string
@@ -239,6 +243,28 @@ func configCommand(ctx context.Context, cfg *config.Config, client *solutions.Cl
 		}
 		return nil
 	}
+	if len(args) == 2 && args[0] == "get" && args[1] == "project-view" {
+		if cfg.Project == nil {
+			return errors.New("no project selected; run `panda config set project <name>` first")
+		}
+		fmt.Fprintln(out, cfg.Project.ViewID)
+		return nil
+	}
+	if len(args) == 3 && args[0] == "set" && args[1] == "project-view" {
+		if cfg.Project == nil {
+			return errors.New("no project selected; run `panda config set project <name>` first")
+		}
+		viewID := strings.TrimSpace(args[2])
+		if viewID == "" {
+			return errors.New("project view ID cannot be empty")
+		}
+		cfg.Project.ViewID = viewID
+		if err := cfg.Save(); err != nil {
+			return fmt.Errorf("save project view ID: %w", err)
+		}
+		fmt.Fprintf(out, "Set project view ID to %s.\n", viewID)
+		return nil
+	}
 	if len(args) == 3 && args[0] == "set" && args[1] == "project" {
 		if cfg.Token == "" {
 			return errors.New("not logged in; run `panda login` first")
@@ -247,14 +273,14 @@ func configCommand(ctx context.Context, cfg *config.Config, client *solutions.Cl
 		if err != nil {
 			return err
 		}
-		cfg.Project = &config.Project{ID: project.ID, Name: project.Name}
+		cfg.Project = &config.Project{ID: project.ID, Name: project.Name, ViewID: config.DefaultProjectViewID}
 		if err := cfg.Save(); err != nil {
 			return err
 		}
 		fmt.Fprintf(out, "Selected project %s (%s).\n", project.Name, project.ID)
 		return nil
 	}
-	return errors.New("usage: panda config get project | panda config set project <name>")
+	return errors.New("usage: panda config get project | panda config set project <name> | panda config get project-view | panda config set project-view <viewId>")
 }
 
 func projectWorkspace(cfg *config.Config) (*workspace.Workspace, error) {
@@ -2006,28 +2032,18 @@ func syncRemoteNotes(dir string, remote map[string]any, stagedNotes, preservedNo
 }
 
 func createTask(ws *workspace.Workspace, project *config.Project, args []string, in io.Reader, out io.Writer) error {
-	var titleParts, requestedAssignees []string
-	for index := 0; index < len(args); index++ {
-		arg := args[index]
-		if arg == "--assignee" || arg == "--assignees" {
-			if index+1 >= len(args) || strings.HasPrefix(args[index+1], "--") {
-				return errors.New("--assignee requires a project member name, email, or ID")
-			}
-			index++
-			requestedAssignees = append(requestedAssignees, strings.Split(args[index], ",")...)
-			continue
-		}
-		if strings.HasPrefix(arg, "--assignee=") || strings.HasPrefix(arg, "--assignees=") {
-			value := strings.TrimPrefix(strings.TrimPrefix(arg, "--assignees="), "--assignee=")
-			if strings.TrimSpace(value) == "" {
-				return errors.New("--assignee requires a project member name, email, or ID")
-			}
-			requestedAssignees = append(requestedAssignees, strings.Split(value, ",")...)
-			continue
-		}
-		titleParts = append(titleParts, arg)
+	options, positional, err := parseTaskFieldOptions(args)
+	if err != nil {
+		return err
 	}
-	title := strings.TrimSpace(strings.Join(titleParts, " "))
+	if options.supplied {
+		return createTaskWithOptions(ws, project.ID, project.Name, options, positional, in, out)
+	}
+	return createTaskInteractive(ws, project, args, in, out)
+}
+
+func createTaskInteractive(ws *workspace.Workspace, project *config.Project, args []string, in io.Reader, out io.Writer) error {
+	title := strings.TrimSpace(strings.Join(args, " "))
 	if title == "" {
 		var err error
 		title, err = prompt(in, out, fmt.Sprintf("%s: ", colorText(out, "1", "Title")))
@@ -2061,11 +2077,7 @@ func createTask(ws *workspace.Workspace, project *config.Project, args []string,
 		if err := editTaskPackage(ws, dir, metadata, nil, in, out); err != nil {
 			return err
 		}
-		if err := editAssignees(ws, dir, metadata, requestedAssignees, in, out); err != nil {
-			return err
-		}
-	} else if len(requestedAssignees) > 0 {
-		if err := editAssignees(ws, dir, metadata, requestedAssignees, in, out); err != nil {
+		if err := editAssignees(ws, dir, metadata, nil, in, out); err != nil {
 			return err
 		}
 	}
@@ -2099,25 +2111,7 @@ func editTask(ws *workspace.Workspace, args []string, in io.Reader, out io.Write
 	if err != nil {
 		return err
 	}
-	if len(args) == 2 {
-		if args[1] == "json" {
-			if err := openEditor(filepath.Join(dir, "metadata.json")); err != nil {
-				return err
-			}
-			return promptDescriptionEditor(in, out, dir)
-		}
-		switch args[1] {
-		case "labels":
-			return editLabels(ws, dir, metadata, nil, in, out)
-		case "package":
-			return editTaskPackage(ws, dir, metadata, nil, in, out)
-		case "assignees", "assign":
-			return editAssignees(ws, dir, metadata, nil, in, out)
-		default:
-			return errors.New("field selectors are `labels`, `package`, `assignees`, and `json`")
-		}
-	}
-	if len(args) > 2 {
+	if len(args) > 1 && !strings.HasPrefix(args[1], "--") {
 		switch args[1] {
 		case "labels":
 			return editLabels(ws, dir, metadata, args[2:], in, out)
@@ -2125,9 +2119,41 @@ func editTask(ws *workspace.Workspace, args []string, in io.Reader, out io.Write
 			return editTaskPackage(ws, dir, metadata, args[2:], in, out)
 		case "assignees", "assign":
 			return editAssignees(ws, dir, metadata, args[2:], in, out)
+		case "json":
+			if len(args) != 2 {
+				return errors.New("usage: panda edit <taskNumber|localId> json")
+			}
+			if err := openEditor(filepath.Join(dir, "metadata.json")); err != nil {
+				return err
+			}
+			return promptDescriptionEditor(in, out, dir)
 		default:
-			return errors.New("the field selectors are `labels`, `package`, and `assignees`")
+			return errors.New("field selectors are `labels`, `package`, `assignees`, and `json`")
 		}
+	}
+	options, positional, err := parseTaskFieldOptions(args[1:])
+	if err != nil {
+		return err
+	}
+	if options.supplied {
+		if len(positional) > 0 {
+			return fmt.Errorf("unexpected argument %q; use task field options", positional[0])
+		}
+		updated, description, err := applyTaskFieldOptions(ws, metadata, options, in)
+		if err != nil {
+			return err
+		}
+		if options.descriptionProvided {
+			if err := workspace.WriteFileAtomic(filepath.Join(dir, "description.md"), description, 0o600); err != nil {
+				return fmt.Errorf("save task description: %w", err)
+			}
+		}
+		if options.hasMetadataFields() {
+			if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), updated); err != nil {
+				return fmt.Errorf("save task metadata: %w", err)
+			}
+		}
+		return nil
 	}
 	if err := editMetadataInteractive(dir, metadata, in, out); err != nil {
 		return err
@@ -2371,6 +2397,59 @@ func viewTask(ws *workspace.Workspace, args []string, out io.Writer) error {
 		fmt.Fprintln(out, "No notes.")
 	}
 	return nil
+}
+
+func linkTask(ws *workspace.Workspace, args []string, projectViewID string, out io.Writer) error {
+	if len(args) != 1 {
+		return errors.New("usage: panda link <taskNumber|localId>")
+	}
+	if strings.TrimSpace(projectViewID) == "" {
+		return errors.New("project view ID is not configured; run `panda config set project-view <viewId>`")
+	}
+	_, metadata, err := ws.FindTask(args[0])
+	if err != nil {
+		return err
+	}
+	taskID := stringField(metadata, "id")
+	if taskID == "" {
+		return fmt.Errorf("task %s has no verified Solutions task ID; publish it with `panda push` first", taskLabel(metadata))
+	}
+	state, err := ws.ReadState(taskID)
+	if err != nil || state.LocalCreated || state.Remote == nil || stringField(state.Remote, "id") != taskID {
+		return fmt.Errorf("task %s has no verified remote sync baseline; run `panda pull` first", taskLabel(metadata))
+	}
+	if !same(valueAt(metadata, "number"), valueAt(state.Remote, "number")) {
+		return fmt.Errorf("task %s number does not match its verified remote baseline", taskLabel(metadata))
+	}
+	link, err := canonicalTaskLink(projectViewID, metadata["number"], taskID)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(out, link)
+	return nil
+}
+
+func canonicalTaskLink(projectViewID string, taskNumber any, taskID string) (string, error) {
+	projectViewID = strings.TrimSpace(projectViewID)
+	if projectViewID == "" {
+		return "", errors.New("project view ID is missing")
+	}
+	numberText := ""
+	if taskNumber != nil {
+		numberText = strings.TrimSpace(fmt.Sprint(taskNumber))
+	}
+	if numberText == "" {
+		return "", errors.New("task number is missing")
+	}
+	number, err := strconv.ParseFloat(numberText, 64)
+	if err != nil || math.IsNaN(number) || math.IsInf(number, 0) || number <= 0 {
+		return "", fmt.Errorf("task number %q is invalid", numberText)
+	}
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return "", errors.New("verified task ID is missing")
+	}
+	return fmt.Sprintf("[#%s](https://solutions.slingrs.io/prod/runtime/#views/%s/readOnly/%s)", numberText, url.PathEscape(projectViewID), url.PathEscape(taskID)), nil
 }
 
 func editNote(ws *workspace.Workspace, args []string, client *solutions.Client, out io.Writer) error {

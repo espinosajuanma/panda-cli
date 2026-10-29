@@ -36,3 +36,30 @@ func TestSaveUsesPrivateConfigFile(t *testing.T) {
 		t.Fatalf("config round trip failed: %#v", loaded)
 	}
 }
+
+func TestProjectViewIDDefaultsAndCanBeConfigured(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	cfg := &Config{Project: &Project{ID: "p1", Name: "Alpha"}}
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Project == nil || loaded.Project.ViewID != DefaultProjectViewID {
+		t.Fatalf("legacy project config view ID = %#v, want default %q", loaded.Project, DefaultProjectViewID)
+	}
+
+	loaded.Project.ViewID = "custom-view-id"
+	if err := loaded.Save(); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Project.ViewID != "custom-view-id" {
+		t.Fatalf("configured project view ID = %q, want custom-view-id", loaded.Project.ViewID)
+	}
+}
