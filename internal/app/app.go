@@ -33,8 +33,7 @@ var editableFields = []string{
 
 func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
-		printHelp(out)
-		return nil
+		return printHelp(out)
 	}
 	if args[0] == "help" {
 		commandArgs := args[1:]
@@ -44,8 +43,7 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 		if len(commandArgs) > 0 {
 			return printCommandHelp(strings.Join(commandArgs, " "), out)
 		}
-		printHelp(out)
-		return nil
+		return printHelp(out)
 	}
 	if len(args) > 1 && (args[len(args)-1] == "--help" || args[len(args)-1] == "-h") {
 		return printCommandHelp(commandHelpKey(args[:len(args)-1]), out)
@@ -114,7 +112,9 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 			return clean(ws, args, in, out)
 		}
 	default:
-		printHelp(errOut)
+		if err := printHelp(errOut); err != nil {
+			return err
+		}
 		return fmt.Errorf("unknown command %q", command)
 	}
 	return nil
@@ -526,7 +526,7 @@ func formatPullProgress(current, total int) string {
 }
 
 func diff(ws *workspace.Workspace, args []string, out io.Writer) error {
-	if !isTerminal(out) || contains(args, "--summary") {
+	if !isTerminal(out) || hasDiffSummary(args) {
 		return renderDiff(ws, args, out, out)
 	}
 	var output bytes.Buffer
@@ -544,10 +544,14 @@ func diff(ws *workspace.Workspace, args []string, out io.Writer) error {
 }
 
 func shouldPageDiff(args []string, terminal bool, output []byte, width, height int) bool {
-	if !terminal || contains(args, "--summary") {
+	if !terminal || hasDiffSummary(args) {
 		return false
 	}
 	return !outputFitsScreen(output, width, height)
+}
+
+func hasDiffSummary(args []string) bool {
+	return contains(args, "--summary") || contains(args, "-s")
 }
 
 var ansiEscapeSequence = regexp.MustCompile("\\x1b\\[[0-?]*[ -/]*[@-~]")
@@ -741,13 +745,13 @@ func parseDiffOptions(args []string) (diffOptions, error) {
 	var options diffOptions
 	for _, arg := range args {
 		switch arg {
-		case "--verbose":
+		case "--verbose", "-v":
 			options.verbose = true
-		case "--summary":
+		case "--summary", "-s":
 			options.summary = true
 		default:
 			if strings.HasPrefix(arg, "-") || options.task != "" {
-				return diffOptions{}, errors.New("usage: panda diff [taskNumber|localId] [--verbose] [--summary]")
+				return diffOptions{}, errors.New("usage: panda diff [taskNumber|localId] [--verbose|-v] [--summary|-s]")
 			}
 			options.task = arg
 		}
@@ -765,7 +769,7 @@ func pageOutput(out io.Writer, content []byte) error {
 	if len(pager) == 0 {
 		pager = []string{"less", "-FRX"}
 	}
-	pager = enablePagerColors(pager)
+	pager = configureLessPager(pager)
 	command := exec.Command(pager[0], pager[1:]...)
 	stdin, err := command.StdinPipe()
 	if err != nil {
@@ -798,19 +802,29 @@ func pageOutput(out io.Writer, content []byte) error {
 	return nil
 }
 
-func enablePagerColors(pager []string) []string {
+func configureLessPager(pager []string) []string {
 	if len(pager) == 0 || !strings.EqualFold(filepath.Base(pager[0]), "less") {
 		return pager
 	}
-	for _, argument := range pager[1:] {
-		if argument == "-r" || argument == "-R" || strings.Contains(strings.ToUpper(argument), "RAW-CONTROL-CHARS") {
-			return pager
+	if !hasLessOption(pager[1:], "Rr", "--RAW-CONTROL-CHARS") {
+		pager = append(pager, "-R")
+	}
+	if !hasLessOption(pager[1:], "X", "--NO-INIT") {
+		pager = append(pager, "-X")
+	}
+	return pager
+}
+
+func hasLessOption(arguments []string, shortOptions, longOption string) bool {
+	for _, argument := range arguments {
+		if strings.EqualFold(argument, longOption) {
+			return true
 		}
-		if strings.HasPrefix(argument, "-") && !strings.HasPrefix(argument, "--") && strings.ContainsAny(argument[1:], "Rr") {
-			return pager
+		if strings.HasPrefix(argument, "-") && !strings.HasPrefix(argument, "--") && strings.ContainsAny(argument[1:], shortOptions) {
+			return true
 		}
 	}
-	return append(pager, "-R")
+	return false
 }
 
 func formatDiffValue(value any) string {

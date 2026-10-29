@@ -16,8 +16,9 @@ func TestCommandHelpUsesManPageSections(t *testing.T) {
 	if !strings.Contains(text, "\x1b[1;32mPANDA-EDIT(1)\x1b[0m") {
 		t.Fatalf("man-page title is missing: %q", text)
 	}
-	for _, section := range []string{"NAME\n", "SYNOPSIS\n", "DESCRIPTION\n", "EXAMPLES\n", "SEE ALSO\n"} {
-		if !strings.Contains(text, section) {
+	plain := ansiEscapeSequence.ReplaceAllString(text, "")
+	for _, section := range []string{"NAME", "SYNOPSIS", "DESCRIPTION", "ARGUMENTS", "EXAMPLES", "SEE ALSO"} {
+		if !strings.Contains(plain, section+"\n") || !strings.Contains(text, "\x1b[1;32m"+section+"\x1b[0m") {
 			t.Errorf("man-page section %q missing from help: %q", section, text)
 		}
 	}
@@ -33,12 +34,25 @@ func TestEveryCommandManualHasManPageCoreSections(t *testing.T) {
 			if err := printCommandHelp(command, &output); err != nil {
 				t.Fatal(err)
 			}
-			for _, section := range []string{"NAME\n", "SYNOPSIS\n", "DESCRIPTION\n"} {
-				if !strings.Contains(output.String(), section) {
+			text := output.String()
+			plain := ansiEscapeSequence.ReplaceAllString(text, "")
+			for _, section := range []string{"NAME", "SYNOPSIS", "DESCRIPTION"} {
+				if !strings.Contains(plain, section+"\n") || !strings.Contains(text, "\x1b[1;32m"+section+"\x1b[0m") {
 					t.Errorf("manual %q missing %q:\n%s", command, section, output.String())
 				}
 			}
 		})
+	}
+}
+
+func TestOptionSectionTitlesAreBoldGreen(t *testing.T) {
+	var output bytes.Buffer
+	if err := printCommandHelp("list", &output); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	if !strings.Contains(text, "\x1b[1;32mOPTIONS\x1b[0m") {
+		t.Fatalf("OPTIONS heading is not bold green:\n%s", text)
 	}
 }
 
@@ -86,13 +100,33 @@ func TestGlobalHelpHasManSectionsAndCommandOptions(t *testing.T) {
 	if !strings.Contains(text, "\x1b[1;32mPANDA(1)\x1b[0m") {
 		t.Fatalf("main manual title is missing: %q", text)
 	}
+	plain := ansiEscapeSequence.ReplaceAllString(text, "")
 	for _, expected := range []string{
-		"NAME\n", "SYNOPSIS\n", "DESCRIPTION\n", "COMMANDS\n", "GLOBAL OPTIONS\n",
+		"NAME\n", "SYNOPSIS\n", "DESCRIPTION\n", "COMMANDS\n", "GLOBAL OPTIONS\n", "ENVIRONMENT\n", "FILES\n",
 		"--current", "--staging", "--released", "--discarded", "--all", "--status",
-		"--no-complexity", "--no-description", "--verbose", "--summary", "--yes",
+		"--no-complexity", "--no-description", "--verbose", "-v", "--summary", "-s", "--yes",
 	} {
-		if !strings.Contains(text, expected) {
+		if !strings.Contains(plain, expected) {
 			t.Errorf("main help missing %q:\n%s", expected, text)
 		}
+	}
+	for _, section := range []string{"NAME", "SYNOPSIS", "DESCRIPTION", "COMMANDS", "GLOBAL OPTIONS", "ENVIRONMENT", "FILES"} {
+		if !strings.Contains(text, "\x1b[1;32m"+section+"\x1b[0m") {
+			t.Errorf("main help section %q is not bold green:\n%s", section, text)
+		}
+	}
+}
+
+func TestHelpOutputPagingThreshold(t *testing.T) {
+	small := []byte("short manual\n")
+	large := []byte(strings.Repeat("long manual line\n", 30))
+	if shouldPageHelp(false, large, 80, 24) {
+		t.Fatal("non-terminal help output should not use a pager")
+	}
+	if shouldPageHelp(true, small, 80, 24) {
+		t.Fatal("help that fits the terminal should not use a pager")
+	}
+	if !shouldPageHelp(true, large, 80, 24) {
+		t.Fatal("help longer than the terminal should use a pager")
 	}
 }

@@ -1148,11 +1148,29 @@ func TestSummaryDiffSkipsPager(t *testing.T) {
 	if shouldPageDiff([]string{"--summary"}, true, []byte("summary\n"), 80, 24) {
 		t.Fatal("summary diff should not use the pager")
 	}
+	if shouldPageDiff([]string{"-s"}, true, []byte("summary\n"), 80, 24) {
+		t.Fatal("short summary diff should not use the pager")
+	}
 	if shouldPageDiff([]string{"--verbose"}, true, []byte("small diff\n"), 80, 24) {
 		t.Fatal("detail diff that fits the terminal should not use the pager")
 	}
 	if !shouldPageDiff([]string{"--verbose"}, true, []byte(strings.Repeat("line\n", 25)), 80, 24) {
 		t.Fatal("detail diff longer than the terminal should use the pager")
+	}
+}
+
+func TestDiffShortFlagsMatchLongFlags(t *testing.T) {
+	verbose, err := parseDiffOptions([]string{"-v"})
+	if err != nil || !verbose.verbose {
+		t.Fatalf("-v options = %#v, error = %v; want verbose mode", verbose, err)
+	}
+	summary, err := parseDiffOptions([]string{"-s"})
+	if err != nil || !summary.summary {
+		t.Fatalf("-s options = %#v, error = %v; want summary mode", summary, err)
+	}
+	combined, err := parseDiffOptions([]string{"12345", "-v", "-s"})
+	if err != nil || combined.task != "12345" || !combined.verbose || !combined.summary {
+		t.Fatalf("combined short flags = %#v, error = %v", combined, err)
 	}
 }
 
@@ -1177,22 +1195,23 @@ func TestPageOutputFallsBackWhenPagerIsUnavailable(t *testing.T) {
 	}
 }
 
-func TestEnablePagerColorsForLess(t *testing.T) {
+func TestConfigureLessPagerKeepsColorsAndOutputVisible(t *testing.T) {
 	tests := []struct {
 		name string
 		args []string
 		want []string
 	}{
-		{name: "adds raw color option", args: []string{"less"}, want: []string{"less", "-R"}},
+		{name: "adds raw color and no-clear options", args: []string{"less"}, want: []string{"less", "-R", "-X"}},
 		{name: "preserves existing combined option", args: []string{"less", "-FRX"}, want: []string{"less", "-FRX"}},
 		{name: "preserves combined raw option", args: []string{"less", "-FrX"}, want: []string{"less", "-FrX"}},
-		{name: "preserves explicit raw option", args: []string{"less", "-F", "-R"}, want: []string{"less", "-F", "-R"}},
+		{name: "adds no-clear to existing color option", args: []string{"less", "-F", "-R"}, want: []string{"less", "-F", "-R", "-X"}},
+		{name: "recognizes long no-init option", args: []string{"less", "--raw-control-chars", "--no-init"}, want: []string{"less", "--raw-control-chars", "--no-init"}},
 		{name: "leaves other pagers unchanged", args: []string{"more"}, want: []string{"more"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := enablePagerColors(test.args); !reflect.DeepEqual(got, test.want) {
-				t.Fatalf("enablePagerColors(%v) = %v, want %v", test.args, got, test.want)
+			if got := configureLessPager(test.args); !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("configureLessPager(%v) = %v, want %v", test.args, got, test.want)
 			}
 		})
 	}

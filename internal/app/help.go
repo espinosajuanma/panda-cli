@@ -1,9 +1,13 @@
 package app
 
 import (
+	"bytes"
 	"fmt"
 	"io"
+	"os"
 	"strings"
+
+	"golang.org/x/term"
 )
 
 type manualOption struct {
@@ -154,14 +158,14 @@ var manualPages = map[string]manualPage{
 	},
 	"diff": {
 		name:        "panda diff - review local changes",
-		synopsis:    []string{"panda diff [taskNumber|localId] [options]"},
-		description: []string{"Display pending local edits grouped by task. By default, changed fields and a short description/note summary are shown. Terminal output longer than the screen is sent to $PAGER (defaults to less -FRX)."},
+		synopsis:    []string{"panda diff [taskNumber|localId] [--verbose|-v] [--summary|-s]"},
+		description: []string{"Display pending local edits grouped by task. By default, changed fields and a short description/note summary are shown. Terminal output longer than the screen is sent to $PAGER (defaults to less -FRX); less keeps its output visible after exit."},
 		arguments:   []manualOption{{"taskNumber|localId", "Optional task identifier to restrict the diff to one task."}},
 		options: []manualOption{
-			{"--verbose", "Show changed description and note lines with - and + markers."},
-			{"--summary", "Print counts of edited, discarded, and new tasks."},
+			{"--verbose, -v", "Show changed description and note lines with - and + markers."},
+			{"--summary, -s", "Print counts of edited, discarded, and new tasks."},
 		},
-		examples: []string{"panda diff", "panda diff --verbose", "panda diff 12345 --verbose", "panda diff --summary"},
+		examples: []string{"panda diff", "panda diff --verbose", "panda diff -v", "panda diff 12345 -v", "panda diff -s"},
 		seeAlso:  []string{"panda-pull(1)", "panda-push(1)"},
 	},
 	"push": {
@@ -264,7 +268,7 @@ var mainCommands = []mainCommand{
 	{"completion labels [prefix]", "", "Search labels in the active project."},
 	{"list", "[status filters] [other filters]", "List tasks with effort totals."},
 	{"pull", "", "Fetch tasks and merge remote changes into the workspace."},
-	{"diff", "[task] [--verbose] [--summary]", "Review pending local changes."},
+	{"diff", "[task] [--verbose|-v] [--summary|-s]", "Review pending local changes."},
 	{"push", "", "Publish local edits and staged actions to Solutions."},
 	{"create", "[title]", "Create a task locally."},
 	{"edit", "<task> [labels ...|json]", "Edit task fields, labels, or metadata."},
@@ -283,7 +287,11 @@ var mainCommandDetails = map[string][]string{
 	},
 }
 
-func printHelp(out io.Writer) {
+func printHelp(out io.Writer) error {
+	return writeHelpOutput(out, renderMainHelp)
+}
+
+func renderMainHelp(out io.Writer) {
 	printManHeader(out, "PANDA")
 	writeManSection(out, "NAME", []string{"panda - synchronize Solutions tasks with a local task workspace"})
 	writeManSection(out, "SYNOPSIS", []string{"panda [global options] <command> [arguments]"})
@@ -291,7 +299,7 @@ func printHelp(out io.Writer) {
 		"Panda pulls Solutions tasks into Markdown and JSON files, lets you edit them locally, and publishes selected changes with push.",
 		"Use command-specific help for detailed syntax and options: panda <command> --help or panda help <command>.",
 	})
-	fmt.Fprintln(out, "COMMANDS")
+	writeSectionTitle(out, "COMMANDS")
 	for _, command := range mainCommands {
 		synopsis := "panda " + command.command
 		if command.synopsis != "" {
@@ -304,12 +312,12 @@ func printHelp(out io.Writer) {
 		}
 		fmt.Fprintln(out)
 	}
-	fmt.Fprintln(out, "GLOBAL OPTIONS")
+	writeSectionTitle(out, "GLOBAL OPTIONS")
 	writeManualOption(out, manualOption{"-h, --help", "Display the main manual. Append --help to a command for its manual page."})
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, "ENVIRONMENT")
+	writeSectionTitle(out, "ENVIRONMENT")
 	writeManualOption(out, manualOption{"EDITOR", "Select the editor used by edit, edit-note, and add-note."})
-	writeManualOption(out, manualOption{"PAGER", "Select the pager used for long diff output; defaults to less -FRX."})
+	writeManualOption(out, manualOption{"PAGER", "Select the pager used for long output; less is configured to leave its output visible after exit."})
 	fmt.Fprintln(out)
 	writeManSection(out, "FILES", []string{"Configuration and task files are stored under the operating system's user config directory in panda-dashboard/. Run panda path to print the active workspace path."})
 }
@@ -320,32 +328,33 @@ func printCommandHelp(command string, out io.Writer) error {
 	if !ok {
 		return fmt.Errorf("no help available for %q", command)
 	}
-	pageTitle := "PANDA-" + strings.ToUpper(strings.ReplaceAll(command, " ", "-"))
-	printManHeader(out, pageTitle)
-	writeManSection(out, "NAME", []string{page.name})
-	writeManSection(out, "SYNOPSIS", page.synopsis)
-	writeManSection(out, "DESCRIPTION", page.description)
-	if len(page.arguments) > 0 {
-		fmt.Fprintln(out, "ARGUMENTS")
-		for _, argument := range page.arguments {
-			writeManualOption(out, argument)
+	return writeHelpOutput(out, func(out io.Writer) {
+		pageTitle := "PANDA-" + strings.ToUpper(strings.ReplaceAll(command, " ", "-"))
+		printManHeader(out, pageTitle)
+		writeManSection(out, "NAME", []string{page.name})
+		writeManSection(out, "SYNOPSIS", page.synopsis)
+		writeManSection(out, "DESCRIPTION", page.description)
+		if len(page.arguments) > 0 {
+			writeSectionTitle(out, "ARGUMENTS")
+			for _, argument := range page.arguments {
+				writeManualOption(out, argument)
+			}
+			fmt.Fprintln(out)
 		}
-		fmt.Fprintln(out)
-	}
-	if len(page.options) > 0 {
-		fmt.Fprintln(out, "OPTIONS")
-		for _, option := range page.options {
-			writeManualOption(out, option)
+		if len(page.options) > 0 {
+			writeSectionTitle(out, "OPTIONS")
+			for _, option := range page.options {
+				writeManualOption(out, option)
+			}
+			fmt.Fprintln(out)
 		}
-		fmt.Fprintln(out)
-	}
-	if len(page.examples) > 0 {
-		writeManSection(out, "EXAMPLES", page.examples)
-	}
-	if len(page.seeAlso) > 0 {
-		writeManSection(out, "SEE ALSO", []string{strings.Join(page.seeAlso, ", ")})
-	}
-	return nil
+		if len(page.examples) > 0 {
+			writeManSection(out, "EXAMPLES", page.examples)
+		}
+		if len(page.seeAlso) > 0 {
+			writeManSection(out, "SEE ALSO", []string{strings.Join(page.seeAlso, ", ")})
+		}
+	})
 }
 
 func commandHelpKey(args []string) string {
@@ -392,11 +401,39 @@ func writeManSection(out io.Writer, section string, paragraphs []string) {
 	if len(paragraphs) == 0 {
 		return
 	}
-	fmt.Fprintf(out, "%s\n", section)
+	writeSectionTitle(out, section)
 	for _, paragraph := range paragraphs {
 		writeWrapped(out, "    ", paragraph, 84)
 	}
 	fmt.Fprintln(out)
+}
+
+func writeSectionTitle(out io.Writer, title string) {
+	fmt.Fprintf(out, "\x1b[1;32m%s\x1b[0m\n", title)
+}
+
+func writeHelpOutput(out io.Writer, render func(io.Writer)) error {
+	if !isTerminal(out) {
+		render(out)
+		return nil
+	}
+	var output bytes.Buffer
+	render(&output)
+	file, ok := out.(*os.File)
+	if !ok {
+		_, err := io.Copy(out, &output)
+		return err
+	}
+	width, height, err := term.GetSize(int(file.Fd()))
+	if err == nil && !shouldPageHelp(true, output.Bytes(), width, height) {
+		_, err := io.Copy(out, &output)
+		return err
+	}
+	return pageOutput(out, output.Bytes())
+}
+
+func shouldPageHelp(terminal bool, output []byte, width, height int) bool {
+	return terminal && !outputFitsScreen(output, width, height)
 }
 
 func writeManualOption(out io.Writer, option manualOption) {
