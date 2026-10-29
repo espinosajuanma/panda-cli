@@ -172,37 +172,68 @@ func clean(ws *workspace.Workspace, args []string, in io.Reader, out io.Writer) 
 		}
 		dirs = []string{dir}
 	}
+	cleaned := 0
+	var problems []string
 	for _, dir := range dirs {
 		metadata, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
 		if err != nil {
+			if all {
+				problems = append(problems, fmt.Sprintf("%s: read metadata: %v", filepath.Base(dir), err))
+				continue
+			}
 			return err
 		}
-		key := stateKey(dir, metadata)
-		state, err := ws.ReadState(key)
+		state, key, err := loadTaskState(ws, dir, metadata)
 		if err != nil {
+			if all {
+				problems = append(problems, err.Error())
+				continue
+			}
 			return err
 		}
 		if state.LocalCreated {
 			if err := os.RemoveAll(dir); err != nil {
+				if all {
+					problems = append(problems, fmt.Sprintf("%s: remove local draft: %v", taskLabel(metadata), err))
+					continue
+				}
 				return err
 			}
-			_ = os.Remove(ws.StatePathForKey(key))
+			removeTaskStateFiles(ws, dir, metadata)
+			cleaned++
 			continue
 		}
 		if err := writeRemoteToLocal(dir, state.Remote); err != nil {
+			if all {
+				problems = append(problems, fmt.Sprintf("%s: restore task: %v", taskLabel(metadata), err))
+				continue
+			}
 			return err
 		}
 		state.StagedNotes = nil
 		state.StagedDiscard = false
 		if err := clearNotes(dir, state.Remote); err != nil {
+			if all {
+				problems = append(problems, fmt.Sprintf("%s: clear notes: %v", taskLabel(metadata), err))
+				continue
+			}
 			return err
 		}
 		if err := syncRemoteNotes(dir, state.Remote, nil, nil); err != nil {
+			if all {
+				problems = append(problems, fmt.Sprintf("%s: restore notes: %v", taskLabel(metadata), err))
+				continue
+			}
 			return err
 		}
 		if err := ws.WriteState(key, state); err != nil {
+			if all {
+				problems = append(problems, fmt.Sprintf("%s: save sync state: %v", taskLabel(metadata), err))
+				continue
+			}
 			return err
 		}
+		cleaned++
 	}
 	if all {
 		for _, kind := range []catalogKind{labelCatalog, packageCatalog} {
@@ -216,9 +247,15 @@ func clean(ws *workspace.Workspace, args []string, in io.Reader, out io.Writer) 
 		}
 	}
 	if all {
-		fmt.Fprintf(out, "Cleaned local changes for %d task(s) and project catalogs.\n", len(dirs))
+		fmt.Fprintf(out, "Cleaned local changes for %d task(s) and project catalogs.\n", cleaned)
 	} else {
-		fmt.Fprintf(out, "Cleaned local changes for %d task(s).\n", len(dirs))
+		fmt.Fprintf(out, "Cleaned local changes for %d task(s).\n", cleaned)
+	}
+	if len(problems) > 0 {
+		for _, problem := range problems {
+			fmt.Fprintf(out, "Error: %s\n", problem)
+		}
+		return fmt.Errorf("clean had %d failure(s)", len(problems))
 	}
 	return nil
 }

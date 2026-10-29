@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -362,6 +363,62 @@ func stateKey(dir string, metadata map[string]any) string {
 		return id
 	}
 	return filepath.Base(dir)
+}
+
+func taskStateKeys(dir string, metadata map[string]any) []string {
+	if id := stringField(metadata, "id"); id != "" {
+		return []string{id}
+	}
+	keys := make([]string, 0, 2)
+	seen := make(map[string]bool, 2)
+	for _, key := range []string{stringField(metadata, "localId"), filepath.Base(dir)} {
+		if key != "" && !seen[key] {
+			seen[key] = true
+			keys = append(keys, key)
+		}
+	}
+	return keys
+}
+
+func isLocalDraft(dir string, metadata map[string]any) bool {
+	if stringField(metadata, "id") != "" {
+		return false
+	}
+	if stringField(metadata, "localId") != "" {
+		return true
+	}
+	base := filepath.Base(dir)
+	if strings.HasPrefix(base, "draft-") {
+		number, err := strconv.Atoi(strings.TrimPrefix(base, "draft-"))
+		return err == nil && number > 0
+	}
+	return strings.HasPrefix(base, "local-") && len(base) > len("local-")
+}
+
+func loadTaskState(ws *workspace.Workspace, dir string, metadata map[string]any) (workspace.State, string, error) {
+	keys := taskStateKeys(dir, metadata)
+	for _, key := range keys {
+		state, err := ws.ReadState(key)
+		if err == nil {
+			if isLocalDraft(dir, metadata) {
+				state.LocalCreated = true
+			}
+			return state, key, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return workspace.State{}, "", fmt.Errorf("read sync baseline for task %s: %w", taskLabel(metadata), err)
+		}
+	}
+	if isLocalDraft(dir, metadata) {
+		return workspace.State{LocalCreated: true}, stateKey(dir, metadata), nil
+	}
+	return workspace.State{}, "", fmt.Errorf("task %s has no sync baseline; run `panda pull` before cleaning or pushing", taskLabel(metadata))
+}
+
+func removeTaskStateFiles(ws *workspace.Workspace, dir string, metadata map[string]any) {
+	for _, key := range taskStateKeys(dir, metadata) {
+		_ = os.Remove(ws.StatePathForKey(key))
+	}
 }
 
 func cloneMap(input map[string]any) map[string]any {

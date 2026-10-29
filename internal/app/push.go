@@ -51,10 +51,9 @@ func pushSelected(ctx context.Context, client *solutions.Client, ws *workspace.W
 			problems = append(problems, fmt.Sprintf("%s: %v", filepath.Base(dir), err))
 			continue
 		}
-		key := stateKey(dir, local)
-		state, err := ws.ReadState(key)
+		state, key, err := loadTaskState(ws, dir, local)
 		if err != nil {
-			problems = append(problems, fmt.Sprintf("%s: missing sync baseline; pull first", filepath.Base(dir)))
+			problems = append(problems, fmt.Sprintf("%s: %v", taskLabel(local), err))
 			continue
 		}
 		dirty, err := taskHasLocalChanges(local, state, dir)

@@ -373,6 +373,9 @@ func TestPushCanSelectOnlyRequestedDrafts(t *testing.T) {
 	if len(createdTitles) != 0 {
 		t.Fatalf("invalid selector made API requests: %#v", createdTitles)
 	}
+	if err := os.Remove(ws.StatePathForKey("draft-2")); err != nil {
+		t.Fatal(err)
+	}
 	if err := pushSelected(context.Background(), client, ws, project, []string{"draft-2", "draft-4", "draft-2"}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
@@ -397,5 +400,97 @@ func TestPushCanSelectOnlyRequestedDrafts(t *testing.T) {
 		if !remainingDrafts[id] {
 			t.Errorf("unselected draft %s was not left local; remaining=%v", id, remainingDrafts)
 		}
+	}
+}
+
+func TestCleanRemovesLocalDraftWhenStateFileIsMissing(t *testing.T) {
+	ws := workspace.New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	legacyID := "local-dmhh4id3ynvs"
+	dir := ws.TaskPath(legacyID)
+	if err := os.MkdirAll(filepath.Join(dir, "notes"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	metadata := map[string]any{
+		"localId": legacyID, "project": map[string]any{"id": "project-1", "label": "Alpha"},
+		"title": "Draft without state", "type": "feature", "priority": "medium", "status": "new",
+		"labels": []any{}, "assignees": []any{}, "reviewers": []any{},
+	}
+	if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), metadata); err != nil {
+		t.Fatal(err)
+	}
+	if err := workspace.WriteFileAtomic(filepath.Join(dir, "description.md"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var output strings.Builder
+	if err := clean(ws, []string{legacyID}, strings.NewReader(""), &output); err != nil {
+		t.Fatalf("clean missing-state local draft: %v", err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("local draft directory still exists: %v", err)
+	}
+	if !strings.Contains(output.String(), "Cleaned local changes for 1 task(s)") {
+		t.Fatalf("unexpected clean output: %q", output.String())
+	}
+}
+
+func TestCleanWholeProjectContinuesPastSyncedTaskWithoutBaseline(t *testing.T) {
+	ws := workspace.New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	if err := createTask(ws, &config.Project{ID: "project-1", Name: "Alpha"}, []string{"Recoverable draft"}, strings.NewReader(""), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	remote := listTask("synced-without-state", 77, "new", "a", "s", "Missing baseline", "feature")
+	syncedDir := addSyncedTask(t, ws, remote)
+	if err := os.Remove(ws.StatePathForKey("synced-without-state")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(ws.StatePathForKey("draft-1")); err != nil {
+		t.Fatal(err)
+	}
+	var output strings.Builder
+	err := clean(ws, []string{"--yes"}, strings.NewReader(""), &output)
+	if err == nil || !strings.Contains(err.Error(), "clean had 1 failure") {
+		t.Fatalf("clean error = %v, want one reported failure", err)
+	}
+	if !strings.Contains(output.String(), "no sync baseline") {
+		t.Fatalf("missing-baseline problem was not reported: %q", output.String())
+	}
+	if strings.Contains(output.String(), ".panda/state") {
+		t.Fatalf("internal state-file path leaked into user-facing error: %q", output.String())
+	}
+	if _, err := os.Stat(ws.TaskPath("draft-1")); !os.IsNotExist(err) {
+		t.Fatalf("local draft was not cleaned after the baseline error: %v", err)
+	}
+	if _, err := os.Stat(syncedDir); err != nil {
+		t.Fatalf("synced task without a baseline was incorrectly removed: %v", err)
+	}
+}
+
+func TestPushDoesNotTreatSyncedTaskWithoutBaselineAsDraft(t *testing.T) {
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		http.Error(w, "unexpected request", http.StatusNotFound)
+	}))
+	defer server.Close()
+	ws, dir := makeSyncedTask(t, listTask("synced-without-state", 77, "new", "a", "s", "Missing baseline", "feature"))
+	if err := os.Remove(ws.StatePathForKey("synced-without-state")); err != nil {
+		t.Fatal(err)
+	}
+	var output strings.Builder
+	err := pushSelected(context.Background(), solutions.NewClient(server.URL, "token"), ws, &config.Project{ID: "project-1", Name: "Alpha"}, []string{"77"}, &output)
+	if err == nil || !strings.Contains(output.String(), "no sync baseline") {
+		t.Fatalf("push error = %v, output=%q; want missing-baseline guidance", err, output.String())
+	}
+	if requests != 0 {
+		t.Fatalf("push made %d API request(s) without a task baseline", requests)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "metadata.json")); err != nil {
+		t.Fatalf("synced task was removed or changed: %v", err)
 	}
 }

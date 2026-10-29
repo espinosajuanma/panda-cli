@@ -224,7 +224,7 @@ var manualPages = map[string]manualPage{
 	"push": {
 		name:        "panda push - apply local changes to Solutions",
 		synopsis:    []string{"panda push [taskNumber|draft-N ...]"},
-		description: []string{"Check for remote conflicts, then send local task edits and staged actions to Solutions. Without selectors, push processes every task; with selectors, it processes only those tasks. Pending project catalogs are still synchronized. A successful operation updates the local synchronization baseline. Requires a selected project and a successful login."},
+		description: []string{"Check for remote conflicts, then send local task edits and staged actions to Solutions. Without selectors, push processes every task; with selectors, it processes only those tasks. Pending project catalogs are still synchronized. Local drafts can be pushed without a sync-state file; synced tasks require a baseline. Requires a selected project and a successful login."},
 		arguments:   []manualOption{{"taskNumber|draft-N", "Optional task selectors; repeat to push only those tasks. Legacy local-* IDs are also accepted."}},
 		examples:    []string{"panda diff --verbose", "panda push", "panda push draft-1", "panda push draft-1 draft-3"},
 		seeAlso:     []string{"panda-diff(1)", "panda-pull(1)"},
@@ -323,7 +323,8 @@ var manualPages = map[string]manualPage{
 		synopsis: []string{"panda clean [taskNumber|draft-N] [--yes]"},
 		description: []string{
 			"Restore the last-synced local version and discard staged actions for one task. Run panda pull afterward to fetch newer remote changes.",
-			"When the task argument is omitted, clean restores all tasks and the project label/package catalogs to their last-synced versions, and asks for confirmation. --yes skips that confirmation.",
+			"Locally created drafts can be removed even if their sync-state file is missing. Synced tasks without a baseline require panda pull before they can be restored.",
+			"When the task argument is omitted, clean restores all recoverable tasks and the project catalogs, asks for confirmation, and reports tasks with missing baselines. --yes skips confirmation.",
 		},
 		arguments: []manualOption{{"taskNumber|draft-N", "Optional task identifier. If omitted, clean applies to the entire project. Legacy local-* IDs are also accepted."}},
 		options:   []manualOption{{"--yes, -y", "Skip confirmation when cleaning the whole project."}},

@@ -51,6 +51,8 @@ instead of overwritten. With no selectors it processes every task; with one or
 more selectors it processes only those tasks. Pending project label/package
 changes are still synchronized, since those catalogs are shared by the project.
 All task selectors are validated before any API operation begins.
+Local drafts can be pushed without a sync-state file; synced tasks need a
+baseline, so run `panda pull` first if one is missing.
 
 ```sh
 panda push
@@ -197,6 +199,10 @@ the status change. `panda push` applies it.
 Restores the last-synced task files and discards staged actions. With no task
 identifier, it also restores project catalogs and asks for confirmation;
 `--yes` skips that confirmation. Unpushed locally created tasks are removed.
+Local drafts can still be removed if their sync-state file is missing. A synced
+task without a baseline cannot be restored; run `panda pull` to recreate its
+baseline. Whole-project clean continues through tasks without baselines and
+reports them after cleaning the recoverable tasks and restoring catalogs.
 
 Existing `local-*` task IDs remain accepted for workspaces created by older
 Panda versions.
