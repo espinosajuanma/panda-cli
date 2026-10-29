@@ -1951,7 +1951,7 @@ func createTask(ws *workspace.Workspace, project *config.Project, args []string,
 	title := strings.TrimSpace(strings.Join(args, " "))
 	if title == "" {
 		var err error
-		title, err = prompt(in, out, "Task title: ")
+		title, err = prompt(in, out, fmt.Sprintf("%s: ", colorText(out, "1", "Title")))
 		if err != nil {
 			return err
 		}
@@ -1991,6 +1991,12 @@ func createTask(ws *workspace.Workspace, project *config.Project, args []string,
 	}
 	if err := workspace.WriteFileAtomic(filepath.Join(dir, "description.md"), nil, 0o600); err != nil {
 		return err
+	}
+	if isInteractiveTerminal(in, out) {
+		if err := promptDescriptionEditor(in, out, dir); err != nil {
+			_ = os.RemoveAll(dir)
+			return err
+		}
 	}
 	if err := ws.WriteState(localID, workspace.State{LocalCreated: true}); err != nil {
 		return err
@@ -2097,7 +2103,17 @@ func editTask(ws *workspace.Workspace, args []string, in io.Reader, out io.Write
 }
 
 func promptDescriptionEditor(in io.Reader, out io.Writer, dir string) error {
-	choice, err := prompt(in, out, "Type `e` to open description.md in $EDITOR, or press Enter to leave it unchanged: ")
+	if isInteractiveTerminal(in, out) {
+		key, err := readSingleKey(in, out)
+		if err != nil {
+			return err
+		}
+		if descriptionEditorRequested(key) {
+			return openEditor(filepath.Join(dir, "description.md"))
+		}
+		return nil
+	}
+	choice, err := prompt(in, out, fmt.Sprintf("%s [(e) to launch editor, enter to skip]: ", colorText(out, "1", "Description")))
 	if err != nil {
 		return err
 	}
@@ -2119,7 +2135,7 @@ func editMetadataInteractive(dir string, metadata map[string]any, in io.Reader, 
 
 func editMetadataFields(metadata map[string]any, includeTitle bool, in io.Reader, out io.Writer) error {
 	if includeTitle {
-		title, err := prompt(in, out, fmt.Sprintf("Title [%s]: ", stringField(metadata, "title")))
+		title, err := prompt(in, out, fmt.Sprintf("%s [%s]: ", colorText(out, "1", "Title"), stringField(metadata, "title")))
 		if err != nil {
 			return err
 		}
@@ -2156,7 +2172,7 @@ func editMetadataFields(metadata map[string]any, includeTitle bool, in io.Reader
 			}
 			continue
 		}
-		choice, err := prompt(in, out, fmt.Sprintf("%s [%s] (%s): ", fieldTitle, current, strings.Join(option.values, "/")))
+		choice, err := prompt(in, out, fmt.Sprintf("%s [%s] (%s): ", colorText(out, "1", fieldTitle), current, strings.Join(option.values, "/")))
 		if err != nil {
 			return err
 		}

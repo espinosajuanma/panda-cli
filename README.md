@@ -173,7 +173,8 @@ and directories at the root are left in place.
 ### `create`
 
 - Creates a task locally; interactive terminals offer arrow-key selectors for
-  type, priority, complexity, labels, and optional package
+  type, priority, complexity, labels, and optional package, then an optional
+  description editor (`e` opens `$EDITOR`, Enter skips)
 
 ### `discard {taskNumber}`
 

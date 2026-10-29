@@ -739,11 +739,11 @@ func createCatalogRecordLocal(ws *workspace.Workspace, project *config.Project, 
 	} else {
 		var err error
 		nameFieldTitle := catalogNameField(kind)
-		name, err = prompt(in, out, strings.ToUpper(nameFieldTitle[:1])+nameFieldTitle[1:]+": ")
+		name, err = prompt(in, out, fmt.Sprintf("%s: ", colorText(out, "1", strings.ToUpper(nameFieldTitle[:1])+nameFieldTitle[1:])))
 		if err != nil {
 			return err
 		}
-		description, err = prompt(in, out, "Description (optional): ")
+		description, err = prompt(in, out, fmt.Sprintf("%s (optional): ", colorText(out, "1", "Description")))
 		if err != nil {
 			return err
 		}
@@ -798,14 +798,14 @@ func editCatalogRecordLocal(ws *workspace.Workspace, kind catalogKind, args []st
 	record := records[index]
 	nameField := catalogNameField(kind)
 	nameTitle := strings.ToUpper(nameField[:1]) + nameField[1:]
-	name, err := prompt(in, out, fmt.Sprintf("%s [%s]: ", nameTitle, catalogRecordName(kind, record)))
+	name, err := prompt(in, out, fmt.Sprintf("%s [%s]: ", colorText(out, "1", nameTitle), catalogRecordName(kind, record)))
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(name) != "" {
 		record[nameField] = strings.TrimSpace(name)
 	}
-	description, err := prompt(in, out, "Description [Enter keeps current, - clears]: ")
+	description, err := prompt(in, out, fmt.Sprintf("%s [Enter keeps current, - clears]: ", colorText(out, "1", "Description")))
 	if err != nil {
 		return err
 	}
@@ -830,7 +830,7 @@ func editCatalogRecordLocal(ws *workspace.Workspace, kind catalogKind, args []st
 }
 
 func editPackageSupplementalFields(record map[string]any, in io.Reader, out io.Writer) error {
-	startDate, err := prompt(in, out, fmt.Sprintf("Start date [%s] (YYYY-MM-DD, - clears): ", stringField(record, "startDate")))
+	startDate, err := prompt(in, out, fmt.Sprintf("%s [%s] (YYYY-MM-DD, - clears): ", colorText(out, "1", "Start date"), stringField(record, "startDate")))
 	if err != nil {
 		return err
 	}
@@ -843,7 +843,7 @@ func editPackageSupplementalFields(record map[string]any, in io.Reader, out io.W
 	if value := record["estimation"]; value != nil {
 		currentEstimation = fmt.Sprint(value)
 	}
-	estimation, err := prompt(in, out, fmt.Sprintf("Estimation hours [%s] (- clears): ", currentEstimation))
+	estimation, err := prompt(in, out, fmt.Sprintf("%s [%s] (- clears): ", colorText(out, "1", "Estimation"), currentEstimation))
 	if err != nil {
 		return err
 	}
@@ -1015,7 +1015,7 @@ func editLabels(ws *workspace.Workspace, dir string, metadata map[string]any, re
 	} else {
 		finished := false
 		for !finished {
-			prefix, err := prompt(in, out, "Search labels by prefix (blank to finish, `none` to clear all): ")
+			prefix, err := prompt(in, out, fmt.Sprintf("Search %s by prefix (blank to finish, `none` to clear all): ", colorText(out, "1", "labels")))
 			if err != nil {
 				return err
 			}
@@ -1150,7 +1150,7 @@ func editTaskPackage(ws *workspace.Workspace, dir string, metadata map[string]an
 	for index, pkg := range packages {
 		fmt.Fprintf(out, "  %d) %s\n", index+1, catalogRecordName(packageCatalog, pkg))
 	}
-	choice, err := prompt(in, out, fmt.Sprintf("Package [%s] (number or name, `none` to clear, Enter to keep): ", current))
+	choice, err := prompt(in, out, fmt.Sprintf("%s [%s] (number or name, `none` to clear, Enter to keep): ", colorText(out, "1", "Package"), current))
 	if err != nil {
 		return err
 	}

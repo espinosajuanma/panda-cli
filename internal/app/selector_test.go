@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -72,5 +73,24 @@ func TestFilterSelectorOptionsMatchesTypedSearch(t *testing.T) {
 	}
 	if got, want := filterSelectorOptions(options, ""), []int{0, 1, 2}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("unfiltered options = %v, want %v", got, want)
+	}
+}
+
+func TestDescriptionEditorUsesSingleEKeyOnly(t *testing.T) {
+	if !descriptionEditorRequested('e') || !descriptionEditorRequested('E') {
+		t.Fatal("e should launch the description editor")
+	}
+	if descriptionEditorRequested(rune(selectorEnter)) || descriptionEditorRequested('n') {
+		t.Fatal("Enter and other keys should skip the description editor")
+	}
+}
+
+func TestDescriptionPromptUsesRequestedLabel(t *testing.T) {
+	var output strings.Builder
+	if err := promptDescriptionEditor(strings.NewReader("\n"), &output, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "Description [(e) to launch editor, enter to skip]") {
+		t.Fatalf("description prompt = %q", output.String())
 	}
 }

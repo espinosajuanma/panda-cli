@@ -226,7 +226,7 @@ var manualPages = map[string]manualPage{
 	"create": {
 		name:        "panda create - create a local task",
 		synopsis:    []string{"panda create [title]"},
-		description: []string{"Create a task in the local workspace with a temporary local ID. If title is omitted, Panda prompts for it. In a terminal, use arrow-key selectors for type, priority, complexity, labels, and the optional package. A successful push creates the task in Solutions and assigns its task number."},
+		description: []string{"Create a task in the local workspace with a temporary local ID. If title is omitted, Panda prompts for it. In a terminal, use arrow-key selectors for type, priority, complexity, labels, and the optional package. The description prompt opens $EDITOR when e is pressed. A successful push creates the task in Solutions and assigns its task number."},
 		arguments:   []manualOption{{"title", "Optional task title; if omitted, Panda prompts for it."}},
 		examples:    []string{"panda create", "panda create \"Improve task search\"", "panda push"},
 		seeAlso:     []string{"panda-edit(1)", "panda-push(1)"},

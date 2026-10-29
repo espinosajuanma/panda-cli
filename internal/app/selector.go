@@ -16,6 +16,10 @@ type selectorOption struct {
 	label string
 }
 
+func descriptionEditorRequested(key rune) bool {
+	return key == 'e' || key == 'E'
+}
+
 func isInteractiveTerminal(in io.Reader, out io.Writer) bool {
 	inFile, inOK := in.(*os.File)
 	outFile, outOK := out.(*os.File)
@@ -194,7 +198,7 @@ func renderSelector(out *os.File, prompt string, options []selectorOption, match
 	if previousLines > 0 {
 		fmt.Fprintf(out, "\x1b[%dA\r\x1b[J", previousLines)
 	}
-	fmt.Fprintf(out, "%s %s\r\n", colorText(out, "1;32", "?"), prompt)
+	fmt.Fprintf(out, "%s %s\r\n", colorText(out, "1;32", "?"), colorText(out, "1", prompt))
 	lineCount := 1
 	if filter != "" {
 		fmt.Fprintf(out, "  Filter: %s\r\n", filter)
@@ -285,25 +289,30 @@ func finishSelector(out *os.File, lines int, selection string) {
 }
 
 func readSingleKey(in io.Reader, out io.Writer) (rune, error) {
-	inFile, outFile, ok := selectorFiles(in, out)
+	inFile, _, ok := selectorFiles(in, out)
 	if !ok {
 		return 0, errors.New("single-key input requires a terminal")
 	}
-	fmt.Fprintf(out, "%s Edit description? (press e to open, any other key to skip) ", colorText(out, "1;32", "?"))
+	fmt.Fprintf(out, "%s %s [(e) to launch editor, enter to skip] ", colorText(out, "1;32", "?"), colorText(out, "1", "Description"))
 	state, err := term.MakeRaw(int(inFile.Fd()))
 	if err != nil {
-		fmt.Fprintln(out)
+		fmt.Fprint(out, "\r\n")
 		return 0, err
 	}
-	key, readErr := readSelectorKey(inFile)
-	restoreErr := term.Restore(int(inFile.Fd()), state)
-	fmt.Fprintln(out)
-	if readErr != nil {
-		return 0, readErr
+	defer term.Restore(int(inFile.Fd()), state)
+	for {
+		key, readErr := readSelectorKey(inFile)
+		if readErr != nil {
+			fmt.Fprint(out, "\r\n")
+			return 0, readErr
+		}
+		if key == 'e' || key == 'E' || key == rune(selectorEnter) {
+			fmt.Fprint(out, "\r\n")
+			return key, nil
+		}
+		if key == rune(selectorCancel) {
+			fmt.Fprint(out, "\r\n")
+			return 0, errors.New("selection canceled")
+		}
 	}
-	if restoreErr != nil {
-		return 0, restoreErr
-	}
-	_ = outFile
-	return key, nil
 }
