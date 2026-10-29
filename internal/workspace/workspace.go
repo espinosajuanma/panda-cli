@@ -9,6 +9,9 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+
+	"panda-dashboard/internal/config"
+	"panda-dashboard/internal/jsonutil"
 )
 
 type Workspace struct {
@@ -16,9 +19,10 @@ type Workspace struct {
 }
 
 type State struct {
-	Remote       map[string]any `json:"remote,omitempty"`
-	StagedNotes  []string       `json:"staged_notes,omitempty"`
-	LocalCreated bool           `json:"local_created,omitempty"`
+	Remote        map[string]any `json:"remote,omitempty"`
+	StagedNotes   []string       `json:"staged_notes,omitempty"`
+	StagedDiscard bool           `json:"staged_discard,omitempty"`
+	LocalCreated  bool           `json:"local_created,omitempty"`
 }
 
 func New(root string) *Workspace {
@@ -239,11 +243,11 @@ func DirectoryName(task map[string]any) string {
 }
 
 func WorkspacePath(projectName string) (string, error) {
-	base, err := os.UserConfigDir()
+	base, err := config.WorkspaceDirectory()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(base, "panda-dashboard", "workspaces", safeSegment(projectName)), nil
+	return filepath.Join(base, safeSegment(projectName)), nil
 }
 
 func safeSegment(value string) string {
@@ -264,8 +268,5 @@ func safeSegment(value string) string {
 }
 
 func stringValue(value any) string {
-	if value == nil {
-		return ""
-	}
-	return fmt.Sprint(value)
+	return jsonutil.StringValue(value)
 }

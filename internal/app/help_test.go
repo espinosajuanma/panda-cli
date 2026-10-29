@@ -3,9 +3,12 @@ package app
 import (
 	"bytes"
 	"os/exec"
+	"regexp"
 	"strings"
 	"testing"
 )
+
+var ansiSequenceForTests = regexp.MustCompile("\\x1b\\[[0-?]*[ -/]*[@-~]")
 
 func TestCommandHelpUsesManPageSections(t *testing.T) {
 	var output bytes.Buffer
@@ -16,7 +19,7 @@ func TestCommandHelpUsesManPageSections(t *testing.T) {
 	if !strings.Contains(text, "\x1b[1;32mPANDA-EDIT(1)\x1b[0m") {
 		t.Fatalf("man-page title is missing: %q", text)
 	}
-	plain := ansiEscapeSequence.ReplaceAllString(text, "")
+	plain := ansiSequenceForTests.ReplaceAllString(text, "")
 	for _, section := range []string{"NAME", "SYNOPSIS", "DESCRIPTION", "ARGUMENTS", "EXAMPLES", "SEE ALSO"} {
 		if !strings.Contains(plain, section+"\n") || !strings.Contains(text, "\x1b[1;32m"+section+"\x1b[0m") {
 			t.Errorf("man-page section %q missing from help: %q", section, text)
@@ -35,7 +38,7 @@ func TestEveryCommandManualHasManPageCoreSections(t *testing.T) {
 				t.Fatal(err)
 			}
 			text := output.String()
-			plain := ansiEscapeSequence.ReplaceAllString(text, "")
+			plain := ansiSequenceForTests.ReplaceAllString(text, "")
 			for _, section := range []string{"NAME", "SYNOPSIS", "DESCRIPTION"} {
 				if !strings.Contains(plain, section+"\n") || !strings.Contains(text, "\x1b[1;32m"+section+"\x1b[0m") {
 					t.Errorf("manual %q missing %q:\n%s", command, section, output.String())
@@ -103,6 +106,24 @@ func TestBashCompletionScriptIsValid(t *testing.T) {
 	}
 }
 
+func TestCompletionRootNamesComeFromCommandIndex(t *testing.T) {
+	commandWords := strings.Fields(rootCommandWords())
+	if len(commandWords) == 0 {
+		t.Fatal("command index produced no completion roots")
+	}
+	for _, shell := range []string{"bash", "zsh", "fish"} {
+		var output bytes.Buffer
+		if err := Run([]string{"completion", shell}, strings.NewReader(""), &output, &output); err != nil {
+			t.Fatal(err)
+		}
+		for _, command := range commandWords {
+			if !strings.Contains(output.String(), command) {
+				t.Errorf("%s completion is missing registered command %q", shell, command)
+			}
+		}
+	}
+}
+
 func TestGlobalHelpHasManSectionsAndCommandOptions(t *testing.T) {
 	var output bytes.Buffer
 	if err := Run([]string{"--help"}, strings.NewReader(""), &output, &output); err != nil {
@@ -112,7 +133,7 @@ func TestGlobalHelpHasManSectionsAndCommandOptions(t *testing.T) {
 	if !strings.Contains(text, "\x1b[1;32mPANDA(1)\x1b[0m") {
 		t.Fatalf("main manual title is missing: %q", text)
 	}
-	plain := ansiEscapeSequence.ReplaceAllString(text, "")
+	plain := ansiSequenceForTests.ReplaceAllString(text, "")
 	for _, expected := range []string{
 		"NAME\n", "SYNOPSIS\n", "DESCRIPTION\n", "COMMANDS\n", "GLOBAL OPTIONS\n", "ENVIRONMENT\n", "FILES\n",
 		"--current", "--staging", "--released", "--discarded", "--all", "--status",

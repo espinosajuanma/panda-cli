@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"panda-dashboard/internal/jsonutil"
 )
 
 type Client struct {
@@ -193,6 +195,12 @@ func (c *Client) UpdateTask(ctx context.Context, id string, task map[string]any)
 	return updated, err
 }
 
+func (c *Client) DiscardTask(ctx context.Context, id string) (map[string]any, error) {
+	var discarded map[string]any
+	err := c.request(ctx, http.MethodPut, "/data/dev.tasks/"+url.PathEscape(id)+"/discard", map[string]any{}, &discarded)
+	return discarded, err
+}
+
 func (c *Client) AddNote(ctx context.Context, id, note string) error {
 	return c.request(ctx, http.MethodPut, "/data/dev.tasks/"+url.PathEscape(id)+"/addNote", map[string]string{"note": note}, nil)
 }
@@ -317,10 +325,7 @@ func (c *Client) request(ctx context.Context, method, path string, body, output 
 }
 
 func stringValue(value any) string {
-	if value == nil {
-		return ""
-	}
-	return fmt.Sprint(value)
+	return jsonutil.StringValue(value)
 }
 
 func isInvalidTokenResponse(data []byte) bool {

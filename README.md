@@ -22,6 +22,9 @@ panda pull
 The binary is named `panda`. Configuration and synced task files are created
 under the OS user config directory.
 
+See [docs/architecture.md](docs/architecture.md) for package boundaries and
+the local sync model.
+
 ## Capabilities
 
 - Sync Tasks > Bring all the tasks from solutions to files in local
