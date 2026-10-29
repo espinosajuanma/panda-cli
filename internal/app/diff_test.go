@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"panda-dashboard/internal/config"
-	"panda-dashboard/internal/workspace"
+	"github.com/espinosajuanma/panda-cli/internal/config"
+	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
 func TestDiffGroupsTaskChangesAndShowsDescriptionLines(t *testing.T) {

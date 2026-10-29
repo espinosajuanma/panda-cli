@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"panda-dashboard/internal/workspace"
+	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
 func editLabels(ws *workspace.Workspace, dir string, metadata map[string]any, requested []string, in io.Reader, out io.Writer) error {

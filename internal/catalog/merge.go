@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"panda-dashboard/internal/jsonutil"
+	"github.com/espinosajuanma/panda-cli/internal/jsonutil"
 )
 
 func MergeRecords(kind Kind, local, baseline, remote []map[string]any) ([]map[string]any, []map[string]any, []string) {

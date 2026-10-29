@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"panda-dashboard/internal/content"
+	"github.com/espinosajuanma/panda-cli/internal/content"
 )
 
 func mergeForPush(local, remote, baseline map[string]any, dir string) (map[string]any, bool, error) {

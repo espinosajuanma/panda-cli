@@ -11,30 +11,19 @@ import (
 	"sort"
 	"strings"
 
-	"golang.org/x/term"
-
-	"panda-dashboard/internal/content"
-	difflib "panda-dashboard/internal/diff"
-	"panda-dashboard/internal/ui"
-	"panda-dashboard/internal/workspace"
+	"github.com/espinosajuanma/panda-cli/internal/content"
+	difflib "github.com/espinosajuanma/panda-cli/internal/diff"
+	"github.com/espinosajuanma/panda-cli/internal/ui"
+	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
 func diff(ws *workspace.Workspace, args []string, out io.Writer) error {
-	if !isTerminal(out) || hasDiffSummary(args) {
+	if hasDiffSummary(args) {
 		return renderDiff(ws, args, out, out)
 	}
-	var output bytes.Buffer
-	if err := renderDiff(ws, args, &output, out); err != nil {
-		return err
-	}
-	if file, ok := out.(*os.File); ok {
-		width, height, err := term.GetSize(int(file.Fd()))
-		if err == nil && !shouldPageDiff(args, true, output.Bytes(), width, height) {
-			_, writeErr := io.Copy(out, &output)
-			return writeErr
-		}
-	}
-	return pageOutput(out, output.Bytes())
+	return writePagedOutput(out, func(rendered io.Writer) error {
+		return renderDiff(ws, args, rendered, out)
+	})
 }
 
 func shouldPageDiff(args []string, terminal bool, output []byte, width, height int) bool {

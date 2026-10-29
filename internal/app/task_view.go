@@ -11,10 +11,17 @@ import (
 	"strconv"
 	"strings"
 
-	"panda-dashboard/internal/workspace"
+	"github.com/espinosajuanma/panda-cli/internal/solutions"
+	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
 func viewTask(ws *workspace.Workspace, args []string, out io.Writer) error {
+	return writePagedOutput(out, func(rendered io.Writer) error {
+		return renderTaskView(ws, args, rendered, out)
+	})
+}
+
+func renderTaskView(ws *workspace.Workspace, args []string, out, colorTarget io.Writer) error {
 	if len(args) != 1 {
 		return errors.New("usage: panda view <taskNumber|localId>")
 	}
@@ -33,7 +40,7 @@ func viewTask(ws *workspace.Workspace, args []string, out io.Writer) error {
 	labelNames := catalogNameIndex(labelCatalog, labelsCatalog)
 	packageNames := catalogNameIndex(packageCatalog, packagesCatalog)
 	title := taskLabel(metadata) + " — " + stringField(metadata, "title")
-	fmt.Fprintf(out, "%s\n\n", colorText(out, "1;32", "# "+title))
+	fmt.Fprintf(out, "%s\n\n", colorText(colorTarget, "1;32", "# "+title))
 	for _, field := range []string{"type", "status", "priority", "complexity", "package", "labels", "assignees", "reviewers"} {
 		if value, exists := metadata[field]; exists {
 			if field == "package" {
@@ -43,16 +50,16 @@ func viewTask(ws *workspace.Workspace, args []string, out io.Writer) error {
 			} else if field == "assignees" {
 				value = assigneesDisplay(value)
 			}
-			fmt.Fprintf(out, "%s %v  \n", colorText(out, "1;36", "**"+field+":**"), value)
+			fmt.Fprintf(out, "%s %v  \n", colorText(colorTarget, "1;36", "**"+field+":**"), value)
 		}
 	}
-	fmt.Fprintln(out, colorText(out, "1;32", "\n## Description"))
+	fmt.Fprintln(out, colorText(colorTarget, "1;32", "\n## Description"))
 	description, err := os.ReadFile(filepath.Join(dir, "description.md"))
 	if err != nil {
 		return err
 	}
 	fmt.Fprintln(out, highlightMarkdown(out, string(description)))
-	fmt.Fprintln(out, colorText(out, "1;32", "\n## Notes"))
+	fmt.Fprintln(out, colorText(colorTarget, "1;32", "\n## Notes"))
 	notesDir := filepath.Join(dir, "notes")
 	entries, err := os.ReadDir(notesDir)
 	if err != nil && !os.IsNotExist(err) {
@@ -74,9 +81,9 @@ func viewTask(ws *workspace.Workspace, args []string, out io.Writer) error {
 		}
 		marker := ""
 		if staged[entry.Name()] {
-			marker = colorText(out, "1;33", " [staged]")
+			marker = colorText(colorTarget, "1;33", " [staged]")
 		}
-		fmt.Fprintf(out, "%s%s\n", colorText(out, "1;36", "### "+strings.TrimSuffix(entry.Name(), ".md")), marker)
+		fmt.Fprintf(out, "%s%s\n", colorText(colorTarget, "1;36", "### "+strings.TrimSuffix(entry.Name(), ".md")), marker)
 		fmt.Fprintln(out, highlightMarkdown(out, string(body)))
 		printed = true
 	}
@@ -86,12 +93,9 @@ func viewTask(ws *workspace.Workspace, args []string, out io.Writer) error {
 	return nil
 }
 
-func linkTask(ws *workspace.Workspace, args []string, projectViewID string, out io.Writer) error {
+func linkTask(ws *workspace.Workspace, args []string, out io.Writer) error {
 	if len(args) != 1 {
 		return errors.New("usage: panda link <taskNumber|localId>")
-	}
-	if strings.TrimSpace(projectViewID) == "" {
-		return errors.New("project view ID is not configured; run `panda config set project-view <viewId>`")
 	}
 	_, metadata, err := ws.FindTask(args[0])
 	if err != nil {
@@ -108,7 +112,7 @@ func linkTask(ws *workspace.Workspace, args []string, projectViewID string, out 
 	if !same(valueAt(metadata, "number"), valueAt(state.Remote, "number")) {
 		return fmt.Errorf("task %s number does not match its verified remote baseline", taskLabel(metadata))
 	}
-	link, err := canonicalTaskLink(projectViewID, metadata["number"], taskID)
+	link, err := canonicalTaskLink(metadata["number"], taskID)
 	if err != nil {
 		return err
 	}
@@ -116,11 +120,7 @@ func linkTask(ws *workspace.Workspace, args []string, projectViewID string, out 
 	return nil
 }
 
-func canonicalTaskLink(projectViewID string, taskNumber any, taskID string) (string, error) {
-	projectViewID = strings.TrimSpace(projectViewID)
-	if projectViewID == "" {
-		return "", errors.New("project view ID is missing")
-	}
+func canonicalTaskLink(taskNumber any, taskID string) (string, error) {
 	numberText := ""
 	if taskNumber != nil {
 		numberText = strings.TrimSpace(fmt.Sprint(taskNumber))
@@ -136,5 +136,5 @@ func canonicalTaskLink(projectViewID string, taskNumber any, taskID string) (str
 	if taskID == "" {
 		return "", errors.New("verified task ID is missing")
 	}
-	return fmt.Sprintf("[#%s](https://solutions.slingrs.io/prod/runtime/#views/%s/readOnly/%s)", numberText, url.PathEscape(projectViewID), url.PathEscape(taskID)), nil
+	return fmt.Sprintf("[#%s](https://solutions.slingrs.io/prod/runtime/#views/%s/readOnly/%s)", numberText, url.PathEscape(solutions.TaskViewId), url.PathEscape(taskID)), nil
 }

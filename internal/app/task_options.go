@@ -12,7 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"panda-dashboard/internal/workspace"
+	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
 type labelOption struct {

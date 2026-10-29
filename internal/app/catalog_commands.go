@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"panda-dashboard/internal/config"
-	"panda-dashboard/internal/workspace"
+	"github.com/espinosajuanma/panda-cli/internal/config"
+	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
 func projectCatalogCommand(ws *workspace.Workspace, project *config.Project, kind catalogKind, args []string, in io.Reader, out io.Writer) error {

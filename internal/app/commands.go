@@ -14,8 +14,6 @@ var mainCommands = []mainCommand{
 	{"login", "[email]", "Authenticate with Solutions and save a session.", false},
 	{"config set project <name>", "", "Validate and select the active project.", false},
 	{"config get project", "", "Display the active project.", false},
-	{"config set project-view <viewId>", "", "Configure the view ID used in canonical task links.", false},
-	{"config get project-view", "", "Display the configured task view ID.", false},
 	{"path", "", "Print the selected project's workspace path.", false},
 	{"completion <bash|zsh|fish>", "", "Print shell completion setup code.", false},
 	{"labels [list|create|edit|delete]", "", "Manage project labels locally.", true},

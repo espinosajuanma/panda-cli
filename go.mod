@@ -1,4 +1,4 @@
-module panda-dashboard
+module github.com/espinosajuanma/panda-cli
 
 go 1.26.0
 

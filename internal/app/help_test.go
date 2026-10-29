@@ -67,7 +67,6 @@ func TestNestedCommandHelpResolvesToSubcommandManual(t *testing.T) {
 	}{
 		{args: []string{"help", "config", "set", "project"}, page: "PANDA-CONFIG-SET-PROJECT(1)", synopsis: "panda config set project <name>"},
 		{args: []string{"config", "set", "project", "--help"}, page: "PANDA-CONFIG-SET-PROJECT(1)", synopsis: "panda config set project <name>"},
-		{args: []string{"config", "set", "project-view", "--help"}, page: "PANDA-CONFIG-SET-PROJECT-VIEW(1)", synopsis: "panda config set project-view <viewId>"},
 		{args: []string{"link", "--help"}, page: "PANDA-LINK(1)", synopsis: "panda link <taskNumber|localId>"},
 		{args: []string{"labels", "edit", "--help"}, page: "PANDA-LABELS-EDIT(1)", synopsis: "panda labels edit <name|id>"},
 		{args: []string{"completion", "bash", "--help"}, page: "PANDA-COMPLETION-BASH(1)", synopsis: "panda completion bash"},
@@ -82,6 +81,16 @@ func TestNestedCommandHelpResolvesToSubcommandManual(t *testing.T) {
 		if !strings.Contains(output.String(), test.page) || !strings.Contains(output.String(), test.synopsis) {
 			t.Fatalf("Run(%v) did not print the selected subcommand manual:\n%s", test.args, output.String())
 		}
+	}
+}
+
+func TestConfigHelpNoLongerDescribesAProjectViewSetting(t *testing.T) {
+	var output bytes.Buffer
+	if err := Run([]string{"help", "config"}, strings.NewReader(""), &output, &output); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output.String(), "project-view") {
+		t.Fatalf("config manual still advertises per-project view configuration:\n%s", output.String())
 	}
 }
 

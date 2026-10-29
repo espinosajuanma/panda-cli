@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"panda-dashboard/internal/content"
-	"panda-dashboard/internal/solutions"
-	"panda-dashboard/internal/workspace"
+	"github.com/espinosajuanma/panda-cli/internal/content"
+	"github.com/espinosajuanma/panda-cli/internal/solutions"
+	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
 func advanceNotesBaseline(baseline, remote map[string]any, conflicts []string) map[string]any {

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"panda-dashboard/internal/app"
+	"github.com/espinosajuanma/panda-cli/internal/app"
 )
 
 func main() {

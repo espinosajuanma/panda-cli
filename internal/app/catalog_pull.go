@@ -7,10 +7,10 @@ import (
 	"sort"
 	"strings"
 
-	catdomain "panda-dashboard/internal/catalog"
-	"panda-dashboard/internal/config"
-	"panda-dashboard/internal/solutions"
-	"panda-dashboard/internal/workspace"
+	catdomain "github.com/espinosajuanma/panda-cli/internal/catalog"
+	"github.com/espinosajuanma/panda-cli/internal/config"
+	"github.com/espinosajuanma/panda-cli/internal/solutions"
+	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
 func projectCatalogDiff(ws *workspace.Workspace) ([]string, int, int, error) {

@@ -13,8 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"panda-dashboard/internal/config"
-	"panda-dashboard/internal/workspace"
+	"github.com/espinosajuanma/panda-cli/internal/config"
+	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
 func TestOptionEditPreservesUnspecifiedNullableAndAbsentMetadata(t *testing.T) {
@@ -179,7 +179,7 @@ func TestCreateTaskNoninteractiveWithDescriptionDoesNotPromptOrPublish(t *testin
 	configHome := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", configHome)
 	t.Setenv("EDITOR", filepath.Join(t.TempDir(), "editor-must-not-run"))
-	project := &config.Project{ID: "project-local", Name: "Automation", ViewID: "view-configured"}
+	project := &config.Project{ID: "project-local", Name: "Automation"}
 	if err := (&config.Config{APIURL: server.URL, Project: project}).Save(); err != nil {
 		t.Fatal(err)
 	}
@@ -283,9 +283,9 @@ func TestTaskFieldOptionsSupportRepeatableAssigneesAndLabelOperations(t *testing
 	}
 }
 
-func TestLinkUsesConfiguredProjectViewAndVerifiedTaskMetadataID(t *testing.T) {
+func TestLinkUsesSharedTaskViewAndVerifiedTaskMetadataID(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	project := &config.Project{ID: "project-1", Name: "Linked", ViewID: "configured-view-1"}
+	project := &config.Project{ID: "project-1", Name: "Linked"}
 	if err := (&config.Config{Project: project}).Save(); err != nil {
 		t.Fatal(err)
 	}
@@ -306,23 +306,20 @@ func TestLinkUsesConfiguredProjectViewAndVerifiedTaskMetadataID(t *testing.T) {
 	if err := Run([]string{"link", "12345"}, strings.NewReader(""), &output, &output); err != nil {
 		t.Fatal(err)
 	}
-	want := "[#12345](https://solutions.slingrs.io/prod/runtime/#views/configured-view-1/readOnly/verified-task-id)\n"
+	want := "[#12345](https://solutions.slingrs.io/prod/runtime/#views/680b8e41805d3740e97cfecb/readOnly/verified-task-id)\n"
 	if output.String() != want {
 		t.Fatalf("task link = %q, want %q", output.String(), want)
 	}
 }
 
 func TestCanonicalTaskLinkRejectsMissingIdentifiers(t *testing.T) {
-	if _, err := canonicalTaskLink("", float64(1), "verified-id"); err == nil || !strings.Contains(err.Error(), "project view ID") {
-		t.Fatalf("missing view ID error = %v", err)
-	}
-	if _, err := canonicalTaskLink("view-id", float64(1), ""); err == nil || !strings.Contains(err.Error(), "task ID") {
+	if _, err := canonicalTaskLink(float64(1), ""); err == nil || !strings.Contains(err.Error(), "task ID") {
 		t.Fatalf("missing task ID error = %v", err)
 	}
-	if _, err := canonicalTaskLink("view-id", nil, "task-id"); err == nil || !strings.Contains(err.Error(), "task number") {
+	if _, err := canonicalTaskLink(nil, "task-id"); err == nil || !strings.Contains(err.Error(), "task number") {
 		t.Fatalf("missing task number error = %v", err)
 	}
-	if _, err := canonicalTaskLink("view-id", "[malicious]", "task-id"); err == nil || !strings.Contains(err.Error(), "invalid") {
+	if _, err := canonicalTaskLink("[malicious]", "task-id"); err == nil || !strings.Contains(err.Error(), "invalid") {
 		t.Fatalf("invalid task number error = %v", err)
 	}
 
@@ -342,7 +339,7 @@ func TestCanonicalTaskLinkRejectsMissingIdentifiers(t *testing.T) {
 		t.Fatal(err)
 	}
 	localID := stringField(metadata, "localId")
-	if err := linkTask(ws, []string{localID}, "view-id", io.Discard); err == nil || !strings.Contains(err.Error(), "no verified Solutions task ID") {
+	if err := linkTask(ws, []string{localID}, io.Discard); err == nil || !strings.Contains(err.Error(), "no verified Solutions task ID") {
 		t.Fatalf("local task link error = %v", err)
 	}
 }
@@ -376,23 +373,13 @@ func TestTaskDescriptionRejectsInvalidUTF8(t *testing.T) {
 	}
 }
 
-func TestProjectViewConfigCommandPersistsAndDisplaysValue(t *testing.T) {
+func TestProjectViewConfigCommandsAreRemoved(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	cfg := &config.Config{Project: &config.Project{ID: "p1", Name: "Alpha", ViewID: config.DefaultProjectViewID}}
-	var output bytes.Buffer
-	if err := configCommand(nil, cfg, nil, []string{"set", "project-view", "custom-view"}, &output); err != nil {
-		t.Fatal(err)
+	if err := Run([]string{"config", "set", "project-view", "custom-view"}, strings.NewReader(""), io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "usage: panda config") {
+		t.Fatalf("removed project-view setter error = %v", err)
 	}
-	output.Reset()
-	loaded, err := config.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := configCommand(nil, loaded, nil, []string{"get", "project-view"}, &output); err != nil {
-		t.Fatal(err)
-	}
-	if output.String() != "custom-view\n" {
-		t.Fatalf("configured view output = %q", output.String())
+	if err := Run([]string{"config", "get", "project-view"}, strings.NewReader(""), io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "usage: panda config") {
+		t.Fatalf("removed project-view getter error = %v", err)
 	}
 }
 

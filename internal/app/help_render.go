@@ -1,13 +1,9 @@
 package app
 
 import (
-	"bytes"
 	"fmt"
 	"io"
-	"os"
 	"strings"
-
-	"golang.org/x/term"
 )
 
 var mainCommandDetails = map[string][]string{
@@ -94,7 +90,7 @@ func commandHelpKey(args []string) string {
 		if len(args) > 1 {
 			switch args[1] {
 			case "get", "set":
-				if len(args) > 2 && (args[2] == "project" || args[2] == "project-view") {
+				if len(args) > 2 && args[2] == "project" {
 					return "config " + args[1] + " " + args[2]
 				}
 				return "config " + args[1]
@@ -123,7 +119,7 @@ func commandHelpKey(args []string) string {
 func printManHeader(out io.Writer, title string) {
 	title += "(1)"
 	const width = 80
-	middle := "Panda Dashboard Manual"
+	middle := "Panda CLI Manual"
 	gap := width - len(title)*2 - len(middle)
 	if gap < 2 {
 		gap = 2
@@ -146,27 +142,14 @@ func writeManSection(out io.Writer, section string, paragraphs []string) {
 func writeSectionTitle(out io.Writer, title string) { fmt.Fprintf(out, "\x1b[1;32m%s\x1b[0m\n", title) }
 
 func writeHelpOutput(out io.Writer, render func(io.Writer)) error {
-	if !isTerminal(out) {
-		render(out)
+	return writePagedOutput(out, func(rendered io.Writer) error {
+		render(rendered)
 		return nil
-	}
-	var output bytes.Buffer
-	render(&output)
-	file, ok := out.(*os.File)
-	if !ok {
-		_, err := io.Copy(out, &output)
-		return err
-	}
-	width, height, err := term.GetSize(int(file.Fd()))
-	if err == nil && !shouldPageHelp(true, output.Bytes(), width, height) {
-		_, err := io.Copy(out, &output)
-		return err
-	}
-	return pageOutput(out, output.Bytes())
+	})
 }
 
 func shouldPageHelp(terminal bool, output []byte, width, height int) bool {
-	return terminal && !outputFitsScreen(output, width, height)
+	return shouldPageOutput(terminal, output, width, height)
 }
 
 func writeManualOption(out io.Writer, option manualOption) {

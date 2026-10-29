@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"panda-dashboard/internal/config"
-	"panda-dashboard/internal/jsonutil"
-	"panda-dashboard/internal/task"
-	"panda-dashboard/internal/ui"
-	"panda-dashboard/internal/workspace"
+	"github.com/espinosajuanma/panda-cli/internal/config"
+	"github.com/espinosajuanma/panda-cli/internal/jsonutil"
+	"github.com/espinosajuanma/panda-cli/internal/task"
+	"github.com/espinosajuanma/panda-cli/internal/ui"
+	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
 var editableFields = task.EditableFields

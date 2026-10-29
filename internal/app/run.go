@@ -7,8 +7,8 @@ import (
 	"io"
 	"strings"
 
-	"panda-dashboard/internal/config"
-	"panda-dashboard/internal/solutions"
+	"github.com/espinosajuanma/panda-cli/internal/config"
+	"github.com/espinosajuanma/panda-cli/internal/solutions"
 )
 
 func Run(args []string, in io.Reader, out, errOut io.Writer) error {
@@ -86,7 +86,7 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 		case "assign":
 			return assignTask(ws, args, out)
 		case "link":
-			return linkTask(ws, args, cfg.Project.ViewID, out)
+			return linkTask(ws, args, out)
 		case "edit-note":
 			if err := requireLogin(cfg); err != nil {
 				return err

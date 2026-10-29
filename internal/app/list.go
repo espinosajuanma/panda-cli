@@ -12,8 +12,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"panda-dashboard/internal/task"
-	"panda-dashboard/internal/workspace"
+	"github.com/espinosajuanma/panda-cli/internal/task"
+	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
 type listOptions struct {

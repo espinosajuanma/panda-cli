@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"panda-dashboard/internal/workspace"
+	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
 var assignableTeamRoles = []string{"teamLead", "developer", "qa"}

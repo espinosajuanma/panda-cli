@@ -10,8 +10,8 @@ import (
 	"strings"
 	"unicode"
 
-	"panda-dashboard/internal/config"
-	"panda-dashboard/internal/jsonutil"
+	"github.com/espinosajuanma/panda-cli/internal/config"
+	"github.com/espinosajuanma/panda-cli/internal/jsonutil"
 )
 
 type Workspace struct {

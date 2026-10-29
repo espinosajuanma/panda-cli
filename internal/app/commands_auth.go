@@ -10,9 +10,9 @@ import (
 
 	"golang.org/x/term"
 
-	"panda-dashboard/internal/config"
-	"panda-dashboard/internal/solutions"
-	"panda-dashboard/internal/workspace"
+	"github.com/espinosajuanma/panda-cli/internal/config"
+	"github.com/espinosajuanma/panda-cli/internal/solutions"
+	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
 func printWorkspacePath(cfg *config.Config, out io.Writer) error {
@@ -132,28 +132,6 @@ func configCommand(ctx context.Context, cfg *config.Config, client *solutions.Cl
 		}
 		return nil
 	}
-	if len(args) == 2 && args[0] == "get" && args[1] == "project-view" {
-		if cfg.Project == nil {
-			return errors.New("no project selected; run `panda config set project <name>` first")
-		}
-		fmt.Fprintln(out, cfg.Project.ViewID)
-		return nil
-	}
-	if len(args) == 3 && args[0] == "set" && args[1] == "project-view" {
-		if cfg.Project == nil {
-			return errors.New("no project selected; run `panda config set project <name>` first")
-		}
-		viewID := strings.TrimSpace(args[2])
-		if viewID == "" {
-			return errors.New("project view ID cannot be empty")
-		}
-		cfg.Project.ViewID = viewID
-		if err := cfg.Save(); err != nil {
-			return fmt.Errorf("save project view ID: %w", err)
-		}
-		fmt.Fprintf(out, "Set project view ID to %s.\n", viewID)
-		return nil
-	}
 	if len(args) == 3 && args[0] == "set" && args[1] == "project" {
 		if cfg.Token == "" {
 			return errors.New("not logged in; run `panda login` first")
@@ -162,12 +140,12 @@ func configCommand(ctx context.Context, cfg *config.Config, client *solutions.Cl
 		if err != nil {
 			return err
 		}
-		cfg.Project = &config.Project{ID: project.ID, Name: project.Name, ViewID: config.DefaultProjectViewID}
+		cfg.Project = &config.Project{ID: project.ID, Name: project.Name}
 		if err := cfg.Save(); err != nil {
 			return err
 		}
 		fmt.Fprintf(out, "Selected project %s (%s).\n", project.Name, project.ID)
 		return nil
 	}
-	return errors.New("usage: panda config get project | panda config set project <name> | panda config get project-view | panda config set project-view <viewId>")
+	return errors.New("usage: panda config get project | panda config set project <name>")
 }

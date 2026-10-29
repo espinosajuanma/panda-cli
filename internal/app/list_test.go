@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"panda-dashboard/internal/workspace"
+	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
 func TestListGroupsByWorkflowStatusSortsByRankAndFilters(t *testing.T) {

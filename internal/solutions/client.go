@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"panda-dashboard/internal/jsonutil"
+	"github.com/espinosajuanma/panda-cli/internal/jsonutil"
 )
 
 type Client struct {

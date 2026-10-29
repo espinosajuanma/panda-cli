@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -37,29 +38,32 @@ func TestSaveUsesPrivateConfigFile(t *testing.T) {
 	}
 }
 
-func TestProjectViewIDDefaultsAndCanBeConfigured(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	cfg := &Config{Project: &Project{ID: "p1", Name: "Alpha"}}
-	if err := cfg.Save(); err != nil {
+func TestLoadIgnoresLegacyProjectViewID(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	dir := filepath.Join(base, "panda-dashboard")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{"project":{"id":"p1","name":"Alpha","view_id":"old-custom-view"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	loaded, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Project == nil || loaded.Project.ViewID != DefaultProjectViewID {
-		t.Fatalf("legacy project config view ID = %#v, want default %q", loaded.Project, DefaultProjectViewID)
+	if loaded.Project == nil || loaded.Project.ID != "p1" || loaded.Project.Name != "Alpha" {
+		t.Fatalf("legacy project config did not load: %#v", loaded.Project)
 	}
-
-	loaded.Project.ViewID = "custom-view-id"
 	if err := loaded.Save(); err != nil {
 		t.Fatal(err)
 	}
-	loaded, err = Load()
+	saved, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Project.ViewID != "custom-view-id" {
-		t.Fatalf("configured project view ID = %q, want custom-view-id", loaded.Project.ViewID)
+	if strings.Contains(string(saved), "view_id") {
+		t.Fatalf("obsolete per-project view setting was saved: %s", saved)
 	}
 }

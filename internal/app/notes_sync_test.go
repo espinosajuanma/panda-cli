@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"panda-dashboard/internal/config"
-	"panda-dashboard/internal/solutions"
-	"panda-dashboard/internal/workspace"
+	"github.com/espinosajuanma/panda-cli/internal/config"
+	"github.com/espinosajuanma/panda-cli/internal/solutions"
+	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
 func TestEditNoteOpensOnlyCurrentUsersSyncedNote(t *testing.T) {
