@@ -95,20 +95,67 @@ func (c *Client) ListTasks(ctx context.Context, projectID string) ([]map[string]
 }
 
 func (c *Client) ListLabels(ctx context.Context, projectID string) ([]map[string]any, error) {
-	query := url.Values{"project.id": []string{projectID}}
-	items, err := c.list(ctx, "/data/dev.labels", query)
+	return c.listProjectRecords(ctx, "dev.labels", projectID)
+}
+
+func (c *Client) ListPackages(ctx context.Context, projectID string) ([]map[string]any, error) {
+	return c.listProjectRecords(ctx, "dev.packages", projectID)
+}
+
+func (c *Client) listProjectRecords(ctx context.Context, entity, projectID string) ([]map[string]any, error) {
+	items, err := c.list(ctx, "/data/"+entity, url.Values{"project.id": []string{projectID}})
 	if err != nil {
 		return nil, err
 	}
-	labels := make([]map[string]any, 0, len(items))
+	records := make([]map[string]any, 0, len(items))
 	for _, item := range items {
-		var label map[string]any
-		if err := json.Unmarshal(item, &label); err != nil {
+		var record map[string]any
+		if err := json.Unmarshal(item, &record); err != nil {
 			return nil, err
 		}
-		labels = append(labels, label)
+		records = append(records, record)
 	}
-	return labels, nil
+	return records, nil
+}
+
+func (c *Client) CreateLabel(ctx context.Context, label map[string]any) (map[string]any, error) {
+	return c.createProjectRecord(ctx, "dev.labels", label)
+}
+
+func (c *Client) UpdateLabel(ctx context.Context, id string, label map[string]any) (map[string]any, error) {
+	return c.updateProjectRecord(ctx, "dev.labels", id, label)
+}
+
+func (c *Client) DeleteLabel(ctx context.Context, id string) error {
+	return c.deleteProjectRecord(ctx, "dev.labels", id)
+}
+
+func (c *Client) CreatePackage(ctx context.Context, pkg map[string]any) (map[string]any, error) {
+	return c.createProjectRecord(ctx, "dev.packages", pkg)
+}
+
+func (c *Client) UpdatePackage(ctx context.Context, id string, pkg map[string]any) (map[string]any, error) {
+	return c.updateProjectRecord(ctx, "dev.packages", id, pkg)
+}
+
+func (c *Client) DeletePackage(ctx context.Context, id string) error {
+	return c.deleteProjectRecord(ctx, "dev.packages", id)
+}
+
+func (c *Client) createProjectRecord(ctx context.Context, entity string, record map[string]any) (map[string]any, error) {
+	var created map[string]any
+	err := c.request(ctx, http.MethodPost, "/data/"+entity, record, &created)
+	return created, err
+}
+
+func (c *Client) updateProjectRecord(ctx context.Context, entity, id string, record map[string]any) (map[string]any, error) {
+	var updated map[string]any
+	err := c.request(ctx, http.MethodPut, "/data/"+entity+"/"+url.PathEscape(id), record, &updated)
+	return updated, err
+}
+
+func (c *Client) deleteProjectRecord(ctx context.Context, entity, id string) error {
+	return c.request(ctx, http.MethodDelete, "/data/"+entity+"/"+url.PathEscape(id), nil, nil)
 }
 
 func (c *Client) GetTask(ctx context.Context, id string) (map[string]any, error) {

@@ -126,6 +126,8 @@ func TestPullThenPushMergesIndependentRemoteAndLocalChanges(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case r.Method == http.MethodGet && (r.URL.Path == "/data/dev.labels" || r.URL.Path == "/data/dev.packages"):
+			_, _ = fmt.Fprint(w, `{"total":0,"items":[]}`)
 		case r.Method == http.MethodGet && r.URL.Path == "/data/dev.tasks":
 			if r.URL.Query().Get("project.id") != "project-1" {
 				t.Errorf("task list missing project filter: %s", r.URL.RawQuery)
@@ -191,6 +193,11 @@ func TestPullSkipsTasksWithUnchangedVersion(t *testing.T) {
 		"labels": []any{}, "assignees": []any{}, "reviewers": []any{}, "notes": []any{},
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && (r.URL.Path == "/data/dev.labels" || r.URL.Path == "/data/dev.packages") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{"total":0,"items":[]}`)
+			return
+		}
 		if r.Method != http.MethodGet || r.URL.Path != "/data/dev.tasks" {
 			http.NotFound(w, r)
 			return
@@ -246,6 +253,26 @@ func TestPullSkipsTasksWithUnchangedVersion(t *testing.T) {
 	}
 }
 
+func TestSameTaskVersionStillChecksLabelAndPackageRelationships(t *testing.T) {
+	baseline := map[string]any{
+		"version": float64(4), "labels": []any{map[string]any{"id": "label-1", "label": "Old label"}},
+		"package": map[string]any{"id": "package-1", "label": "Old package"},
+	}
+	remote := cloneMap(baseline)
+	if !sameTaskVersion(remote, baseline) {
+		t.Fatal("unchanged task version and relations should be skippable")
+	}
+	remote["labels"] = []any{map[string]any{"id": "label-2", "label": "New label"}}
+	if sameTaskVersion(remote, baseline) {
+		t.Fatal("changed labels should be pulled even without a task version bump")
+	}
+	remote = cloneMap(baseline)
+	remote["package"] = map[string]any{"id": "package-2", "label": "New package"}
+	if sameTaskVersion(remote, baseline) {
+		t.Fatal("changed package should be pulled even without a task version bump")
+	}
+}
+
 func TestPullProgressBarFormattingAndNonTerminalOutput(t *testing.T) {
 	if got, want := formatPullProgress(5, 10), "Pulling tasks: [##########----------] 5/10 (50%)"; got != want {
 		t.Fatalf("progress bar = %q, want %q", got, want)
@@ -275,7 +302,7 @@ func TestInteractiveEditValidatesEnumsAndWritesMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	input := strings.NewReader("Changed title\n\nhigh\n-\nn\n\n")
-	if err := editTask(context.Background(), ws, []string{"14"}, solutions.NewClient("http://unused", ""), &config.Config{}, input, io.Discard); err != nil {
+	if err := editTask(ws, []string{"14"}, input, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	updated, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
@@ -315,24 +342,24 @@ func TestInteractiveEditRejectsInvalidEnumWithoutSaving(t *testing.T) {
 
 func TestInteractiveLabelPickerAddsAndRemovesAPIRelationships(t *testing.T) {
 	root := t.TempDir()
-	dir := filepath.Join(root, "14")
+	ws := workspace.New(root)
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	dir := ws.TaskPath("14")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeCatalog(ws, labelCatalog, []map[string]any{
+		{"id": "l1", "name": "Feature A"}, {"id": "l2", "name": "Feature B"},
+	}); err != nil {
 		t.Fatal(err)
 	}
 	metadata := map[string]any{"id": "task-1", "labels": []any{}}
 	if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), metadata); err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/data/dev.labels" || r.URL.Query().Get("project.id") != "project-1" {
-			t.Errorf("unexpected label request: %s?%s", r.URL.Path, r.URL.RawQuery)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"total":2,"items":[{"id":"l1","name":"Feature A"},{"id":"l2","name":"Feature B"}]}`))
-	}))
-	defer server.Close()
-	client := solutions.NewClient(server.URL, "token")
-	if err := editLabels(context.Background(), client, "project-1", dir, metadata, []string{"Feature A"}, strings.NewReader(""), io.Discard); err != nil {
+	if err := editLabels(ws, dir, metadata, []string{"Feature A", "Feature B"}, strings.NewReader(""), io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	metadata, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
@@ -340,10 +367,21 @@ func TestInteractiveLabelPickerAddsAndRemovesAPIRelationships(t *testing.T) {
 		t.Fatal(err)
 	}
 	labels, _ := metadata["labels"].([]any)
-	if len(labels) != 1 || stringField(labels[0].(map[string]any), "id") != "l1" {
+	if len(labels) != 2 || stringField(labels[0].(map[string]any), "id") != "l1" || stringField(labels[1].(map[string]any), "id") != "l2" {
 		t.Fatalf("label relationship not saved: %#v", metadata["labels"])
 	}
-	if err := editLabels(context.Background(), client, "project-1", dir, metadata, []string{"--remove=Feature A"}, strings.NewReader(""), io.Discard); err != nil {
+	if err := editLabels(ws, dir, metadata, []string{"--remove=Feature A"}, strings.NewReader(""), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	metadata, err = workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	labels, _ = metadata["labels"].([]any)
+	if len(labels) != 1 || stringField(labels[0].(map[string]any), "id") != "l2" {
+		t.Fatalf("label relationship not removed: %#v", labels)
+	}
+	if err := editLabels(ws, dir, metadata, []string{"none"}, strings.NewReader(""), io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	metadata, err = workspace.ReadMap(filepath.Join(dir, "metadata.json"))
@@ -352,25 +390,64 @@ func TestInteractiveLabelPickerAddsAndRemovesAPIRelationships(t *testing.T) {
 	}
 	labels, _ = metadata["labels"].([]any)
 	if len(labels) != 0 {
-		t.Fatalf("label relationship not removed: %#v", labels)
+		t.Fatalf("none selector did not clear labels: %#v", labels)
+	}
+}
+
+func TestPackageSelectorSupportsOneOrNone(t *testing.T) {
+	ws := workspace.New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	dir := ws.TaskPath("14")
+	metadata := map[string]any{"id": "task-1", "type": "feature"}
+	if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), metadata); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeCatalog(ws, packageCatalog, []map[string]any{{"id": "p1", "title": "Epic A"}, {"id": "p2", "title": "Epic B"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := editTaskPackage(ws, dir, metadata, []string{"Epic B"}, strings.NewReader(""), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	metadata, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := relationshipID(metadata["package"]); got != "p2" {
+		t.Fatalf("selected package ID = %q, want p2", got)
+	}
+	if err := editTaskPackage(ws, dir, metadata, []string{"none"}, strings.NewReader(""), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	metadata, err = workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasPackageAssignment(metadata["package"]) {
+		t.Fatalf("none selector did not clear package: %#v", metadata["package"])
 	}
 }
 
 func TestInteractiveLabelPickerSearchesPrefixes(t *testing.T) {
 	root := t.TempDir()
-	dir := filepath.Join(root, "14")
+	ws := workspace.New(root)
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	dir := ws.TaskPath("14")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	if err := writeCatalog(ws, labelCatalog, []map[string]any{
+		{"id": "l1", "name": "Feature A"}, {"id": "l2", "name": "Fix"},
+	}); err != nil {
+		t.Fatal(err)
+	}
 	metadata := map[string]any{"id": "task-1", "labels": []any{}}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"total":2,"items":[{"id":"l1","name":"Feature A"},{"id":"l2","name":"Fix"}]}`))
-	}))
-	defer server.Close()
 	input := strings.NewReader("fe\n1\n\n")
 	var output strings.Builder
-	if err := editLabels(context.Background(), solutions.NewClient(server.URL, "token"), "project-1", dir, metadata, nil, input, &output); err != nil {
+	if err := editLabels(ws, dir, metadata, nil, input, &output); err != nil {
 		t.Fatal(err)
 	}
 	updated, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
@@ -383,6 +460,412 @@ func TestInteractiveLabelPickerSearchesPrefixes(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "Feature A") {
 		t.Fatalf("prefix suggestions missing from UI: %q", output.String())
+	}
+}
+
+func TestProjectLabelAndPackageCommandsCreateEditAndDeleteLocally(t *testing.T) {
+	ws := workspace.New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	project := &config.Project{ID: "project-1", Name: "Alpha"}
+	var output strings.Builder
+	if err := projectCatalogCommand(ws, project, labelCatalog, []string{"create", "Security", "Review label"}, strings.NewReader(""), &output); err != nil {
+		t.Fatal(err)
+	}
+	if err := projectCatalogCommand(ws, project, packageCatalog, []string{"create", "Migration", "Large package"}, strings.NewReader(""), &output); err != nil {
+		t.Fatal(err)
+	}
+	labels, err := readCatalog(ws, labelCatalog)
+	if err != nil || len(labels) != 1 || stringField(labels[0], "localId") == "" {
+		t.Fatalf("local labels = %#v, error = %v", labels, err)
+	}
+	packages, err := readCatalog(ws, packageCatalog)
+	if err != nil || len(packages) != 1 || stringField(packages[0], "localId") == "" {
+		t.Fatalf("local packages = %#v, error = %v", packages, err)
+	}
+
+	if err := projectCatalogCommand(ws, project, labelCatalog, []string{"edit", "Security"}, strings.NewReader("Critical\nUpdated label\n"), &output); err != nil {
+		t.Fatal(err)
+	}
+	if err := projectCatalogCommand(ws, project, packageCatalog, []string{"edit", "Migration"}, strings.NewReader("Platform migration\nUpdated package\n"), &output); err != nil {
+		t.Fatal(err)
+	}
+	labels, _ = readCatalog(ws, labelCatalog)
+	packages, _ = readCatalog(ws, packageCatalog)
+	if stringField(labels[0], "name") != "Critical" || stringField(labels[0], "description") != "Updated label" {
+		t.Fatalf("label edit not saved locally: %#v", labels[0])
+	}
+	if stringField(packages[0], "title") != "Platform migration" || stringField(packages[0], "description") != "Updated package" {
+		t.Fatalf("package edit not saved locally: %#v", packages[0])
+	}
+
+	taskDir := ws.TaskPath("local-test")
+	if err := os.MkdirAll(taskDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	metadata := map[string]any{
+		"id": "task-1", "labels": []any{map[string]any{"id": stringField(labels[0], "localId"), "label": "Critical"}},
+		"package": map[string]any{"id": stringField(packages[0], "localId"), "label": "Platform migration"},
+	}
+	if err := workspace.WriteMap(filepath.Join(taskDir, "metadata.json"), metadata); err != nil {
+		t.Fatal(err)
+	}
+	if err := projectCatalogCommand(ws, project, labelCatalog, []string{"delete", "Critical"}, strings.NewReader(""), &output); err != nil {
+		t.Fatal(err)
+	}
+	if err := projectCatalogCommand(ws, project, packageCatalog, []string{"delete", "Platform migration"}, strings.NewReader(""), &output); err != nil {
+		t.Fatal(err)
+	}
+	metadata, err = workspace.ReadMap(filepath.Join(taskDir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if labels, _ := metadata["labels"].([]any); len(labels) != 0 {
+		t.Fatalf("deleted label remained assigned to task: %#v", labels)
+	}
+	if _, exists := metadata["package"]; exists {
+		t.Fatalf("deleted package remained assigned to task: %#v", metadata["package"])
+	}
+}
+
+func TestCleanWholeProjectDiscardsStagedCatalogChanges(t *testing.T) {
+	ws := workspace.New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	project := &config.Project{ID: "project-1", Name: "Alpha"}
+	if err := projectCatalogCommand(ws, project, labelCatalog, []string{"create", "Staged label"}, strings.NewReader(""), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if err := projectCatalogCommand(ws, project, packageCatalog, []string{"create", "Staged package"}, strings.NewReader(""), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if err := clean(ws, []string{"--yes"}, strings.NewReader(""), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	labels, err := readCatalog(ws, labelCatalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packages, err := readCatalog(ws, packageCatalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(labels) != 0 || len(packages) != 0 {
+		t.Fatalf("clean left staged catalog records: labels=%#v packages=%#v", labels, packages)
+	}
+}
+
+func TestPullProjectCatalogsMergesIndependentEditsAndReportsConflicts(t *testing.T) {
+	labels := []map[string]any{{"id": "label-1", "name": "Security", "description": "Original"}}
+	packages := []map[string]any{{"id": "package-1", "title": "Migration", "description": "<p>Original package</p>"}}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/data/dev.labels":
+			_, _ = fmt.Fprintf(w, `{"total":%d,"items":%s}`, len(labels), marshalForTestSlice(labels))
+		case "/data/dev.packages":
+			_, _ = fmt.Fprintf(w, `{"total":%d,"items":%s}`, len(packages), marshalForTestSlice(packages))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	ws := workspace.New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	client := solutions.NewClient(server.URL, "token")
+	project := &config.Project{ID: "project-1", Name: "Alpha"}
+	if conflicts, err := pullProjectCatalogs(context.Background(), client, ws, project, io.Discard); err != nil || conflicts != 0 {
+		t.Fatalf("initial catalog pull conflicts=%d, error=%v", conflicts, err)
+	}
+	localLabels, err := readCatalog(ws, labelCatalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	localPackages, err := readCatalog(ws, packageCatalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stringField(localPackages[0], "description"), "<p>") || !strings.Contains(stringField(localPackages[0], "description"), "Original package") {
+		t.Fatalf("package description was not converted to Markdown locally: %#v", localPackages[0])
+	}
+	localLabels[0]["description"] = "Local description"
+	if err := writeCatalog(ws, labelCatalog, localLabels); err != nil {
+		t.Fatal(err)
+	}
+	labels[0]["name"] = "Security reviews"
+	var output strings.Builder
+	conflicts, err := pullProjectCatalogs(context.Background(), client, ws, project, &output)
+	if err != nil || conflicts != 0 {
+		t.Fatalf("independent catalog pull conflicts=%d, error=%v, output=%s", conflicts, err, output.String())
+	}
+	localLabels, _ = readCatalog(ws, labelCatalog)
+	if stringField(localLabels[0], "name") != "Security reviews" || stringField(localLabels[0], "description") != "Local description" {
+		t.Fatalf("independent catalog changes were not merged: %#v", localLabels[0])
+	}
+
+	localLabels[0]["name"] = "Local name"
+	if err := writeCatalog(ws, labelCatalog, localLabels); err != nil {
+		t.Fatal(err)
+	}
+	labels[0]["name"] = "Remote name"
+	output.Reset()
+	conflicts, err = pullProjectCatalogs(context.Background(), client, ws, project, &output)
+	if err != nil || conflicts != 1 || !strings.Contains(output.String(), "Conflict project labels") {
+		t.Fatalf("overlapping catalog pull conflicts=%d, error=%v, output=%s", conflicts, err, output.String())
+	}
+	localLabels, _ = readCatalog(ws, labelCatalog)
+	if stringField(localLabels[0], "name") != "Local name" {
+		t.Fatalf("pull overwrote the local label conflict: %#v", localLabels[0])
+	}
+}
+
+func TestPullMergesTaskLabelAndPackageAssignments(t *testing.T) {
+	baseline := map[string]any{
+		"id": "task-relations", "number": float64(61), "version": float64(1), "title": "Task relations", "type": "feature",
+		"priority": "medium", "complexity": "s", "status": "new", "description": "",
+		"project": map[string]any{"id": "project-1"}, "labels": []any{map[string]any{"id": "label-1", "label": "Old label"}},
+		"package": map[string]any{"id": "package-1", "label": "Old package"}, "assignees": []any{}, "reviewers": []any{}, "notes": []any{},
+	}
+	remote := cloneMap(baseline)
+	remote["version"] = float64(2)
+	remote["labels"] = []any{map[string]any{"id": "label-2", "label": "Remote label"}}
+	remote["package"] = map[string]any{"id": "package-2", "label": "Remote package"}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/data/dev.labels", "/data/dev.packages":
+			_, _ = fmt.Fprint(w, `{"total":0,"items":[]}`)
+		case "/data/dev.tasks":
+			_, _ = fmt.Fprintf(w, `{"total":1,"items":[%s]}`, marshalForTest(remote))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	ws, dir := makeSyncedTask(t, baseline)
+	client := solutions.NewClient(server.URL, "token")
+	project := &config.Project{ID: "project-1", Name: "Alpha"}
+	if err := pull(context.Background(), client, ws, project, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	local, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if relationshipID(local["package"]) != "package-2" || relationshipID(local["labels"].([]any)[0]) != "label-2" {
+		t.Fatalf("remote task assignments were not pulled: %#v", local)
+	}
+
+	local["labels"] = []any{map[string]any{"id": "label-local", "label": "Local label"}}
+	local["package"] = map[string]any{"id": "package-local", "label": "Local package"}
+	if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), local); err != nil {
+		t.Fatal(err)
+	}
+	remote["version"] = float64(3)
+	remote["status"] = "inProgress"
+	if err := pull(context.Background(), client, ws, project, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	local, err = workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if relationshipID(local["package"]) != "package-local" || relationshipID(local["labels"].([]any)[0]) != "label-local" {
+		t.Fatalf("independent local assignments were not preserved during pull: %#v", local)
+	}
+	if local["status"] != "inProgress" {
+		t.Fatalf("remote-only status update was not merged: %#v", local)
+	}
+}
+
+func marshalForTestSlice(records []map[string]any) string {
+	data, _ := json.Marshal(records)
+	return string(data)
+}
+
+func TestPushCreatesCatalogItemsMapsTaskAssignmentsAndDeletesAfterTaskUpdate(t *testing.T) {
+	labels := []map[string]any{}
+	packages := []map[string]any{}
+	var remoteTask map[string]any
+	var events []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/data/dev.labels":
+			_, _ = fmt.Fprintf(w, `{"total":%d,"items":%s}`, len(labels), marshalForTestSlice(labels))
+		case r.Method == http.MethodGet && r.URL.Path == "/data/dev.packages":
+			_, _ = fmt.Fprintf(w, `{"total":%d,"items":%s}`, len(packages), marshalForTestSlice(packages))
+		case r.Method == http.MethodPost && r.URL.Path == "/data/dev.labels":
+			var record map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&record); err != nil {
+				t.Fatal(err)
+			}
+			record["id"] = fmt.Sprintf("label-%d", len(labels)+1)
+			record["label"] = stringField(record, "name")
+			labels = append(labels, record)
+			_ = json.NewEncoder(w).Encode(record)
+		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/data/dev.labels/"):
+			var record map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&record); err != nil {
+				t.Fatal(err)
+			}
+			for index, existing := range labels {
+				if stringField(existing, "id") == filepath.Base(r.URL.Path) {
+					labels[index] = record
+					break
+				}
+			}
+			_ = json.NewEncoder(w).Encode(record)
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/data/dev.labels/"):
+			events = append(events, "delete-label")
+			id := filepath.Base(r.URL.Path)
+			for index, existing := range labels {
+				if stringField(existing, "id") == id {
+					labels = append(labels[:index], labels[index+1:]...)
+					break
+				}
+			}
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPost && r.URL.Path == "/data/dev.packages":
+			var record map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&record); err != nil {
+				t.Fatal(err)
+			}
+			record["id"] = fmt.Sprintf("package-%d", len(packages)+1)
+			record["label"] = stringField(record, "title")
+			if !strings.Contains(stringField(record, "description"), "<p>") {
+				t.Errorf("package description was not converted to HTML on create: %#v", record)
+			}
+			packages = append(packages, record)
+			_ = json.NewEncoder(w).Encode(record)
+		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/data/dev.packages/"):
+			var record map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&record); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(stringField(record, "description"), "<p>") {
+				t.Errorf("package description was not converted to HTML on update: %#v", record)
+			}
+			for index, existing := range packages {
+				if stringField(existing, "id") == filepath.Base(r.URL.Path) {
+					packages[index] = record
+					break
+				}
+			}
+			_ = json.NewEncoder(w).Encode(record)
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/data/dev.packages/"):
+			events = append(events, "delete-package")
+			id := filepath.Base(r.URL.Path)
+			for index, existing := range packages {
+				if stringField(existing, "id") == id {
+					packages = append(packages[:index], packages[index+1:]...)
+					break
+				}
+			}
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPost && r.URL.Path == "/data/dev.tasks":
+			if err := json.NewDecoder(r.Body).Decode(&remoteTask); err != nil {
+				t.Fatal(err)
+			}
+			labels, _ := remoteTask["labels"].([]any)
+			if len(labels) != 1 || stringField(labels[0].(map[string]any), "id") != "label-1" {
+				t.Errorf("task label was not mapped to its remote catalog ID: %#v", remoteTask["labels"])
+			}
+			if got := relationshipID(remoteTask["package"]); got != "package-1" {
+				t.Errorf("task package was not mapped to its remote catalog ID: %q", got)
+			}
+			remoteTask["id"] = "task-1"
+			remoteTask["number"] = float64(42)
+			remoteTask["status"] = "new"
+			remoteTask["notes"] = []any{}
+			_ = json.NewEncoder(w).Encode(remoteTask)
+		case r.Method == http.MethodGet && r.URL.Path == "/data/dev.tasks/task-1":
+			_ = json.NewEncoder(w).Encode(remoteTask)
+		case r.Method == http.MethodPut && r.URL.Path == "/data/dev.tasks/task-1":
+			events = append(events, "task-update")
+			if err := json.NewDecoder(r.Body).Decode(&remoteTask); err != nil {
+				t.Fatal(err)
+			}
+			_ = json.NewEncoder(w).Encode(remoteTask)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	ws := workspace.New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	project := &config.Project{ID: "project-1", Name: "Alpha"}
+	var output strings.Builder
+	if err := projectCatalogCommand(ws, project, labelCatalog, []string{"create", "Urgent"}, strings.NewReader(""), &output); err != nil {
+		t.Fatal(err)
+	}
+	if err := projectCatalogCommand(ws, project, packageCatalog, []string{"create", "Migration", "Initial package"}, strings.NewReader(""), &output); err != nil {
+		t.Fatal(err)
+	}
+	if err := createTask(ws, project, []string{"New task"}, strings.NewReader(""), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	dirs, err := ws.TaskDirectories()
+	if err != nil || len(dirs) != 1 {
+		t.Fatalf("created task directories = %v, error=%v", dirs, err)
+	}
+	metadataPath := filepath.Join(dirs[0], "metadata.json")
+	metadata, err := workspace.ReadMap(metadataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	localLabels, _ := readCatalog(ws, labelCatalog)
+	localPackages, _ := readCatalog(ws, packageCatalog)
+	metadata["labels"] = []any{map[string]any{"id": stringField(localLabels[0], "localId"), "label": "Urgent"}}
+	metadata["package"] = map[string]any{"id": stringField(localPackages[0], "localId"), "label": "Migration"}
+	if err := workspace.WriteMap(metadataPath, metadata); err != nil {
+		t.Fatal(err)
+	}
+	client := solutions.NewClient(server.URL, "token")
+	if err := push(context.Background(), client, ws, project, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if len(labels) != 1 || len(packages) != 1 || stringField(remoteTask, "id") != "task-1" {
+		t.Fatalf("catalog/task creates missing: labels=%#v packages=%#v task=%#v", labels, packages, remoteTask)
+	}
+	if err := projectCatalogCommand(ws, project, labelCatalog, []string{"edit", "Urgent"}, strings.NewReader("Critical\nNew label description\n"), &output); err != nil {
+		t.Fatal(err)
+	}
+	if err := projectCatalogCommand(ws, project, packageCatalog, []string{"edit", "Migration"}, strings.NewReader("Platform migration\nNew package description\n"), &output); err != nil {
+		t.Fatal(err)
+	}
+	if err := push(context.Background(), client, ws, project, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if stringField(labels[0], "name") != "Critical" || stringField(packages[0], "title") != "Platform migration" {
+		t.Fatalf("catalog edits were not pushed: labels=%#v packages=%#v", labels, packages)
+	}
+	if err := projectCatalogCommand(ws, project, labelCatalog, []string{"delete", "Critical"}, strings.NewReader(""), &output); err != nil {
+		t.Fatal(err)
+	}
+	if err := projectCatalogCommand(ws, project, packageCatalog, []string{"delete", "Platform migration"}, strings.NewReader(""), &output); err != nil {
+		t.Fatal(err)
+	}
+	events = nil
+	if err := push(context.Background(), client, ws, project, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if len(remoteTask["labels"].([]any)) != 0 || hasPackageAssignment(remoteTask["package"]) {
+		t.Fatalf("task assignments remain after catalog deletion: labels=%#v package=%#v", remoteTask["labels"], remoteTask["package"])
+	}
+	if len(labels) != 0 || len(packages) != 0 {
+		t.Fatalf("catalog items remain after delete push: labels=%#v packages=%#v", labels, packages)
+	}
+	if len(events) != 3 || events[0] != "task-update" || events[1] != "delete-label" || events[2] != "delete-package" {
+		t.Fatalf("catalog deletes must follow task assignment updates, got events %v", events)
 	}
 }
 
@@ -913,6 +1396,11 @@ func TestPullPreservesEditedNotesAndReportsOverlappingRemoteEdits(t *testing.T) 
 		"addedBy": map[string]any{"id": "user-1", "label": "Juan"},
 	}}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && (r.URL.Path == "/data/dev.labels" || r.URL.Path == "/data/dev.packages") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{"total":0,"items":[]}`)
+			return
+		}
 		if r.Method != http.MethodGet || r.URL.Path != "/data/dev.tasks" {
 			http.NotFound(w, r)
 			return
@@ -1381,7 +1869,7 @@ func TestListShowsStoryPointsHoursAndVisibleTotals(t *testing.T) {
 	}
 	text := output.String()
 	for _, expected := range []string{
-		"COMPLEXITY", "SP", "HOURS", "xs", "1", "4", "xxl", "13", "52",
+		"COMPLEXITY", "SP", "HOURS", "PACKAGE", "LABELS", "xs", "1", "4", "xxl", "13", "52",
 		"unknown", "Subtotal: 3 SP, 12 hours", "Subtotal: 29 SP, 116 hours",
 		"TOTAL (visible tasks): 32 SP, 128 hours",
 	} {
@@ -1396,7 +1884,7 @@ func TestListShowsStoryPointsHoursAndVisibleTotals(t *testing.T) {
 	for _, line := range strings.Split(text, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) >= 7 && fields[0] == "23" {
-			unknownRowFound = reflect.DeepEqual(fields[:7], []string{"23", "medium", "feature", "unknown", "-", "-", "Unknown"})
+			unknownRowFound = reflect.DeepEqual(fields[:9], []string{"23", "medium", "feature", "unknown", "-", "-", "-", "-", "Unknown"})
 			break
 		}
 	}
@@ -1411,6 +1899,52 @@ func TestListShowsStoryPointsHoursAndVisibleTotals(t *testing.T) {
 	filtered := output.String()
 	if !strings.Contains(filtered, "Subtotal: 3 SP, 12 hours") || !strings.Contains(filtered, "TOTAL (visible tasks): 3 SP, 12 hours") || strings.Contains(filtered, "Medium") {
 		t.Fatalf("filtered list totals should include only visible tasks:\n%s", filtered)
+	}
+}
+
+func TestListShowsPackageAndLabelRelationshipsAndFilters(t *testing.T) {
+	ws := workspace.New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	withAssignment := listTask("with-tags", 51, "new", "a", "s", "Tagged task", "feature")
+	withAssignment["package"] = map[string]any{"id": "p1", "label": "Billing"}
+	withAssignment["labels"] = []any{
+		map[string]any{"id": "l2", "label": "urgent"},
+		map[string]any{"id": "l1", "label": "security"},
+	}
+	withoutPackage := listTask("no-package", 52, "new", "b", "m", "Unpackaged task", "feature")
+	withoutPackage["labels"] = []any{map[string]any{"id": "l3", "label": "triage"}}
+	withoutLabels := listTask("no-labels", 53, "new", "c", "l", "Unlabeled task", "feature")
+	withoutLabels["package"] = map[string]any{"id": "p2", "label": "Platform"}
+	for _, task := range []map[string]any{withAssignment, withoutPackage, withoutLabels} {
+		addSyncedTask(t, ws, task)
+	}
+
+	var output strings.Builder
+	if err := listTasks(ws, nil, &output); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"PACKAGE", "LABELS", "Billing", "security, urgent", "Platform", "triage"} {
+		if !strings.Contains(output.String(), expected) {
+			t.Errorf("list output missing %q:\n%s", expected, output.String())
+		}
+	}
+
+	output.Reset()
+	if err := listTasks(ws, []string{"--no-package"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "Unpackaged task") || strings.Contains(output.String(), "Tagged task") || strings.Contains(output.String(), "Unlabeled task") {
+		t.Fatalf("--no-package did not select only tasks without a package:\n%s", output.String())
+	}
+
+	output.Reset()
+	if err := listTasks(ws, []string{"--no-labels"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "Unlabeled task") || strings.Contains(output.String(), "Tagged task") || strings.Contains(output.String(), "Unpackaged task") {
+		t.Fatalf("--no-labels did not select only tasks without labels:\n%s", output.String())
 	}
 }
 

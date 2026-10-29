@@ -64,8 +64,10 @@ func TestNestedCommandHelpResolvesToSubcommandManual(t *testing.T) {
 	}{
 		{args: []string{"help", "config", "set", "project"}, page: "PANDA-CONFIG-SET-PROJECT(1)", synopsis: "panda config set project <name>"},
 		{args: []string{"config", "set", "project", "--help"}, page: "PANDA-CONFIG-SET-PROJECT(1)", synopsis: "panda config set project <name>"},
-		{args: []string{"completion", "labels", "--help"}, page: "PANDA-COMPLETION-LABELS(1)", synopsis: "panda completion labels [prefix]"},
+		{args: []string{"labels", "edit", "--help"}, page: "PANDA-LABELS-EDIT(1)", synopsis: "panda labels edit <name|id>"},
 		{args: []string{"completion", "bash", "--help"}, page: "PANDA-COMPLETION-BASH(1)", synopsis: "panda completion bash"},
+		{args: []string{"labels", "create", "--help"}, page: "PANDA-LABELS-CREATE(1)", synopsis: "panda labels create [name] [description]"},
+		{args: []string{"packages", "delete", "--help"}, page: "PANDA-PACKAGES-DELETE(1)", synopsis: "panda packages delete <title|id>"},
 	}
 	for _, test := range tests {
 		var output bytes.Buffer
@@ -75,6 +77,14 @@ func TestNestedCommandHelpResolvesToSubcommandManual(t *testing.T) {
 		if !strings.Contains(output.String(), test.page) || !strings.Contains(output.String(), test.synopsis) {
 			t.Fatalf("Run(%v) did not print the selected subcommand manual:\n%s", test.args, output.String())
 		}
+	}
+}
+
+func TestCompletionNoLongerProvidesLabelSuggestions(t *testing.T) {
+	var output bytes.Buffer
+	err := Run([]string{"completion", "labels"}, strings.NewReader(""), &output, &output)
+	if err == nil || !strings.Contains(err.Error(), "usage: panda completion <bash|zsh|fish>") {
+		t.Fatalf("completion labels should be unavailable, got output=%q error=%v", output.String(), err)
 	}
 }
 
@@ -104,7 +114,8 @@ func TestGlobalHelpHasManSectionsAndCommandOptions(t *testing.T) {
 	for _, expected := range []string{
 		"NAME\n", "SYNOPSIS\n", "DESCRIPTION\n", "COMMANDS\n", "GLOBAL OPTIONS\n", "ENVIRONMENT\n", "FILES\n",
 		"--current", "--staging", "--released", "--discarded", "--all", "--status",
-		"--no-complexity", "--no-description", "--verbose", "-v", "--summary", "-s", "--yes",
+		"--no-complexity", "--no-description", "--no-package", "--no-labels",
+		"--verbose", "-v", "--summary", "-s", "--yes", "panda labels", "panda packages",
 	} {
 		if !strings.Contains(plain, expected) {
 			t.Errorf("main help missing %q:\n%s", expected, text)

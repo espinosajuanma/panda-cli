@@ -86,15 +86,13 @@ var manualPages = map[string]manualPage{
 		seeAlso:     []string{"panda-config(1)"},
 	},
 	"completion": {
-		name:        "panda completion - generate shell integration or find labels",
-		synopsis:    []string{"panda completion <bash|zsh|fish>", "panda completion labels [prefix]"},
-		description: []string{"Print shell completion code for installation in the selected shell's startup or completion file. The labels subcommand prints matching labels from the active project."},
+		name:        "panda completion - generate shell integration",
+		synopsis:    []string{"panda completion <bash|zsh|fish>"},
+		description: []string{"Print shell completion code for installation in the selected shell's startup or completion file."},
 		arguments: []manualOption{
 			{"shell", "One of bash, zsh, or fish."},
-			{"prefix", "Optional label-name prefix for the labels subcommand."},
 		},
-		examples: []string{"panda completion bash", "panda completion labels bug"},
-		seeAlso:  []string{"panda-edit(1)"},
+		examples: []string{"panda completion bash"},
 	},
 	"completion bash": {
 		name:        "panda completion bash - print Bash completion code",
@@ -114,13 +112,61 @@ var manualPages = map[string]manualPage{
 		description: []string{"Print Fish completion code. Add the output to a Fish completion file and reload the shell."},
 		examples:    []string{"panda completion fish"},
 	},
-	"completion labels": {
-		name:        "panda completion labels - find project labels",
-		synopsis:    []string{"panda completion labels [prefix]"},
-		description: []string{"Print labels in the active project whose names begin with prefix. When prefix is omitted, print all available labels. Requires a selected project and a successful login."},
-		arguments:   []manualOption{{"prefix", "Optional label-name prefix to search for."}},
-		examples:    []string{"panda completion labels", "panda completion labels bug"},
-		seeAlso:     []string{"panda-edit(1)"},
+	"labels": {
+		name:        "panda labels - manage project labels locally",
+		synopsis:    []string{"panda labels [list]", "panda labels create [name] [description]", "panda labels edit <name|id>", "panda labels delete <name|id>"},
+		description: []string{"List and manage the active project's labels in the local workspace. Label descriptions are plain text. Create, edit, and delete operations are staged locally and synchronized by panda pull and panda push."},
+		examples:    []string{"panda labels", "panda labels create security \"Security review\"", "panda labels edit security", "panda labels delete security", "panda push"},
+		seeAlso:     []string{"panda-edit(1)", "panda-pull(1)", "panda-push(1)"},
+	},
+	"labels create": {
+		name:        "panda labels create - create a local project label",
+		synopsis:    []string{"panda labels create [name] [description]"},
+		description: []string{"Stage a project label locally. If name is omitted, Panda prompts for the name and optional description. The label is created in Solutions on the next push."},
+		arguments:   []manualOption{{"name", "Optional label name; prompted for when omitted."}, {"description", "Optional label description."}},
+		examples:    []string{"panda labels create security", "panda labels create security \"Security review\"", "panda push"},
+	},
+	"labels edit": {
+		name:        "panda labels edit - edit a local project label",
+		synopsis:    []string{"panda labels edit <name|id>"},
+		description: []string{"Prompt for a label's name and description. Press Enter to keep a value or enter - to clear the description. Changes remain local until panda push."},
+		arguments:   []manualOption{{"name|id", "Label name, remote ID, or local ID."}},
+		examples:    []string{"panda labels edit security", "panda push"},
+	},
+	"labels delete": {
+		name:        "panda labels delete - delete a local project label",
+		synopsis:    []string{"panda labels delete <name|id>"},
+		description: []string{"Stage a label deletion locally and remove that label from local task assignments. The remote label is deleted on push, after affected task updates."},
+		arguments:   []manualOption{{"name|id", "Label name, remote ID, or local ID."}},
+		examples:    []string{"panda labels delete security", "panda diff", "panda push"},
+	},
+	"packages": {
+		name:        "panda packages - manage project packages locally",
+		synopsis:    []string{"panda packages [list]", "panda packages create [title] [description]", "panda packages edit <title|id>", "panda packages delete <title|id>"},
+		description: []string{"List and manage the active project's packages (epics) in the local workspace. Package descriptions are Markdown locally and converted to/from HTML during synchronization. Package edits also support start date and estimation. Create, edit, and delete operations are staged locally and synchronized by panda pull and panda push."},
+		examples:    []string{"panda packages", "panda packages create \"Billing migration\"", "panda packages edit \"Billing migration\"", "panda packages delete \"Billing migration\"", "panda push"},
+		seeAlso:     []string{"panda-edit(1)", "panda-pull(1)", "panda-push(1)"},
+	},
+	"packages create": {
+		name:        "panda packages create - create a local project package",
+		synopsis:    []string{"panda packages create [title] [description]"},
+		description: []string{"Stage a package locally. If title is omitted, Panda prompts for the title and optional description. The package is created in Solutions on the next push."},
+		arguments:   []manualOption{{"title", "Optional package title; prompted for when omitted."}, {"description", "Optional package description."}},
+		examples:    []string{"panda packages create \"Billing migration\"", "panda push"},
+	},
+	"packages edit": {
+		name:        "panda packages edit - edit a local project package",
+		synopsis:    []string{"panda packages edit <title|id>"},
+		description: []string{"Prompt for a package title, description, start date, and estimation. Press Enter to keep a value or enter - to clear an optional value. Changes remain local until panda push."},
+		arguments:   []manualOption{{"title|id", "Package title, remote ID, or local ID."}},
+		examples:    []string{"panda packages edit \"Billing migration\"", "panda push"},
+	},
+	"packages delete": {
+		name:        "panda packages delete - delete a local project package",
+		synopsis:    []string{"panda packages delete <title|id>"},
+		description: []string{"Stage a package deletion locally and clear it from local task assignments. The remote package is deleted on push, after affected task updates."},
+		arguments:   []manualOption{{"title|id", "Package title, remote ID, or local ID."}},
+		examples:    []string{"panda packages delete \"Billing migration\"", "panda diff", "panda push"},
 	},
 	"list": {
 		name:     "panda list - list local tasks by status",
@@ -128,7 +174,7 @@ var manualPages = map[string]manualPage{
 		description: []string{
 			"List tasks in the active project's local workspace, grouped by workflow status and sorted by rank. The default view includes new, toDo, inProgress, inReview, and completed tasks.",
 			"Status selectors are combined as a union. --all includes every status, including statuses not otherwise recognized by Panda. The existing --status selector accepts one or more comma-separated known statuses.",
-			"Complexity maps to story points and estimated hours. Each group has a subtotal, followed by a total for all tasks visible after status and content filters are applied.",
+			"Complexity maps to story points and estimated hours. Package and label names are shown with each task. Each group has a subtotal, followed by a total for all tasks visible after status and content filters are applied.",
 		},
 		options: []manualOption{
 			{"--current", "Show toDo, inProgress, inReview, and completed tasks."},
@@ -139,13 +185,15 @@ var manualPages = map[string]manualPage{
 			{"--status <status,...>", "Show the listed comma-separated statuses. Known values: new, toDo, inProgress, inReview, completed, staging, released, discarded."},
 			{"--no-complexity", "Show only tasks without a complexity value."},
 			{"--no-description", "Show only tasks with a missing or blank local description."},
+			{"--no-package", "Show only tasks that are not assigned to a package."},
+			{"--no-labels", "Show only tasks that have no labels assigned."},
 		},
 		examples: []string{
 			"panda list",
 			"panda list --current",
 			"panda list --staging",
 			"panda list --status 'new,toDo' --no-complexity",
-			"panda list --all --no-description",
+			"panda list --no-package --no-labels",
 		},
 		seeAlso: []string{"panda-pull(1)", "panda-view(1)"},
 	},
@@ -178,24 +226,26 @@ var manualPages = map[string]manualPage{
 	"create": {
 		name:        "panda create - create a local task",
 		synopsis:    []string{"panda create [title]"},
-		description: []string{"Create a task in the local workspace with a temporary local ID. If title is omitted, Panda prompts for it. A successful push creates the task in Solutions and assigns its task number."},
+		description: []string{"Create a task in the local workspace with a temporary local ID. If title is omitted, Panda prompts for it. In a terminal, use arrow-key selectors for type, priority, complexity, labels, and the optional package. A successful push creates the task in Solutions and assigns its task number."},
 		arguments:   []manualOption{{"title", "Optional task title; if omitted, Panda prompts for it."}},
 		examples:    []string{"panda create", "panda create \"Improve task search\"", "panda push"},
 		seeAlso:     []string{"panda-edit(1)", "panda-push(1)"},
 	},
 	"edit": {
 		name:     "panda edit - edit a task's fields and description",
-		synopsis: []string{"panda edit <taskNumber|localId>", "panda edit <taskNumber|localId> labels [labelName|--remove=labelName ...]", "panda edit <taskNumber|localId> json"},
+		synopsis: []string{"panda edit <taskNumber|localId>", "panda edit <taskNumber|localId> labels [labelName|--remove=labelName ...|none]", "panda edit <taskNumber|localId> package [name|none]", "panda edit <taskNumber|localId> json"},
 		description: []string{
-			"Interactively edit a task's title, type, priority, and complexity. Labels may be selected interactively or changed by name. The task description is edited in $EDITOR when requested.",
+			"Interactively edit a task's title, type, priority, and complexity. On terminals, use arrow keys and Enter for single-choice fields; use Space to toggle labels and Enter to save the multi-select. Assign at most one optional package.",
+			"Press e (without Enter) to open the task description in $EDITOR when prompted.",
 			"The json selector opens metadata.json for advanced metadata editing and then offers the description editor prompt.",
 		},
 		arguments: []manualOption{
 			{"taskNumber|localId", "Identifier of the task to edit."},
-			{"labels", "Open the label picker. Follow with label names to add them or --remove=labelName to remove them."},
+			{"labels", "Open the label picker. Follow with label names to add them, --remove=labelName to remove them, or none to clear all labels."},
+			{"package", "Select one package by name or enter none to clear the assignment."},
 			{"json", "Open metadata.json in $EDITOR for advanced metadata editing."},
 		},
-		examples: []string{"panda edit 12345", "panda edit 12345 labels", "panda edit 12345 labels urgent --remove=bug", "panda edit 12345 json"},
+		examples: []string{"panda edit 12345", "panda edit 12345 labels", "panda edit 12345 labels urgent --remove=bug", "panda edit 12345 package backend", "panda edit 12345 json"},
 		seeAlso:  []string{"panda-edit-note(1)", "panda-view(1)", "panda-diff(1)"},
 	},
 	"edit-note": {
@@ -244,7 +294,7 @@ var manualPages = map[string]manualPage{
 		synopsis: []string{"panda clean [taskNumber|localId] [--yes]"},
 		description: []string{
 			"Restore the last-synced local version and discard staged actions for one task. Run panda pull afterward to fetch newer remote changes.",
-			"When the task argument is omitted, clean applies to the whole project and asks for confirmation. --yes skips that confirmation.",
+			"When the task argument is omitted, clean restores all tasks and the project label/package catalogs to their last-synced versions, and asks for confirmation. --yes skips that confirmation.",
 		},
 		arguments: []manualOption{{"taskNumber|localId", "Optional task identifier. If omitted, clean applies to the entire project."}},
 		options:   []manualOption{{"--yes, -y", "Skip confirmation when cleaning the whole project."}},
@@ -265,13 +315,14 @@ var mainCommands = []mainCommand{
 	{"config get project", "", "Display the active project."},
 	{"path", "", "Print the selected project's workspace path."},
 	{"completion <bash|zsh|fish>", "", "Print shell completion setup code."},
-	{"completion labels [prefix]", "", "Search labels in the active project."},
-	{"list", "[status filters] [other filters]", "List tasks with effort totals."},
+	{"labels [list|create|edit|delete]", "", "Manage project labels locally."},
+	{"packages [list|create|edit|delete]", "", "Manage project packages (epics) locally."},
+	{"list", "[status filters] [other filters]", "List tasks with package, labels, and effort totals."},
 	{"pull", "", "Fetch tasks and merge remote changes into the workspace."},
 	{"diff", "[task] [--verbose|-v] [--summary|-s]", "Review pending local changes."},
 	{"push", "", "Publish local edits and staged actions to Solutions."},
-	{"create", "[title]", "Create a task locally."},
-	{"edit", "<task> [labels ...|json]", "Edit task fields, labels, or metadata."},
+	{"create", "[title]", "Create a task locally and optionally assign labels/package."},
+	{"edit", "<task> [labels ...|package ...|json]", "Edit task fields, labels, package, or metadata."},
 	{"edit-note", "<task> <note-file>", "Edit one of your synced notes."},
 	{"view", "<task>", "Display task metadata, description, and notes."},
 	{"add-note", "<task> [text]", "Stage a new task note."},
@@ -283,7 +334,7 @@ var mainCommands = []mainCommand{
 var mainCommandDetails = map[string][]string{
 	"list": {
 		"Status filters: --current, --staging, --released, --discarded, --all, --status <status,...>.",
-		"Other filters: --no-complexity, --no-description.",
+		"Other filters: --no-complexity, --no-description, --no-package, --no-labels.",
 	},
 }
 
@@ -375,8 +426,17 @@ func commandHelpKey(args []string) string {
 	case "completion":
 		if len(args) > 1 {
 			switch args[1] {
-			case "labels", "bash", "zsh", "fish":
+			case "bash", "zsh", "fish":
 				return "completion " + args[1]
+			}
+		}
+	case "labels", "packages":
+		if len(args) > 1 {
+			switch args[1] {
+			case "create", "edit":
+				return args[0] + " " + args[1]
+			case "delete", "remove":
+				return args[0] + " delete"
 			}
 		}
 	}

@@ -28,7 +28,7 @@ import (
 )
 
 var editableFields = []string{
-	"title", "type", "priority", "complexity", "labels", "status", "assignees", "reviewers",
+	"title", "type", "priority", "complexity", "package", "labels", "status", "assignees", "reviewers",
 }
 
 func Run(args []string, in io.Reader, out, errOut io.Writer) error {
@@ -61,13 +61,13 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 	case "config":
 		return configCommand(context.Background(), cfg, client, args, out)
 	case "completion":
-		return completionCommand(context.Background(), cfg, client, args, out)
+		return completionCommand(args, out)
 	case "path":
 		if len(args) != 0 {
 			return errors.New("usage: panda path")
 		}
 		return printWorkspacePath(cfg, out)
-	case "list", "pull", "diff", "push", "create", "edit", "edit-note", "view", "add-note", "discard", "clean":
+	case "list", "pull", "diff", "push", "create", "edit", "edit-note", "view", "add-note", "discard", "clean", "labels", "packages":
 		ws, err := projectWorkspace(cfg)
 		if err != nil {
 			return err
@@ -96,7 +96,7 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 		case "create":
 			return createTask(ws, cfg.Project, args, in, out)
 		case "edit":
-			return editTask(context.Background(), ws, args, client, cfg, in, out)
+			return editTask(ws, args, in, out)
 		case "edit-note":
 			if err := requireLogin(cfg); err != nil {
 				return err
@@ -110,39 +110,16 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 			return discard(ws, args, out)
 		case "clean":
 			return clean(ws, args, in, out)
+		case "labels":
+			return projectCatalogCommand(ws, cfg.Project, labelCatalog, args, in, out)
+		case "packages":
+			return projectCatalogCommand(ws, cfg.Project, packageCatalog, args, in, out)
 		}
 	default:
 		if err := printHelp(errOut); err != nil {
 			return err
 		}
 		return fmt.Errorf("unknown command %q", command)
-	}
-	return nil
-}
-
-func completeLabels(ctx context.Context, cfg *config.Config, client *solutions.Client, args []string, out io.Writer) error {
-	if len(args) < 1 || len(args) > 2 || args[0] != "labels" {
-		return errors.New("usage: panda completion labels [prefix]")
-	}
-	if cfg.Project == nil {
-		return errors.New("no project selected; run `panda config set project <name>` first")
-	}
-	if err := requireLogin(cfg); err != nil {
-		return err
-	}
-	prefix := ""
-	if len(args) == 2 {
-		prefix = strings.ToLower(args[1])
-	}
-	labels, err := client.ListLabels(ctx, cfg.Project.ID)
-	if err != nil {
-		return err
-	}
-	for _, label := range labels {
-		name := stringField(label, "name")
-		if strings.HasPrefix(strings.ToLower(name), prefix) {
-			fmt.Fprintln(out, name)
-		}
 	}
 	return nil
 }
@@ -159,7 +136,7 @@ func printWorkspacePath(cfg *config.Config, out io.Writer) error {
 	return nil
 }
 
-func completionCommand(ctx context.Context, cfg *config.Config, client *solutions.Client, args []string, out io.Writer) error {
+func completionCommand(args []string, out io.Writer) error {
 	if len(args) == 1 {
 		switch args[0] {
 		case "bash":
@@ -173,22 +150,20 @@ func completionCommand(ctx context.Context, cfg *config.Config, client *solution
 			return nil
 		}
 	}
-	return completeLabels(ctx, cfg, client, args, out)
+	return errors.New("usage: panda completion <bash|zsh|fish>")
 }
 
 const bashCompletion = `_panda_complete() {
   local cur="${COMP_WORDS[COMP_CWORD]}"
   local candidate
   if [[ "${COMP_WORDS[1]}" == "edit" && $COMP_CWORD -eq 3 ]]; then
-    COMPREPLY=( $(compgen -W "labels" -- "$cur") )
-  elif [[ "${COMP_WORDS[1]}" == "edit" && "${COMP_WORDS[3]}" == "labels" ]]; then
-    COMPREPLY=()
-    while IFS= read -r candidate; do COMPREPLY+=("$candidate"); done < <(panda completion labels "$cur" 2>/dev/null)
-  elif [[ "${COMP_WORDS[1]}" == "completion" && "${COMP_WORDS[2]}" == "labels" ]]; then
-    COMPREPLY=()
-    while IFS= read -r candidate; do COMPREPLY+=("$candidate"); done < <(panda completion labels "$cur" 2>/dev/null)
+    COMPREPLY=( $(compgen -W "labels package json" -- "$cur") )
+  elif [[ "${COMP_WORDS[1]}" == "edit" && ( "${COMP_WORDS[3]}" == "labels" || "${COMP_WORDS[3]}" == "package" ) ]]; then
+    COMPREPLY=( $(compgen -W "none" -- "$cur") )
+  elif [[ ( "${COMP_WORDS[1]}" == "labels" || "${COMP_WORDS[1]}" == "packages" ) && $COMP_CWORD -eq 2 ]]; then
+    COMPREPLY=( $(compgen -W "list create edit delete" -- "$cur") )
   else
-    COMPREPLY=( $(compgen -W "login config path list pull diff push create edit edit-note view add-note discard clean completion" -- "$cur") )
+    COMPREPLY=( $(compgen -W "login config path list pull diff push create edit edit-note view add-note discard clean labels packages completion" -- "$cur") )
   fi
 }
 complete -F _panda_complete panda`
@@ -197,21 +172,18 @@ const zshCompletion = `#compdef panda
 _panda() {
   local cur="${words[CURRENT]}"
   if [[ "${words[2]}" == "edit" && $CURRENT -eq 4 ]]; then
-    compadd -- labels
-  elif [[ "${words[2]}" == "edit" && "${words[4]}" == "labels" ]]; then
-    compadd -- "${(@f)$(panda completion labels "$cur" 2>/dev/null)}"
-  elif [[ "${words[2]}" == "completion" && "${words[3]}" == "labels" ]]; then
-    compadd -- "${(@f)$(panda completion labels "$cur" 2>/dev/null)}"
+    compadd -- labels package json
+  elif [[ ( "${words[2]}" == "labels" || "${words[2]}" == "packages" ) && $CURRENT -eq 3 ]]; then
+    compadd -- list create edit delete
   else
-    compadd -- login config path list pull diff push create edit edit-note view add-note discard clean completion
+    compadd -- login config path list pull diff push create edit edit-note view add-note discard clean labels packages completion
   fi
 }
 compdef _panda panda`
 
-const fishCompletion = `complete -c panda -f -n '__fish_seen_subcommand_from edit; and test (count (commandline -opc)) -ge 4; and test (commandline -opc)[4] = labels' -a '(panda completion labels (commandline -ct) 2>/dev/null)'
-complete -c panda -f -n '__fish_seen_subcommand_from edit; and test (count (commandline -opc)) -eq 3' -a labels
-complete -c panda -f -n '__fish_seen_subcommand_from completion; and test (commandline -opc)[3] = labels' -a '(panda completion labels (commandline -ct) 2>/dev/null)'
-complete -c panda -f -n 'not __fish_seen_subcommand_from login config path list pull diff push create edit edit-note view add-note discard clean completion' -a 'login config path list pull diff push create edit edit-note view add-note discard clean completion'`
+const fishCompletion = `complete -c panda -f -n '__fish_seen_subcommand_from edit; and test (count (commandline -opc)) -eq 3' -a 'labels package json'
+complete -c panda -f -n '__fish_seen_subcommand_from labels packages; and test (count (commandline -opc)) -eq 2' -a 'list create edit delete'
+complete -c panda -f -n 'not __fish_seen_subcommand_from login config path list pull diff push create edit edit-note view add-note discard clean labels packages completion' -a 'login config path list pull diff push create edit edit-note view add-note discard clean labels packages completion'`
 
 func login(ctx context.Context, cfg *config.Config, client *solutions.Client, args []string, in io.Reader, out io.Writer) error {
 	var email string
@@ -306,11 +278,15 @@ func requireLogin(cfg *config.Config) error {
 }
 
 func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace, project *config.Project, out io.Writer) error {
+	catalogConflictCount, err := pullProjectCatalogs(ctx, client, ws, project, out)
+	if err != nil {
+		return err
+	}
 	tasks, err := client.ListTasks(ctx, project.ID)
 	if err != nil {
 		return err
 	}
-	updated, created, conflictCount := 0, 0, 0
+	updated, created, conflictCount := 0, 0, catalogConflictCount
 	remoteIDs := make(map[string]bool, len(tasks))
 	progress := newPullProgress(out, len(tasks))
 	defer progress.Finish()
@@ -472,7 +448,9 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 func sameTaskVersion(remote, baseline map[string]any) bool {
 	remoteVersion, remoteHasVersion := remote["version"]
 	baseVersion, baselineHasVersion := baseline["version"]
-	return remoteHasVersion && baselineHasVersion && remoteVersion != nil && baseVersion != nil && same(remoteVersion, baseVersion)
+	return remoteHasVersion && baselineHasVersion && remoteVersion != nil && baseVersion != nil &&
+		same(remoteVersion, baseVersion) && same(valueAt(remote, "labels"), valueAt(baseline, "labels")) &&
+		same(valueAt(remote, "package"), valueAt(baseline, "package"))
 }
 
 type pullProgress struct {
@@ -719,9 +697,27 @@ func renderDiff(ws *workspace.Workspace, args []string, out, colorTarget io.Writ
 			fmt.Fprintln(out)
 		}
 	}
+	catalogLines, labelChanges, packageChanges, err := projectCatalogDiff(ws)
+	if err != nil {
+		return fmt.Errorf("inspect project catalogs: %w", err)
+	}
+	catalogChanges := labelChanges + packageChanges
+	if options.task == "" {
+		changes += catalogChanges
+	}
 	if options.summary {
 		fmt.Fprintf(out, "Tasks: %d edited, %d discarded, %d new\n", counts.edited, counts.discarded, counts.new)
+		if options.task == "" && catalogChanges > 0 {
+			fmt.Fprintf(out, "Project catalogs: %d label(s), %d package(s) changed\n", labelChanges, packageChanges)
+		}
 		return nil
+	}
+	if options.task == "" && len(catalogLines) > 0 {
+		fmt.Fprintln(out, colorText(colorTarget, "1;36", "Project catalog changes"))
+		for _, line := range catalogLines {
+			fmt.Fprintln(out, line)
+		}
+		fmt.Fprintln(out)
 	}
 	if changes == 0 {
 		fmt.Fprintln(out, "No local changes.")
@@ -977,6 +973,8 @@ type listOptions struct {
 	allStatuses     bool
 	noComplexity    bool
 	noDescription   bool
+	noPackage       bool
+	noLabels        bool
 }
 
 var taskStatusOrder = []string{"new", "toDo", "inProgress", "inReview", "completed", "staging", "released", "discarded"}
@@ -1002,6 +1000,16 @@ func listTasks(ws *workspace.Workspace, args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	labelsCatalog, err := readCatalog(ws, labelCatalog)
+	if err != nil {
+		return err
+	}
+	packagesCatalog, err := readCatalog(ws, packageCatalog)
+	if err != nil {
+		return err
+	}
+	labelNames := catalogNameIndex(labelCatalog, labelsCatalog)
+	packageNames := catalogNameIndex(packageCatalog, packagesCatalog)
 	dirs, err := ws.TaskDirectories()
 	if err != nil {
 		return err
@@ -1031,6 +1039,12 @@ func listTasks(ws *workspace.Workspace, args []string, out io.Writer) error {
 				continue
 			}
 		}
+		if options.noPackage && hasPackageAssignment(metadata["package"]) {
+			continue
+		}
+		if options.noLabels && hasLabelAssignments(metadata["labels"]) {
+			continue
+		}
 		groups[status] = append(groups[status], metadata)
 	}
 	statuses := orderedTaskStatuses(groups)
@@ -1044,7 +1058,7 @@ func listTasks(ws *workspace.Workspace, args []string, out io.Writer) error {
 			fmt.Fprintln(out, colorText(out, "2", "----------------------------------------"))
 		}
 		sortTasksByRank(groups[status])
-		groupTotal, err := printTaskGroup(out, status, groups[status])
+		groupTotal, err := printTaskGroup(out, status, groups[status], labelNames, packageNames)
 		if err != nil {
 			return err
 		}
@@ -1078,6 +1092,10 @@ func parseListOptions(args []string) (listOptions, error) {
 			options.noComplexity = true
 		case arg == "--no-description":
 			options.noDescription = true
+		case arg == "--no-package":
+			options.noPackage = true
+		case arg == "--no-labels":
+			options.noLabels = true
 		case arg == "--status":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
 				return options, listUsageError()
@@ -1098,7 +1116,7 @@ func parseListOptions(args []string) (listOptions, error) {
 }
 
 func listUsageError() error {
-	return errors.New("usage: panda list [--current] [--staging] [--released] [--discarded] [--all] [--status <status,...>] [--no-complexity] [--no-description]")
+	return errors.New("usage: panda list [--current] [--staging] [--released] [--discarded] [--all] [--status <status,...>] [--no-complexity] [--no-description] [--no-package] [--no-labels]")
 }
 
 func addQuickStatusFilter(options *listOptions, statuses []string) {
@@ -1192,7 +1210,7 @@ func compareTaskNumbers(left, right any) int {
 	return strings.Compare(fmt.Sprint(left), fmt.Sprint(right))
 }
 
-func printTaskGroup(out io.Writer, status string, tasks []map[string]any) (effortEstimate, error) {
+func printTaskGroup(out io.Writer, status string, tasks []map[string]any, labelNames, packageNames map[string]string) (effortEstimate, error) {
 	style := "1;32"
 	if status == "released" {
 		style = "1;36"
@@ -1200,7 +1218,7 @@ func printTaskGroup(out io.Writer, status string, tasks []map[string]any) (effor
 	fmt.Fprintln(out, colorText(out, style, displayStatus(status)))
 	var table bytes.Buffer
 	writer := tabwriter.NewWriter(&table, 0, 4, 2, ' ', 0)
-	if _, err := fmt.Fprintln(writer, "NUMBER\tPRIORITY\tTYPE\tCOMPLEXITY\tSP\tHOURS\tTITLE"); err != nil {
+	if _, err := fmt.Fprintln(writer, "NUMBER\tPRIORITY\tTYPE\tCOMPLEXITY\tSP\tHOURS\tPACKAGE\tLABELS\tTITLE"); err != nil {
 		return effortEstimate{}, err
 	}
 	var total effortEstimate
@@ -1220,9 +1238,17 @@ func printTaskGroup(out io.Writer, status string, tasks []map[string]any) (effor
 			total.storyPoints += estimate.storyPoints
 			total.hours += estimate.hours
 		}
-		_, err := fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		pkg := relationshipDisplayNameWithCatalog(task["package"], packageNames)
+		if pkg == "" {
+			pkg = "-"
+		}
+		labels := labelsDisplayWithCatalog(task["labels"], labelNames)
+		if labels == "" {
+			labels = "-"
+		}
+		_, err := fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			tableCell(number), tableCell(task["priority"]), tableCell(task["type"]), complexity,
-			storyPoints, hours, tableCell(task["title"]))
+			storyPoints, hours, pkg, labels, tableCell(task["title"]))
 		if err != nil {
 			return effortEstimate{}, err
 		}
@@ -1267,6 +1293,26 @@ func isEmptyField(value any) bool {
 }
 
 func push(ctx context.Context, client *solutions.Client, ws *workspace.Workspace, project *config.Project, out io.Writer) error {
+	labelIDs, labelPlan, labelChanged, err := pushProjectCatalog(ctx, client, ws, project, labelCatalog)
+	if err != nil {
+		return err
+	}
+	packageIDs, packagePlan, packageChanged, err := pushProjectCatalog(ctx, client, ws, project, packageCatalog)
+	if err != nil {
+		return err
+	}
+	catalogIDs := make(map[string]string, len(labelIDs)+len(packageIDs))
+	for localID, remoteID := range labelIDs {
+		catalogIDs[localID] = remoteID
+	}
+	for localID, remoteID := range packageIDs {
+		catalogIDs[localID] = remoteID
+	}
+	if err := rewriteTaskCatalogIDs(ws, catalogIDs); err != nil {
+		return err
+	}
+	catalogChanged := labelChanged || packageChanged
+	catalogPlans := []*catalogPushPlan{labelPlan, packagePlan}
 	dirs, err := ws.TaskDirectories()
 	if err != nil {
 		return err
@@ -1294,7 +1340,7 @@ func push(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 			continue
 		}
 		if state.LocalCreated {
-			remote, err := createRemoteTask(ctx, client, dir, local, project)
+			remote, err := createRemoteTask(ctx, client, dir, local, project, catalogIDs)
 			if err != nil {
 				problems = append(problems, fmt.Sprintf("%s: %v", filepath.Base(dir), err))
 				continue
@@ -1365,6 +1411,11 @@ func push(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 				problems = append(problems, fmt.Sprintf("%s: %v", taskLabel(local), err))
 				continue
 			}
+			payload, err = remapTaskCatalogRelationships(payload, catalogIDs)
+			if err != nil {
+				problems = append(problems, fmt.Sprintf("%s: map task labels/packages: %v", taskLabel(local), err))
+				continue
+			}
 			if changed {
 				remote, err = client.UpdateTask(ctx, id, payload)
 				if err != nil {
@@ -1404,13 +1455,21 @@ func push(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 		fmt.Fprintf(out, "%s %s.\n", colorText(out, "1;32", "Pushed"), taskLabel(local))
 		pushed++
 	}
+	if len(problems) == 0 {
+		if err := pushProjectCatalogDeletes(ctx, client, ws, project, catalogPlans); err != nil {
+			problems = append(problems, err.Error())
+		}
+	}
 	if len(problems) > 0 {
 		for _, problem := range problems {
 			fmt.Fprintf(out, "Error: %s\n", problem)
 		}
 		return fmt.Errorf("push had %d failure(s)", len(problems))
 	}
-	if pushed == 0 {
+	if catalogChanged {
+		fmt.Fprintln(out, "Pushed project labels/packages.")
+	}
+	if pushed == 0 && !catalogChanged {
 		fmt.Fprintln(out, "No local changes to push.")
 	}
 	return nil
@@ -1443,7 +1502,7 @@ func taskHasLocalChanges(local map[string]any, state workspace.State, dir string
 	return len(noteChanges) > 0, nil
 }
 
-func createRemoteTask(ctx context.Context, client *solutions.Client, dir string, metadata map[string]any, project *config.Project) (map[string]any, error) {
+func createRemoteTask(ctx context.Context, client *solutions.Client, dir string, metadata map[string]any, project *config.Project, catalogIDs map[string]string) (map[string]any, error) {
 	description, err := os.ReadFile(filepath.Join(dir, "description.md"))
 	if err != nil {
 		return nil, err
@@ -1453,6 +1512,10 @@ func createRemoteTask(ctx context.Context, client *solutions.Client, dir string,
 		return nil, err
 	}
 	task := cloneMap(metadata)
+	task, err = remapTaskCatalogRelationships(task, catalogIDs)
+	if err != nil {
+		return nil, err
+	}
 	task["project"] = map[string]any{"id": project.ID, "label": project.Name}
 	task["description"] = html
 	delete(task, "id")
@@ -1909,6 +1972,17 @@ func createTask(ws *workspace.Workspace, project *config.Project, args []string,
 		"assignees": []any{},
 		"reviewers": []any{},
 	}
+	if isInteractiveTerminal(in, out) {
+		if err := editMetadataFields(metadata, false, in, out); err != nil {
+			return err
+		}
+		if err := editLabels(ws, dir, metadata, nil, in, out); err != nil {
+			return err
+		}
+		if err := editTaskPackage(ws, dir, metadata, nil, in, out); err != nil {
+			return err
+		}
+	}
 	if err := os.MkdirAll(filepath.Join(dir, "notes"), 0o700); err != nil {
 		return err
 	}
@@ -1925,9 +1999,9 @@ func createTask(ws *workspace.Workspace, project *config.Project, args []string,
 	return nil
 }
 
-func editTask(ctx context.Context, ws *workspace.Workspace, args []string, client *solutions.Client, cfg *config.Config, in io.Reader, out io.Writer) error {
+func editTask(ws *workspace.Workspace, args []string, in io.Reader, out io.Writer) error {
 	if len(args) < 1 {
-		return errors.New("usage: panda edit <taskNumber|localId> [labels [labelName...]]")
+		return errors.New("usage: panda edit <taskNumber|localId> [labels [labelName...]|package [name|none]|json]")
 	}
 	dir, metadata, err := ws.FindTask(args[0])
 	if err != nil {
@@ -1940,49 +2014,83 @@ func editTask(ctx context.Context, ws *workspace.Workspace, args []string, clien
 			}
 			return promptDescriptionEditor(in, out, dir)
 		}
-		if args[1] != "labels" {
-			return errors.New("field selectors are `labels` and `json`")
+		switch args[1] {
+		case "labels":
+			return editLabels(ws, dir, metadata, nil, in, out)
+		case "package":
+			return editTaskPackage(ws, dir, metadata, nil, in, out)
+		default:
+			return errors.New("field selectors are `labels`, `package`, and `json`")
 		}
-		if cfg.Project == nil {
-			return errors.New("no project selected")
-		}
-		if err := requireLogin(cfg); err != nil {
-			return err
-		}
-		return editLabels(ctx, client, cfg.Project.ID, dir, metadata, nil, in, out)
 	}
 	if len(args) > 2 {
-		if args[1] != "labels" {
-			return errors.New("the only field selector is `labels`")
+		switch args[1] {
+		case "labels":
+			return editLabels(ws, dir, metadata, args[2:], in, out)
+		case "package":
+			return editTaskPackage(ws, dir, metadata, args[2:], in, out)
+		default:
+			return errors.New("the field selectors are `labels` and `package`")
 		}
-		if cfg.Project == nil {
-			return errors.New("no project selected")
-		}
-		if err := requireLogin(cfg); err != nil {
-			return err
-		}
-		return editLabels(ctx, client, cfg.Project.ID, dir, metadata, args[2:], in, out)
 	}
 	if err := editMetadataInteractive(dir, metadata, in, out); err != nil {
 		return err
 	}
-	editLabelsChoice, err := prompt(in, out, "Edit labels using project suggestions? [y/N] ")
+	metadata, err = workspace.ReadMap(filepath.Join(dir, "metadata.json"))
 	if err != nil {
 		return err
 	}
-	if strings.EqualFold(editLabelsChoice, "y") || strings.EqualFold(editLabelsChoice, "yes") {
-		if cfg.Project == nil {
-			return errors.New("no project selected")
-		}
-		if err := requireLogin(cfg); err != nil {
+	if stringField(metadata, "type") == "release" && hasPackageAssignment(metadata["package"]) {
+		delete(metadata, "package")
+		if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), metadata); err != nil {
 			return err
 		}
+	}
+	if isInteractiveTerminal(in, out) {
 		metadata, err = workspace.ReadMap(filepath.Join(dir, "metadata.json"))
 		if err != nil {
 			return err
 		}
-		if err := editLabels(ctx, client, cfg.Project.ID, dir, metadata, nil, in, out); err != nil {
+		if err := editLabels(ws, dir, metadata, nil, in, out); err != nil {
 			return err
+		}
+		if stringField(metadata, "type") != "release" {
+			metadata, err = workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+			if err != nil {
+				return err
+			}
+			if err := editTaskPackage(ws, dir, metadata, nil, in, out); err != nil {
+				return err
+			}
+		}
+	} else {
+		editLabelsChoice, err := prompt(in, out, "Edit labels from the local project catalog? [y/N] ")
+		if err != nil {
+			return err
+		}
+		if strings.EqualFold(editLabelsChoice, "y") || strings.EqualFold(editLabelsChoice, "yes") {
+			metadata, err = workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+			if err != nil {
+				return err
+			}
+			if err := editLabels(ws, dir, metadata, nil, in, out); err != nil {
+				return err
+			}
+		}
+		if stringField(metadata, "type") != "release" {
+			packageChoice, err := prompt(in, out, "Edit package? [y/N] ")
+			if err != nil {
+				return err
+			}
+			if strings.EqualFold(packageChoice, "y") || strings.EqualFold(packageChoice, "yes") {
+				metadata, err = workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+				if err != nil {
+					return err
+				}
+				if err := editTaskPackage(ws, dir, metadata, nil, in, out); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	return promptDescriptionEditor(in, out, dir)
@@ -2000,12 +2108,24 @@ func promptDescriptionEditor(in io.Reader, out io.Writer, dir string) error {
 }
 
 func editMetadataInteractive(dir string, metadata map[string]any, in io.Reader, out io.Writer) error {
-	title, err := prompt(in, out, fmt.Sprintf("Title [%s]: ", stringField(metadata, "title")))
-	if err != nil {
+	if err := editMetadataFields(metadata, true, in, out); err != nil {
 		return err
 	}
-	if title != "" {
-		metadata["title"] = title
+	if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), metadata); err != nil {
+		return err
+	}
+	return nil
+}
+
+func editMetadataFields(metadata map[string]any, includeTitle bool, in io.Reader, out io.Writer) error {
+	if includeTitle {
+		title, err := prompt(in, out, fmt.Sprintf("Title [%s]: ", stringField(metadata, "title")))
+		if err != nil {
+			return err
+		}
+		if title != "" {
+			metadata["title"] = title
+		}
 	}
 	for _, option := range []struct {
 		field  string
@@ -2017,6 +2137,25 @@ func editMetadataInteractive(dir string, metadata map[string]any, in io.Reader, 
 	} {
 		current := stringField(metadata, option.field)
 		fieldTitle := strings.ToUpper(option.field[:1]) + option.field[1:]
+		if isInteractiveTerminal(in, out) {
+			choices := make([]selectorOption, 0, len(option.values)+1)
+			if option.field == "complexity" {
+				choices = append(choices, selectorOption{value: "", label: "None"})
+			}
+			for _, value := range option.values {
+				choices = append(choices, selectorOption{value: value, label: value})
+			}
+			selected, err := selectSingleOption(in, out, fieldTitle, choices, current)
+			if err != nil {
+				return err
+			}
+			if option.field == "complexity" && selected == "" {
+				delete(metadata, option.field)
+			} else {
+				metadata[option.field] = selected
+			}
+			continue
+		}
 		choice, err := prompt(in, out, fmt.Sprintf("%s [%s] (%s): ", fieldTitle, current, strings.Join(option.values, "/")))
 		if err != nil {
 			return err
@@ -2033,113 +2172,7 @@ func editMetadataInteractive(dir string, metadata map[string]any, in io.Reader, 
 		}
 		metadata[option.field] = choice
 	}
-	if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), metadata); err != nil {
-		return err
-	}
 	return nil
-}
-
-func editLabels(ctx context.Context, client *solutions.Client, projectID, dir string, metadata map[string]any, requested []string, in io.Reader, out io.Writer) error {
-	labels, err := client.ListLabels(ctx, projectID)
-	if err != nil {
-		return err
-	}
-	sort.Slice(labels, func(i, j int) bool {
-		return strings.ToLower(stringField(labels[i], "name")) < strings.ToLower(stringField(labels[j], "name"))
-	})
-	selected := make(map[string]map[string]any)
-	if values, ok := metadata["labels"].([]any); ok {
-		for _, value := range values {
-			if current, ok := value.(map[string]any); ok {
-				id := stringField(current, "id")
-				if id != "" {
-					selected[id] = map[string]any{"id": id, "label": stringField(current, "label")}
-				}
-			}
-		}
-	}
-	if len(requested) > 0 {
-		for _, name := range requested {
-			remove := strings.HasPrefix(name, "--remove=")
-			name = strings.TrimPrefix(name, "--remove=")
-			var match map[string]any
-			for _, label := range labels {
-				if strings.EqualFold(stringField(label, "name"), name) {
-					match = label
-					break
-				}
-			}
-			if match == nil {
-				return fmt.Errorf("label %q not found; use `panda completion labels %s` to see suggestions", name, name)
-			}
-			id := stringField(match, "id")
-			if remove {
-				delete(selected, id)
-			} else {
-				selected[id] = map[string]any{"id": id, "label": stringField(match, "name")}
-			}
-		}
-	} else {
-		for {
-			prefix, err := prompt(in, out, "Search labels by prefix (blank to finish): ")
-			if err != nil {
-				return err
-			}
-			if prefix == "" {
-				break
-			}
-			for {
-				matches := make([]map[string]any, 0)
-				for _, label := range labels {
-					if strings.HasPrefix(strings.ToLower(stringField(label, "name")), strings.ToLower(prefix)) {
-						matches = append(matches, label)
-					}
-				}
-				if len(matches) == 0 {
-					fmt.Fprintln(out, "No labels match that prefix.")
-					break
-				}
-				for i, label := range matches {
-					mark := " "
-					if _, ok := selected[stringField(label, "id")]; ok {
-						mark = "✓"
-					}
-					fmt.Fprintf(out, "  %s %d) %s\n", mark, i+1, stringField(label, "name"))
-				}
-				choice, err := prompt(in, out, "Select a number to toggle, or type a narrower prefix: ")
-				if err != nil {
-					return err
-				}
-				if choice == "" {
-					break
-				}
-				index, parseErr := strconv.Atoi(choice)
-				if parseErr != nil || index < 1 || index > len(matches) {
-					prefix = choice
-					continue
-				}
-				label := matches[index-1]
-				id := stringField(label, "id")
-				if _, exists := selected[id]; exists {
-					delete(selected, id)
-				} else {
-					selected[id] = map[string]any{"id": id, "label": stringField(label, "name")}
-				}
-				break
-			}
-		}
-	}
-	result := make([]any, 0, len(selected))
-	for _, label := range selected {
-		result = append(result, label)
-	}
-	sort.Slice(result, func(i, j int) bool {
-		left, _ := result[i].(map[string]any)
-		right, _ := result[j].(map[string]any)
-		return stringField(left, "label") < stringField(right, "label")
-	})
-	metadata["labels"] = result
-	return workspace.WriteMap(filepath.Join(dir, "metadata.json"), metadata)
 }
 
 func viewTask(ws *workspace.Workspace, args []string, out io.Writer) error {
@@ -2150,10 +2183,25 @@ func viewTask(ws *workspace.Workspace, args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	labelsCatalog, err := readCatalog(ws, labelCatalog)
+	if err != nil {
+		return err
+	}
+	packagesCatalog, err := readCatalog(ws, packageCatalog)
+	if err != nil {
+		return err
+	}
+	labelNames := catalogNameIndex(labelCatalog, labelsCatalog)
+	packageNames := catalogNameIndex(packageCatalog, packagesCatalog)
 	title := taskLabel(metadata) + " — " + stringField(metadata, "title")
 	fmt.Fprintf(out, "%s\n\n", colorText(out, "1;32", "# "+title))
-	for _, field := range []string{"type", "status", "priority", "complexity", "labels", "assignees", "reviewers"} {
+	for _, field := range []string{"type", "status", "priority", "complexity", "package", "labels", "assignees", "reviewers"} {
 		if value, exists := metadata[field]; exists {
+			if field == "package" {
+				value = relationshipDisplayNameWithCatalog(value, packageNames)
+			} else if field == "labels" {
+				value = labelsDisplayWithCatalog(value, labelNames)
+			}
 			fmt.Fprintf(out, "%s %v  \n", colorText(out, "1;36", "**"+field+":**"), value)
 		}
 	}
@@ -2327,7 +2375,7 @@ func clean(ws *workspace.Workspace, args []string, in io.Reader, out io.Writer) 
 		}
 	}
 	if all && !confirmed {
-		answer, err := prompt(in, out, "Discard local changes for every task in this project? [y/N] ")
+		answer, err := prompt(in, out, "Discard local changes for every task and project catalog? [y/N] ")
 		if err != nil {
 			return err
 		}
@@ -2378,7 +2426,22 @@ func clean(ws *workspace.Workspace, args []string, in io.Reader, out io.Writer) 
 			return err
 		}
 	}
-	fmt.Fprintf(out, "Cleaned local changes for %d task(s).\n", len(dirs))
+	if all {
+		for _, kind := range []catalogKind{labelCatalog, packageCatalog} {
+			baseline, err := readCatalogBaseline(ws, kind)
+			if err != nil {
+				return err
+			}
+			if err := writeCatalog(ws, kind, baseline); err != nil {
+				return err
+			}
+		}
+	}
+	if all {
+		fmt.Fprintf(out, "Cleaned local changes for %d task(s) and project catalogs.\n", len(dirs))
+	} else {
+		fmt.Fprintf(out, "Cleaned local changes for %d task(s).\n", len(dirs))
+	}
 	return nil
 }
 
@@ -2420,7 +2483,7 @@ func clearNotes(dir string, remote map[string]any) error {
 
 func prompt(in io.Reader, out io.Writer, message string) (string, error) {
 	if message != "" {
-		fmt.Fprint(out, message)
+		fmt.Fprintf(out, "%s %s", colorText(out, "1;32", "?"), message)
 	}
 	var line strings.Builder
 	var one [1]byte

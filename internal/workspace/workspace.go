@@ -45,6 +45,14 @@ func (w *Workspace) TaskPath(name string) string {
 	return filepath.Join(w.TasksRoot(), name)
 }
 
+func (w *Workspace) CatalogPath(name string) string {
+	return filepath.Join(w.Root, ".panda", name+".json")
+}
+
+func (w *Workspace) CatalogStateKey(name string) string {
+	return "catalog:" + name
+}
+
 func (w *Workspace) migrateLegacyTaskDirectories() error {
 	entries, err := os.ReadDir(w.Root)
 	if err != nil {
