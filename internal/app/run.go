@@ -72,13 +72,10 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 		case "diff":
 			return diff(ws, args, out)
 		case "push":
-			if len(args) != 0 {
-				return errors.New("usage: panda push")
-			}
 			if err := requireLogin(cfg); err != nil {
 				return err
 			}
-			return push(context.Background(), client, ws, cfg.Project, out)
+			return pushSelected(context.Background(), client, ws, cfg.Project, args, out)
 		case "create":
 			return createTask(ws, cfg.Project, args, in, out)
 		case "edit":

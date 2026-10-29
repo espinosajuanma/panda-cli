@@ -7,9 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/espinosajuanma/panda-cli/internal/workspace"
@@ -299,9 +297,19 @@ func createTaskWithOptions(ws *workspace.Workspace, projectID, projectName strin
 		options.fields["title"] = title
 		options.provided["title"] = true
 	}
-	localID := "local-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	draftID, dir, err := ws.ReserveDraftTask()
+	if err != nil {
+		return err
+	}
+	created := false
+	defer func() {
+		if !created {
+			_ = os.RemoveAll(dir)
+			_ = os.Remove(ws.StatePathForKey(draftID))
+		}
+	}()
 	metadata := map[string]any{
-		"localId":   localID,
+		"localId":   draftID,
 		"project":   map[string]any{"id": projectID, "label": projectName},
 		"title":     strings.TrimSpace(title),
 		"type":      "feature",
@@ -315,7 +323,6 @@ func createTaskWithOptions(ws *workspace.Workspace, projectID, projectName strin
 	if err != nil {
 		return err
 	}
-	dir := ws.TaskPath(localID)
 	if err := os.MkdirAll(filepath.Join(dir, "notes"), 0o700); err != nil {
 		return err
 	}
@@ -325,9 +332,10 @@ func createTaskWithOptions(ws *workspace.Workspace, projectID, projectName strin
 	if err := workspace.WriteFileAtomic(filepath.Join(dir, "description.md"), description, 0o600); err != nil {
 		return err
 	}
-	if err := ws.WriteState(localID, workspace.State{LocalCreated: true}); err != nil {
+	if err := ws.WriteState(draftID, workspace.State{LocalCreated: true}); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "Created local task %s. Run `panda edit %s` to edit it and `panda push` to publish it.\n", localID, localID)
+	created = true
+	fmt.Fprintf(out, "Created local task %s. Run `panda edit %s` to edit it and `panda push` to publish it.\n", draftID, draftID)
 	return nil
 }

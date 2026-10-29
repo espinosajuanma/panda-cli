@@ -159,7 +159,7 @@ func TestPushCreatesCatalogItemsMapsTaskAssignmentsAndDeletesAfterTaskUpdate(t *
 		t.Fatal(err)
 	}
 	client := solutions.NewClient(server.URL, "token")
-	if err := push(context.Background(), client, ws, project, io.Discard); err != nil {
+	if err := pushSelected(context.Background(), client, ws, project, []string{stringField(metadata, "localId")}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if len(labels) != 1 || len(packages) != 1 || stringField(remoteTask, "id") != "task-1" {

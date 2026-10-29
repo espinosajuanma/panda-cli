@@ -15,6 +15,14 @@ import (
 )
 
 func push(ctx context.Context, client *solutions.Client, ws *workspace.Workspace, project *config.Project, out io.Writer) error {
+	return pushSelected(ctx, client, ws, project, nil, out)
+}
+
+func pushSelected(ctx context.Context, client *solutions.Client, ws *workspace.Workspace, project *config.Project, selectors []string, out io.Writer) error {
+	dirs, err := pushTaskDirectories(ws, selectors)
+	if err != nil {
+		return err
+	}
 	labelIDs, labelPlan, labelChanged, err := pushProjectCatalog(ctx, client, ws, project, labelCatalog)
 	if err != nil {
 		return err
@@ -35,10 +43,6 @@ func push(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 	}
 	catalogChanged := labelChanged || packageChanged
 	catalogPlans := []*catalogPushPlan{labelPlan, packagePlan}
-	dirs, err := ws.TaskDirectories()
-	if err != nil {
-		return err
-	}
 	var problems []string
 	pushed := 0
 	for _, dir := range dirs {
@@ -219,9 +223,32 @@ func push(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 		fmt.Fprintln(out, "Pushed project labels/packages.")
 	}
 	if pushed == 0 && !catalogChanged {
-		fmt.Fprintln(out, "No local changes to push.")
+		if len(selectors) > 0 {
+			fmt.Fprintln(out, "No local changes to push for the selected task(s).")
+		} else {
+			fmt.Fprintln(out, "No local changes to push.")
+		}
 	}
 	return nil
+}
+
+func pushTaskDirectories(ws *workspace.Workspace, selectors []string) ([]string, error) {
+	if len(selectors) == 0 {
+		return ws.TaskDirectories()
+	}
+	dirs := make([]string, 0, len(selectors))
+	seen := make(map[string]bool, len(selectors))
+	for _, selector := range selectors {
+		dir, _, err := ws.FindTask(selector)
+		if err != nil {
+			return nil, err
+		}
+		if !seen[dir] {
+			seen[dir] = true
+			dirs = append(dirs, dir)
+		}
+	}
+	return dirs, nil
 }
 
 func taskHasLocalChanges(local map[string]any, state workspace.State, dir string) (bool, error) {

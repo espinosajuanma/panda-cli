@@ -23,7 +23,7 @@ func viewTask(ws *workspace.Workspace, args []string, out io.Writer) error {
 
 func renderTaskView(ws *workspace.Workspace, args []string, out, colorTarget io.Writer) error {
 	if len(args) != 1 {
-		return errors.New("usage: panda view <taskNumber|localId>")
+		return errors.New("usage: panda view <taskNumber|draft-N>")
 	}
 	dir, metadata, err := ws.FindTask(args[0])
 	if err != nil {
@@ -95,7 +95,7 @@ func renderTaskView(ws *workspace.Workspace, args []string, out, colorTarget io.
 
 func linkTask(ws *workspace.Workspace, args []string, out io.Writer) error {
 	if len(args) != 1 {
-		return errors.New("usage: panda link <taskNumber|localId>")
+		return errors.New("usage: panda link <taskNumber|draft-N>")
 	}
 	_, metadata, err := ws.FindTask(args[0])
 	if err != nil {

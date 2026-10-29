@@ -21,7 +21,7 @@ var mainCommands = []mainCommand{
 	{"list", "[status filters] [other filters]", "List tasks with package, labels, and effort totals.", true},
 	{"pull", "", "Fetch project tasks, catalogs, and members into the workspace.", true},
 	{"diff", "[task] [--verbose|-v] [--summary|-s]", "Review pending local changes.", true},
-	{"push", "", "Publish local edits and staged actions to Solutions.", true},
+	{"push", "[taskNumber|draft-N ...]", "Publish all local edits or only selected tasks; project catalogs are synchronized too.", true},
 	{"create", "[title] [task field options]", "Create a task locally with interactive or noninteractive options.", true},
 	{"edit", "<task> [task field options|labels ...|package ...|assignees ...|json]", "Edit task fields interactively or with safe partial options.", true},
 	{"assign", "<task> <teamLead|developer|qa|none>", "Assign eligible project members to a task by role.", true},

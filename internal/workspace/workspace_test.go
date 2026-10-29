@@ -79,3 +79,32 @@ func TestEnsureRejectsLegacyTaskMigrationCollision(t *testing.T) {
 		t.Fatalf("legacy task was lost after collision: %v", err)
 	}
 }
+
+func TestReserveDraftTaskUsesNextNumberAndIgnoresLegacyIDs(t *testing.T) {
+	ws := New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	firstID, firstDir, err := ws.ReserveDraftTask()
+	if err != nil || firstID != "draft-1" {
+		t.Fatalf("first draft = %q, dir=%q, error=%v", firstID, firstDir, err)
+	}
+	secondID, _, err := ws.ReserveDraftTask()
+	if err != nil || secondID != "draft-2" {
+		t.Fatalf("second draft = %q, error=%v", secondID, err)
+	}
+	if err := os.Mkdir(ws.TaskPath("draft-7"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	legacyDir := ws.TaskPath("local-legacy")
+	if err := os.Mkdir(legacyDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteMap(filepath.Join(legacyDir, "metadata.json"), map[string]any{"localId": "local-legacy"}); err != nil {
+		t.Fatal(err)
+	}
+	nextID, nextDir, err := ws.ReserveDraftTask()
+	if err != nil || nextID != "draft-8" || nextDir != ws.TaskPath("draft-8") {
+		t.Fatalf("next draft = %q, dir=%q, error=%v; want draft-8", nextID, nextDir, err)
+	}
+}

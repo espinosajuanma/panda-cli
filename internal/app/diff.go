@@ -216,7 +216,7 @@ func parseDiffOptions(args []string) (diffOptions, error) {
 			options.summary = true
 		default:
 			if strings.HasPrefix(arg, "-") || options.task != "" {
-				return diffOptions{}, errors.New("usage: panda diff [taskNumber|localId] [--verbose|-v] [--summary|-s]")
+				return diffOptions{}, errors.New("usage: panda diff [taskNumber|draft-N] [--verbose|-v] [--summary|-s]")
 			}
 			options.task = arg
 		}

@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -64,10 +63,19 @@ func createTaskInteractive(ws *workspace.Workspace, project *config.Project, arg
 	if title == "" {
 		return errors.New("task title cannot be empty")
 	}
-	localID := "local-" + strconv.FormatInt(time.Now().UnixNano(), 36)
-	dir := ws.TaskPath(localID)
+	draftID, dir, err := ws.ReserveDraftTask()
+	if err != nil {
+		return err
+	}
+	created := false
+	defer func() {
+		if !created {
+			_ = os.RemoveAll(dir)
+			_ = os.Remove(ws.StatePathForKey(draftID))
+		}
+	}()
 	metadata := map[string]any{
-		"localId":   localID,
+		"localId":   draftID,
 		"project":   map[string]any{"id": project.ID, "label": project.Name},
 		"title":     title,
 		"type":      "feature",
@@ -102,20 +110,20 @@ func createTaskInteractive(ws *workspace.Workspace, project *config.Project, arg
 	}
 	if isInteractiveTerminal(in, out) {
 		if err := promptDescriptionEditor(in, out, dir); err != nil {
-			_ = os.RemoveAll(dir)
 			return err
 		}
 	}
-	if err := ws.WriteState(localID, workspace.State{LocalCreated: true}); err != nil {
+	if err := ws.WriteState(draftID, workspace.State{LocalCreated: true}); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "Created local task %s. Run `panda edit %s` to edit it and `panda push` to publish it.\n", localID, localID)
+	created = true
+	fmt.Fprintf(out, "Created local task %s. Run `panda edit %s` to edit it and `panda push` to publish it.\n", draftID, draftID)
 	return nil
 }
 
 func editTask(ws *workspace.Workspace, args []string, in io.Reader, out io.Writer) error {
 	if len(args) < 1 {
-		return errors.New("usage: panda edit <taskNumber|localId> [labels [labelName...]|package [name|none]|assignees [member...|none]|json]")
+		return errors.New("usage: panda edit <taskNumber|draft-N> [labels [labelName...]|package [name|none]|assignees [member...|none]|json]")
 	}
 	dir, metadata, err := ws.FindTask(args[0])
 	if err != nil {
@@ -131,7 +139,7 @@ func editTask(ws *workspace.Workspace, args []string, in io.Reader, out io.Write
 			return editAssignees(ws, dir, metadata, args[2:], in, out)
 		case "json":
 			if len(args) != 2 {
-				return errors.New("usage: panda edit <taskNumber|localId> json")
+				return errors.New("usage: panda edit <taskNumber|draft-N> json")
 			}
 			if err := openEditor(filepath.Join(dir, "metadata.json")); err != nil {
 				return err

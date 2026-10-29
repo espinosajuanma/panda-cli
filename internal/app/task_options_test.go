@@ -399,3 +399,37 @@ func TestTaskOptionCreateUsesNormalLocalWorkspacePersistence(t *testing.T) {
 		t.Fatal(fmt.Errorf("metadata was not written through workspace persistence: %w", err))
 	}
 }
+
+func TestCreateUsesIncrementingDraftIDsAcrossModes(t *testing.T) {
+	ws := workspace.New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	project := &config.Project{ID: "p1", Name: "Alpha"}
+	if err := createTask(ws, project, []string{"Interactive path"}, strings.NewReader(""), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if err := createTask(ws, project, []string{"--title", "Option path"}, strings.NewReader(""), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	dirs, err := ws.TaskDirectories()
+	if err != nil || len(dirs) != 2 {
+		t.Fatalf("created draft dirs = %v, error=%v", dirs, err)
+	}
+	for index, expectedID := range []string{"draft-1", "draft-2"} {
+		if filepath.Base(dirs[index]) != expectedID {
+			t.Fatalf("draft directory %d = %q, want %q", index, filepath.Base(dirs[index]), expectedID)
+		}
+		metadata, err := workspace.ReadMap(filepath.Join(dirs[index], "metadata.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stringField(metadata, "localId") != expectedID {
+			t.Fatalf("draft %s metadata localId = %q", expectedID, stringField(metadata, "localId"))
+		}
+		state, err := ws.ReadState(expectedID)
+		if err != nil || !state.LocalCreated {
+			t.Fatalf("draft %s state = %#v, error=%v", expectedID, state, err)
+		}
+	}
+}

@@ -16,7 +16,7 @@ import (
 
 func editNote(ws *workspace.Workspace, args []string, client *solutions.Client, out io.Writer) error {
 	if len(args) != 2 {
-		return errors.New("usage: panda edit-note <taskNumber|localId> <note-file>")
+		return errors.New("usage: panda edit-note <taskNumber|draft-N> <note-file>")
 	}
 	if client.Email == "" {
 		return errors.New("your login email is not saved; run `panda login` to enable editing your notes")
@@ -67,7 +67,7 @@ func editNote(ws *workspace.Workspace, args []string, client *solutions.Client, 
 
 func addNote(ws *workspace.Workspace, args []string, in io.Reader, out io.Writer) error {
 	if len(args) < 1 {
-		return errors.New("usage: panda add-note <taskNumber|localId> [text]")
+		return errors.New("usage: panda add-note <taskNumber|draft-N> [text]")
 	}
 	dir, metadata, err := ws.FindTask(args[0])
 	if err != nil {
@@ -88,7 +88,7 @@ func addNote(ws *workspace.Workspace, args []string, in io.Reader, out io.Writer
 
 func discard(ws *workspace.Workspace, args []string, out io.Writer) error {
 	if len(args) < 1 {
-		return errors.New("usage: panda discard <taskNumber|localId> [note]")
+		return errors.New("usage: panda discard <taskNumber|draft-N> [note]")
 	}
 	dir, metadata, err := ws.FindTask(args[0])
 	if err != nil {
@@ -148,7 +148,7 @@ func clean(ws *workspace.Workspace, args []string, in io.Reader, out io.Writer) 
 			identifier = arg
 			all = false
 		} else {
-			return errors.New("usage: panda clean [taskNumber|localId] [--yes]")
+			return errors.New("usage: panda clean [taskNumber|draft-N] [--yes]")
 		}
 	}
 	if all && !confirmed {

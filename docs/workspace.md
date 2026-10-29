@@ -18,7 +18,7 @@ Print the active workspace path with `panda path`.
         members.json
         state/
       tasks/
-        {taskNumber-or-localId}/
+        {taskNumber-or-draft-N}/
           description.md
           metadata.json
           notes/
@@ -30,10 +30,15 @@ supported by the operating system. `metadata.json` stores task fields and
 relationships; descriptions and notes are Markdown files.
 
 The `.panda/state` directory stores remote baselines, staged actions, and remote
-task IDs. A locally created task uses a temporary local ID until a successful
+task IDs. A locally created task uses the next `draft-N` ID until a successful
 push assigns its Solutions task number and renames its directory. Older task
 directories at the project root are migrated into `tasks/` when the workspace
 is next opened; unrelated project files are left in place.
+
+Draft numbering starts at `draft-1` and advances past the highest existing
+draft. If the highest-numbered drafts are removed or pushed and renamed to
+Solutions task numbers, a later draft may reuse those numbers. New tasks use
+`draft-N`; legacy `local-*` task IDs remain accepted.
 
 ## Tasks and synchronization
 
@@ -52,7 +57,7 @@ clean --yes` restores the entire project, including catalogs.
 
 ## Canonical task links
 
-`panda link <taskNumber|localId>` prints a verified Markdown link:
+`panda link <taskNumber|draft-N>` prints a verified Markdown link:
 
 ```text
 [#<taskNumber>](https://solutions.slingrs.io/prod/runtime/#views/680b8e41805d3740e97cfecb/readOnly/<verifiedTaskId>)

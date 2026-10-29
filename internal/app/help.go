@@ -210,9 +210,9 @@ var manualPages = map[string]manualPage{
 	},
 	"diff": {
 		name:        "panda diff - review local changes",
-		synopsis:    []string{"panda diff [taskNumber|localId] [--verbose|-v] [--summary|-s]"},
+		synopsis:    []string{"panda diff [taskNumber|draft-N] [--verbose|-v] [--summary|-s]"},
 		description: []string{"Display pending local edits grouped by task. By default, changed fields and a short description/note summary are shown. Terminal output longer than the screen is sent to $PAGER (defaults to less -FRX); less keeps its output visible after exit."},
-		arguments:   []manualOption{{"taskNumber|localId", "Optional task identifier to restrict the diff to one task."}},
+		arguments:   []manualOption{{"taskNumber|draft-N", "Optional task identifier to restrict the diff to one task. Legacy local-* IDs are also accepted."}},
 		options: []manualOption{
 			{"--verbose, -v", "Show changed description and note lines with - and + markers."},
 			{"--summary, -s", "Print counts of edited, discarded, and new tasks."},
@@ -222,15 +222,16 @@ var manualPages = map[string]manualPage{
 	},
 	"push": {
 		name:        "panda push - apply local changes to Solutions",
-		synopsis:    []string{"panda push"},
-		description: []string{"Check for remote conflicts, then send local task edits and staged actions to Solutions. A successful operation updates the local synchronization baseline. Requires a selected project and a successful login."},
-		examples:    []string{"panda diff --verbose", "panda push"},
+		synopsis:    []string{"panda push [taskNumber|draft-N ...]"},
+		description: []string{"Check for remote conflicts, then send local task edits and staged actions to Solutions. Without selectors, push processes every task; with selectors, it processes only those tasks. Pending project catalogs are still synchronized. A successful operation updates the local synchronization baseline. Requires a selected project and a successful login."},
+		arguments:   []manualOption{{"taskNumber|draft-N", "Optional task selectors; repeat to push only those tasks. Legacy local-* IDs are also accepted."}},
+		examples:    []string{"panda diff --verbose", "panda push", "panda push draft-1", "panda push draft-1 draft-3"},
 		seeAlso:     []string{"panda-diff(1)", "panda-pull(1)"},
 	},
 	"create": {
 		name:        "panda create - create a local task",
 		synopsis:    []string{"panda create [title]", "panda create --title <text> [task field options]"},
-		description: []string{"Create a task in the local workspace with a temporary local ID. Existing interactive selectors remain available. Supplying task field options selects noninteractive mode; title is required and no prompts or editor are opened. Changes remain local until an explicit panda push."},
+		description: []string{"Create a task in the local workspace with a draft-N ID. Existing interactive selectors remain available. Supplying task field options selects noninteractive mode; title is required and no prompts or editor are opened. Changes remain local until an explicit panda push."},
 		arguments:   []manualOption{{"title", "Optional positional title; noninteractive option mode requires a title and does not prompt."}},
 		options:     taskFieldOptionsManual(),
 		examples:    []string{"panda create", "panda create --title \"Improve task search\" --type feature --assignee \"Ada Lovelace\" --description-file description.md", "panda create --title \"Scripted task\" --description-file - < description.md"},
@@ -238,7 +239,7 @@ var manualPages = map[string]manualPage{
 	},
 	"edit": {
 		name:     "panda edit - edit a task's fields and description",
-		synopsis: []string{"panda edit <taskNumber|localId>", "panda edit <taskNumber|localId> [task field options]", "panda edit <taskNumber|localId> labels [labelName|--remove=labelName ...|none]", "panda edit <taskNumber|localId> package [name|none]", "panda edit <taskNumber|localId> assignees [member ...|none]", "panda edit <taskNumber|localId> json"},
+		synopsis: []string{"panda edit <taskNumber|draft-N>", "panda edit <taskNumber|draft-N> [task field options]", "panda edit <taskNumber|draft-N> labels [labelName|--remove=labelName ...|none]", "panda edit <taskNumber|draft-N> package [name|none]", "panda edit <taskNumber|draft-N> assignees [member ...|none]", "panda edit <taskNumber|draft-N> json"},
 		description: []string{
 			"Interactively edit a task's title, type, priority, and complexity. On terminals, use arrow keys and Enter for single-choice fields; use Space to toggle labels and assignees and Enter to save each multi-select. Assign at most one optional package.",
 			"For scripts, pass any supported field options to apply only the supplied fields. Option-driven edits do not prompt or open an editor, preserve omitted metadata, and remain local until panda push.",
@@ -246,7 +247,7 @@ var manualPages = map[string]manualPage{
 			"The json selector opens metadata.json for advanced metadata editing and then offers the description editor prompt.",
 		},
 		arguments: []manualOption{
-			{"taskNumber|localId", "Identifier of the task to edit."},
+			{"taskNumber|draft-N", "Identifier of the task to edit. Legacy local-* IDs are also accepted."},
 			{"labels", "Open the label picker. Follow with label names to add them, --remove=labelName to remove them, or none to clear all labels."},
 			{"package", "Select one package by name or enter none to clear the assignment."},
 			{"assignees", "Open the multi-select assignee picker, or follow with one or more project member names, emails, or IDs; none clears all assignees."},
@@ -258,10 +259,10 @@ var manualPages = map[string]manualPage{
 	},
 	"assign": {
 		name:        "panda assign - assign project members by role",
-		synopsis:    []string{"panda assign <taskNumber|localId> <role[,role...]|none>"},
+		synopsis:    []string{"panda assign <taskNumber|draft-N> <role[,role...]|none>"},
 		description: []string{"Assign every synced project member matching one or more eligible team roles to a task. The role list can be space- or comma-separated; eligible roles are teamLead, developer, and qa. Use none to clear all assignees. Run panda pull first to sync the project team. Changes are local until panda push."},
 		arguments: []manualOption{
-			{"taskNumber|localId", "Identifier of the task to assign."},
+			{"taskNumber|draft-N", "Identifier of the task to assign. Legacy local-* IDs are also accepted."},
 			{"role", "One or more eligible project team roles: teamLead, developer, or qa."},
 		},
 		examples: []string{"panda assign 12345 developer", "panda assign 12345 teamLead,qa", "panda assign 12345 none", "panda push"},
@@ -269,10 +270,10 @@ var manualPages = map[string]manualPage{
 	},
 	"edit-note": {
 		name:        "panda edit-note - edit one of your synced notes",
-		synopsis:    []string{"panda edit-note <taskNumber|localId> <note-file>"},
+		synopsis:    []string{"panda edit-note <taskNumber|draft-N> <note-file>"},
 		description: []string{"Open one of the current user's synced task notes in $EDITOR. Use the note filename shown by panda view; the .md extension is optional. Review the local edit with panda diff --verbose and publish it with panda push."},
 		arguments: []manualOption{
-			{"taskNumber|localId", "Identifier of the task containing the note."},
+			{"taskNumber|draft-N", "Identifier of the task containing the note. Legacy local-* IDs are also accepted."},
 			{"note-file", "Synced Markdown note filename shown by panda view; .md is optional."},
 		},
 		examples: []string{"panda edit-note 12345 20261028T120000.000Z-username", "panda diff --verbose", "panda push"},
@@ -280,26 +281,26 @@ var manualPages = map[string]manualPage{
 	},
 	"view": {
 		name:        "panda view - display a task",
-		synopsis:    []string{"panda view <taskNumber|localId>"},
+		synopsis:    []string{"panda view <taskNumber|draft-N>"},
 		description: []string{"Display task metadata, the local Markdown description, and synced notes. Staged notes are marked in the output. Long terminal output uses $PAGER and remains visible after leaving the pager."},
-		arguments:   []manualOption{{"taskNumber|localId", "Identifier of the task to display."}},
+		arguments:   []manualOption{{"taskNumber|draft-N", "Identifier of the task to display. Legacy local-* IDs are also accepted."}},
 		examples:    []string{"panda view 12345"},
 		seeAlso:     []string{"panda-edit(1)", "panda-edit-note(1)", "panda-diff(1)"},
 	},
 	"link": {
 		name:        "panda link - print a canonical Solutions task link",
-		synopsis:    []string{"panda link <taskNumber|localId>"},
+		synopsis:    []string{"panda link <taskNumber|draft-N>"},
 		description: []string{"Print a Markdown link using Panda's shared Solutions task view and the task ID verified by its local sync baseline. Local, unsynced tasks and tasks without a verified ID cannot be linked."},
-		arguments:   []manualOption{{"taskNumber|localId", "Identifier of the synced task."}},
+		arguments:   []manualOption{{"taskNumber|draft-N", "Identifier of the synced task. Legacy local-* IDs are also accepted."}},
 		examples:    []string{"panda link 12345", "[#12345](https://solutions.slingrs.io/prod/runtime/#views/680b8e41805d3740e97cfecb/readOnly/task-id)"},
 		seeAlso:     []string{"panda-view(1)"},
 	},
 	"add-note": {
 		name:        "panda add-note - stage a new task note",
-		synopsis:    []string{"panda add-note <taskNumber|localId> [text]"},
+		synopsis:    []string{"panda add-note <taskNumber|draft-N> [text]"},
 		description: []string{"Stage a Markdown note for the next push. If text is omitted, open a temporary note in $EDITOR. Empty notes are rejected."},
 		arguments: []manualOption{
-			{"taskNumber|localId", "Identifier of the task receiving the note."},
+			{"taskNumber|draft-N", "Identifier of the task receiving the note. Legacy local-* IDs are also accepted."},
 			{"text", "Optional note text. If omitted, Panda opens the note editor."},
 		},
 		examples: []string{"panda add-note 12345", "panda add-note 12345 \"Followed up with the team\"", "panda push"},
@@ -307,10 +308,10 @@ var manualPages = map[string]manualPage{
 	},
 	"discard": {
 		name:        "panda discard - stage a task for discard",
-		synopsis:    []string{"panda discard <taskNumber|localId> [note]"},
+		synopsis:    []string{"panda discard <taskNumber|draft-N> [note]"},
 		description: []string{"Set the task's local status to discarded. If note is supplied, stage it as a Markdown note with the status change. The change is sent to Solutions by panda push."},
 		arguments: []manualOption{
-			{"taskNumber|localId", "Identifier of the task to discard."},
+			{"taskNumber|draft-N", "Identifier of the task to discard. Legacy local-* IDs are also accepted."},
 			{"note", "Optional Markdown note to stage with the status change."},
 		},
 		examples: []string{"panda discard 12345", "panda discard 12345 \"No longer needed\"", "panda push"},
@@ -318,12 +319,12 @@ var manualPages = map[string]manualPage{
 	},
 	"clean": {
 		name:     "panda clean - discard local task changes",
-		synopsis: []string{"panda clean [taskNumber|localId] [--yes]"},
+		synopsis: []string{"panda clean [taskNumber|draft-N] [--yes]"},
 		description: []string{
 			"Restore the last-synced local version and discard staged actions for one task. Run panda pull afterward to fetch newer remote changes.",
 			"When the task argument is omitted, clean restores all tasks and the project label/package catalogs to their last-synced versions, and asks for confirmation. --yes skips that confirmation.",
 		},
-		arguments: []manualOption{{"taskNumber|localId", "Optional task identifier. If omitted, clean applies to the entire project."}},
+		arguments: []manualOption{{"taskNumber|draft-N", "Optional task identifier. If omitted, clean applies to the entire project. Legacy local-* IDs are also accepted."}},
 		options:   []manualOption{{"--yes, -y", "Skip confirmation when cleaning the whole project."}},
 		examples:  []string{"panda clean 12345", "panda clean --yes"},
 		seeAlso:   []string{"panda-diff(1)", "panda-pull(1)"},

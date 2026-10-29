@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -330,5 +331,71 @@ func TestPushContactsOnlyTasksWithLocalChanges(t *testing.T) {
 	}
 	if strings.Contains(output.String(), "Pushed 14") || !strings.Contains(output.String(), "Pushed 15") {
 		t.Fatalf("push output included clean tasks or omitted dirty task: %q", output.String())
+	}
+}
+
+func TestPushCanSelectOnlyRequestedDrafts(t *testing.T) {
+	var createdTitles []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/data/dev.tasks" {
+			http.Error(w, "unexpected request: "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+			return
+		}
+		var task map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&task); err != nil {
+			t.Error(err)
+		}
+		createdTitles = append(createdTitles, stringField(task, "title"))
+		task["id"] = fmt.Sprintf("remote-%d", len(createdTitles))
+		task["number"] = float64(100 + len(createdTitles))
+		task["status"] = "new"
+		task["version"] = float64(1)
+		task["notes"] = []any{}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(task)
+	}))
+	defer server.Close()
+
+	ws := workspace.New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	project := &config.Project{ID: "project-1", Name: "Alpha"}
+	for index := 1; index <= 5; index++ {
+		if err := createTask(ws, project, []string{fmt.Sprintf("Draft %d", index)}, strings.NewReader(""), io.Discard); err != nil {
+			t.Fatal(err)
+		}
+	}
+	client := solutions.NewClient(server.URL, "token")
+	if err := pushSelected(context.Background(), client, ws, project, []string{"draft-99"}, io.Discard); err == nil {
+		t.Fatal("push with an unknown draft selector succeeded")
+	}
+	if len(createdTitles) != 0 {
+		t.Fatalf("invalid selector made API requests: %#v", createdTitles)
+	}
+	if err := pushSelected(context.Background(), client, ws, project, []string{"draft-2", "draft-4", "draft-2"}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(createdTitles, []string{"Draft 2", "Draft 4"}) {
+		t.Fatalf("created remote titles = %v, want only the selected drafts", createdTitles)
+	}
+	dirs, err := ws.TaskDirectories()
+	if err != nil {
+		t.Fatal(err)
+	}
+	remainingDrafts := make(map[string]bool)
+	for _, dir := range dirs {
+		metadata, readErr := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if stringField(metadata, "localId") != "" {
+			remainingDrafts[stringField(metadata, "localId")] = true
+		}
+	}
+	for _, id := range []string{"draft-1", "draft-3", "draft-5"} {
+		if !remainingDrafts[id] {
+			t.Errorf("unselected draft %s was not left local; remaining=%v", id, remainingDrafts)
+		}
 	}
 }

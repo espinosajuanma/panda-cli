@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -47,6 +48,59 @@ func (w *Workspace) TasksRoot() string {
 
 func (w *Workspace) TaskPath(name string) string {
 	return filepath.Join(w.TasksRoot(), name)
+}
+
+// ReserveDraftTask allocates the next human-readable draft ID and reserves its
+// task directory atomically. Existing legacy local-* IDs remain untouched.
+func (w *Workspace) ReserveDraftTask() (string, string, error) {
+	dirs, err := w.TaskDirectories()
+	if err != nil {
+		return "", "", err
+	}
+	next := 1
+	consider := func(value string) {
+		if number := draftNumber(value); number >= next {
+			next = number + 1
+		}
+	}
+	for _, dir := range dirs {
+		consider(filepath.Base(dir))
+		metadata, readErr := ReadMap(filepath.Join(dir, "metadata.json"))
+		if readErr == nil {
+			consider(stringValue(metadata["localId"]))
+		}
+	}
+	for {
+		id := "draft-" + strconv.Itoa(next)
+		if _, err := w.ReadState(id); err == nil {
+			next++
+			continue
+		} else if !os.IsNotExist(err) {
+			return "", "", err
+		}
+		dir := w.TaskPath(id)
+		if err := os.Mkdir(dir, 0o700); err == nil {
+			if err := os.Chmod(dir, 0o700); err != nil {
+				_ = os.Remove(dir)
+				return "", "", err
+			}
+			return id, dir, nil
+		} else if !os.IsExist(err) {
+			return "", "", err
+		}
+		next++
+	}
+}
+
+func draftNumber(value string) int {
+	if !strings.HasPrefix(value, "draft-") {
+		return 0
+	}
+	number, err := strconv.Atoi(strings.TrimPrefix(value, "draft-"))
+	if err != nil || number < 1 {
+		return 0
+	}
+	return number
 }
 
 func (w *Workspace) CatalogPath(name string) string {

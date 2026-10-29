@@ -181,7 +181,7 @@ func eligibleProjectMembers(members []map[string]any) []map[string]any {
 
 func assignTask(ws *workspace.Workspace, args []string, out io.Writer) error {
 	if len(args) < 2 {
-		return errors.New("usage: panda assign <taskNumber|localId> <role[,role...]|none>")
+		return errors.New("usage: panda assign <taskNumber|draft-N> <role[,role...]|none>")
 	}
 	dir, metadata, err := ws.FindTask(args[0])
 	if err != nil {

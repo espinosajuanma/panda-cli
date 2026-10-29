@@ -42,14 +42,24 @@ has not changed are not rewritten.
 
 Changes remain local until `panda push`.
 
-### `panda push`
+### `panda push [taskNumber|draft-N ...]`
 
 Checks for remote changes before sending local task and catalog edits. It skips
 unchanged tasks, applies staged notes and discards, and advances synchronization
 baselines after successful API operations. Overlapping edits are reported
-instead of overwritten.
+instead of overwritten. With no selectors it processes every task; with one or
+more selectors it processes only those tasks. Pending project label/package
+changes are still synchronized, since those catalogs are shared by the project.
+All task selectors are validated before any API operation begins.
 
-### `panda diff [taskNumber|localId] [--verbose|-v] [--summary|-s]`
+```sh
+panda push
+panda push draft-1
+panda push draft-1 draft-3
+panda push 12345
+```
+
+### `panda diff [taskNumber|draft-N] [--verbose|-v] [--summary|-s]`
 
 Shows pending task and project-catalog changes. An optional task identifier
 limits output to one task.
@@ -97,7 +107,8 @@ panda list --no-description --no-package --no-labels
 
 ### `panda create [title] [task field options]`
 
-Creates a task locally with a temporary ID. Interactive terminals offer
+Creates a task locally with the next available ID: `draft-1`, `draft-2`, and so
+on. Interactive terminals offer
 selectors for task fields, labels, package, and assignees. The optional
 description editor uses `$EDITOR`.
 
@@ -124,7 +135,7 @@ byte-for-byte, including trailing newlines; empty descriptions are rejected.
 | `--remove-label <name>` | Remove a label; repeat as needed |
 | `--description-file <path\|->` | Read UTF-8 Markdown from a file or stdin (`-`) |
 
-### `panda edit <taskNumber|localId> [task field options]`
+### `panda edit <taskNumber|draft-N> [task field options]`
 
 Interactively edits a task, or applies only fields explicitly supplied by
 options. Option-driven edits never prompt and preserve omitted fields.
@@ -142,19 +153,19 @@ Other edit selectors:
 Release tasks cannot be assigned to packages. Eligible assignee roles are
 `teamLead`, `developer`, and `qa`.
 
-### `panda assign <taskNumber|localId> <role[,role...]|none>`
+### `panda assign <taskNumber|draft-N> <role[,role...]|none>`
 
 Assigns every synced project member matching one or more eligible roles. Roles
 can be comma- or space-separated. `none` clears all assignees. Run `panda pull`
 first to sync current members.
 
-### `panda view <taskNumber|localId>`
+### `panda view <taskNumber|draft-N>`
 
 Displays task metadata, the local Markdown description, and notes. Staged notes
 are marked. Long terminal output uses `$PAGER` (default `less -FRX`) and remains
 visible after leaving the pager; piped output is printed directly.
 
-### `panda link <taskNumber|localId>`
+### `panda link <taskNumber|draft-N>`
 
 Prints a Markdown link for a synced task with a verified remote ID and baseline.
 Links use the shared Solutions task view, ID `680b8e41805d3740e97cfecb`.
@@ -162,27 +173,30 @@ Locally created or unverifiable tasks cannot be linked.
 
 ## Notes and status
 
-### `panda add-note <taskNumber|localId> [text]`
+### `panda add-note <taskNumber|draft-N> [text]`
 
 Stages a Markdown note for the next push. If text is omitted, Panda opens a
 temporary note in `$EDITOR`. Empty notes are rejected.
 
-### `panda edit-note <taskNumber|localId> <note-file>`
+### `panda edit-note <taskNumber|draft-N> <note-file>`
 
 Opens one of the current user's synced notes in `$EDITOR`. Use the filename
 shown by `panda view`; the `.md` extension is optional. Review changes with
 `panda diff --verbose` and publish with `panda push`.
 
-### `panda discard <taskNumber|localId> [note]`
+### `panda discard <taskNumber|draft-N> [note]`
 
 Stages the task status as `discarded`. An optional Markdown note is staged with
 the status change. `panda push` applies it.
 
-### `panda clean [taskNumber|localId] [--yes|-y]`
+### `panda clean [taskNumber|draft-N] [--yes|-y]`
 
 Restores the last-synced task files and discards staged actions. With no task
 identifier, it also restores project catalogs and asks for confirmation;
 `--yes` skips that confirmation. Unpushed locally created tasks are removed.
+
+Existing `local-*` task IDs remain accepted for workspaces created by older
+Panda versions.
 
 ## Project catalogs
 
