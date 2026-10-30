@@ -14,6 +14,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/espinosajuanma/panda-cli/internal/config"
+	"github.com/espinosajuanma/panda-cli/internal/jsonutil"
 	"github.com/espinosajuanma/panda-cli/internal/solutions"
 	"github.com/espinosajuanma/panda-cli/internal/task"
 	"github.com/espinosajuanma/panda-cli/internal/ui"
@@ -54,6 +56,10 @@ type taskViewJSONContext struct {
 }
 
 func viewTask(ws *workspace.Workspace, args []string, out io.Writer) error {
+	return viewTaskWithAPIURL(ws, args, config.DefaultAPIURL, out)
+}
+
+func viewTaskWithAPIURL(ws *workspace.Workspace, args []string, apiURL string, out io.Writer) error {
 	options, err := parseTaskViewOptions(args)
 	if err != nil {
 		return err
@@ -63,7 +69,7 @@ func viewTask(ws *workspace.Workspace, args []string, out io.Writer) error {
 		return err
 	}
 	state, _ := ws.ReadState(stateKey(dir, metadata))
-	context := buildTaskViewContext(ws, dir, metadata, state)
+	context := buildTaskViewContextForAPIURL(ws, dir, metadata, state, apiURL)
 	if options.json {
 		return renderTaskViewJSON(dir, metadata, state, options, context, out)
 	}
@@ -341,7 +347,7 @@ func readTaskViewNotes(dir string, state workspace.State) ([]taskViewNote, error
 	return notes, nil
 }
 
-func buildTaskViewContext(ws *workspace.Workspace, dir string, metadata map[string]any, state workspace.State) taskViewJSONContext {
+func buildTaskViewContextForAPIURL(ws *workspace.Workspace, dir string, metadata map[string]any, state workspace.State, apiURL string) taskViewJSONContext {
 	localDraft := isLocalDraft(dir, metadata) || state.LocalCreated
 	status := "Synced"
 	pending := false
@@ -356,7 +362,7 @@ func buildTaskViewContext(ws *workspace.Workspace, dir string, metadata map[stri
 		status = "Local changes pending push"
 		pending = true
 	}
-	link, _ := verifiedTaskLink(ws, metadata)
+	link, _ := verifiedTaskLinkForAPIURL(ws, metadata, apiURL)
 	return taskViewJSONContext{
 		Link:           link,
 		SyncStatus:     status,
@@ -392,6 +398,10 @@ func renderTaskViewJSON(dir string, metadata map[string]any, state workspace.Sta
 }
 
 func linkTask(ws *workspace.Workspace, args []string, out io.Writer) error {
+	return linkTaskWithAPIURL(ws, args, config.DefaultAPIURL, out)
+}
+
+func linkTaskWithAPIURL(ws *workspace.Workspace, args []string, apiURL string, out io.Writer) error {
 	if len(args) != 1 {
 		return errors.New("usage: panda link <taskNumber|draft-N>")
 	}
@@ -399,7 +409,7 @@ func linkTask(ws *workspace.Workspace, args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	link, err := verifiedTaskLink(ws, metadata)
+	link, err := verifiedTaskLinkForAPIURL(ws, metadata, apiURL)
 	if err != nil {
 		return err
 	}
@@ -407,7 +417,7 @@ func linkTask(ws *workspace.Workspace, args []string, out io.Writer) error {
 	return nil
 }
 
-func verifiedTaskLink(ws *workspace.Workspace, metadata map[string]any) (string, error) {
+func verifiedTaskLinkForAPIURL(ws *workspace.Workspace, metadata map[string]any, apiURL string) (string, error) {
 	taskID := stringField(metadata, "id")
 	if taskID == "" {
 		return "", fmt.Errorf("task %s has no verified Solutions task ID; publish it with `panda push` first", taskLabel(metadata))
@@ -419,13 +429,17 @@ func verifiedTaskLink(ws *workspace.Workspace, metadata map[string]any) (string,
 	if !same(valueAt(metadata, "number"), valueAt(state.Remote, "number")) {
 		return "", fmt.Errorf("task %s number does not match its verified remote baseline", taskLabel(metadata))
 	}
-	return canonicalTaskLink(metadata["number"], taskID)
+	return canonicalTaskLinkForAPIURL(apiURL, metadata["number"], taskID)
 }
 
 func canonicalTaskLink(taskNumber any, taskID string) (string, error) {
+	return canonicalTaskLinkForAPIURL(config.DefaultAPIURL, taskNumber, taskID)
+}
+
+func canonicalTaskLinkForAPIURL(apiURL string, taskNumber any, taskID string) (string, error) {
 	numberText := ""
 	if taskNumber != nil {
-		numberText = strings.TrimSpace(fmt.Sprint(taskNumber))
+		numberText = strings.TrimSpace(jsonutil.StringValue(taskNumber))
 	}
 	if numberText == "" {
 		return "", errors.New("task number is missing")
@@ -438,5 +452,11 @@ func canonicalTaskLink(taskNumber any, taskID string) (string, error) {
 	if taskID == "" {
 		return "", errors.New("verified task ID is missing")
 	}
-	return fmt.Sprintf("[#%s](https://solutions.slingrs.io/prod/runtime/#views/%s/readOnly/%s)", numberText, url.PathEscape(solutions.TaskViewId), url.PathEscape(taskID)), nil
+	parsed, err := url.Parse(apiURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("invalid Solutions API URL %q", apiURL)
+	}
+	parsed.RawQuery, parsed.Fragment = "", ""
+	parsed.Path = strings.TrimSuffix(strings.TrimSuffix(parsed.Path, "/"), "/api")
+	return fmt.Sprintf("[#%s](%s/#views/%s/readOnly/%s)", numberText, strings.TrimRight(parsed.String(), "/"), url.PathEscape(solutions.TaskViewId), url.PathEscape(taskID)), nil
 }

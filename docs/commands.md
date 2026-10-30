@@ -12,6 +12,10 @@ Authenticates with Solutions and saves the session token in Panda's private
 user configuration. If the email is omitted, Panda prompts for it. The password
 is prompted for and hidden when entered in a terminal.
 
+### `panda logout`
+
+Removes the saved Solutions token and login email from local configuration.
+
 ### `panda config set project <name>`
 
 Looks up a Solutions project by name and selects it as the active project.
@@ -20,6 +24,12 @@ Requires a successful login.
 ### `panda config get project`
 
 Prints the active project name and ID.
+
+### `panda config set api-url <url>` / `panda config get api-url`
+
+Sets or prints the absolute http(s) Solutions API base URL. The
+`PANDA_API_URL` environment variable overrides the saved value. Canonical task
+links use the configured host and runtime path.
 
 ### `panda path`
 
@@ -258,12 +268,13 @@ panda push
 Downloads an attached file on demand using its file ID. Select a file by its
 ID, its 1-based position from `panda files`, or an unambiguous name. By default,
 Panda writes to an OS temporary file and prints its path. Use `--output` (or
-`-o`) to choose a destination. Requires a successful login.
+`-o`) to choose a destination. Existing destination files are protected unless
+`--force` (`-f`) is supplied. Requires a successful login.
 
 ```sh
 panda files 12345
 panda files download 12345 1
-panda files download 12345 file-id --output ./screenshot.png
+panda files download 12345 file-id --output ./screenshot.png --force
 ```
 
 ## Notes and status

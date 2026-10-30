@@ -306,8 +306,6 @@ func relationshipDisplayNameWithCatalog(value any, catalogNames map[string]strin
 	return relationshipDisplayName(value)
 }
 
-func labelsDisplay(value any) string { return labelsDisplayWithCatalog(value, nil) }
-
 func labelsDisplayWithCatalog(value any, catalogNames map[string]string) string {
 	items, _ := value.([]any)
 	names := make([]string, 0, len(items))

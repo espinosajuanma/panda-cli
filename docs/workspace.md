@@ -26,7 +26,8 @@ Print the active workspace path with `panda path`.
 ```
 
 Configuration and workspace directories use private permissions where
-supported by the operating system. `metadata.json` stores task fields and
+supported by the operating system. Mutating commands hold an exclusive lock in
+`.panda/workspace.lock` to prevent concurrent state changes. `metadata.json` stores task fields and
 relationships, including task file IDs and names; descriptions and notes are
 Markdown files. File binaries are not stored in the workspace. Uploads are
 staged as source-path references in sync state until `panda push`; downloads

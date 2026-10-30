@@ -56,6 +56,13 @@ func pushSelected(ctx context.Context, client *solutions.Client, ws *workspace.W
 			problems = append(problems, fmt.Sprintf("%s: %v", taskLabel(local), err))
 			continue
 		}
+		if !state.LocalCreated && stringField(local, "id") == "" && stringField(state.Remote, "id") != "" {
+			dir, local, key, err = recoverCreatedTask(ws, dir, local, key, state)
+			if err != nil {
+				problems = append(problems, fmt.Sprintf("%s: recover created task: %v", stringField(state.Remote, "id"), err))
+				continue
+			}
+		}
 		dirty, err := taskHasLocalChanges(local, state, dir)
 		if err != nil {
 			problems = append(problems, fmt.Sprintf("%s: inspect local changes: %v", taskLabel(local), err))
@@ -79,32 +86,13 @@ func pushSelected(ctx context.Context, client *solutions.Client, ws *workspace.W
 				problems = append(problems, fmt.Sprintf("%s: task was created remotely but the API response omitted its ID", filepath.Base(dir)))
 				continue
 			}
-			local = workspace.MetadataFromRemote(remote)
-			if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), local); err != nil {
-				problems = append(problems, fmt.Sprintf("%s: %v", newID, err))
-				continue
-			}
 			state.Remote = cloneMap(remote)
 			state.LocalCreated = false
 			state.StagedDiscard = false
-			if err := ws.WriteState(newID, state); err != nil {
-				problems = append(problems, fmt.Sprintf("%s: %v", newID, err))
+			dir, local, key, err = recoverCreatedTask(ws, dir, local, key, state)
+			if err != nil {
+				problems = append(problems, fmt.Sprintf("%s: save created task locally: %v", newID, err))
 				continue
-			}
-			if oldPath := ws.StatePathForKey(key); oldPath != ws.StatePathForKey(newID) {
-				_ = os.Remove(oldPath)
-			}
-			key = newID
-			newDir := ws.TaskPath(workspace.DirectoryName(remote))
-			if _, err := os.Stat(newDir); err == nil && newDir != dir {
-				newDir = ws.TaskPath(workspace.DirectoryName(remote) + "-" + safeName(newID))
-			}
-			if newDir != dir {
-				if err := os.Rename(dir, newDir); err != nil {
-					fmt.Fprintf(out, "Created task %s, but kept its local folder at %s: %v\n", newID, filepath.Base(dir), err)
-				} else {
-					dir = newDir
-				}
 			}
 			fmt.Fprintf(out, "Created task %s.\n", taskLabel(local))
 		} else {
@@ -192,7 +180,7 @@ func pushSelected(ctx context.Context, client *solutions.Client, ws *workspace.W
 						continue
 					}
 				}
-				if err := syncRemoteNotes(dir, remote, state.StagedNotes, nil); err != nil {
+				if err := syncRemoteNotes(dir, remote, state.StagedNotes, nil, state.Remote); err != nil {
 					problems = append(problems, fmt.Sprintf("%s: refresh edited notes: %v", taskLabel(local), err))
 					continue
 				}
@@ -238,6 +226,37 @@ func pushSelected(ctx context.Context, client *solutions.Client, ws *workspace.W
 		}
 	}
 	return nil
+}
+
+func recoverCreatedTask(ws *workspace.Workspace, dir string, previous map[string]any, oldKey string, state workspace.State) (string, map[string]any, string, error) {
+	remoteID := stringField(state.Remote, "id")
+	if remoteID == "" {
+		return dir, previous, oldKey, fmt.Errorf("remote baseline has no task ID")
+	}
+	state.LocalCreated = false
+	if err := ws.WriteState(oldKey, state); err != nil {
+		return dir, previous, oldKey, err
+	}
+	if err := ws.WriteState(remoteID, state); err != nil {
+		return dir, previous, oldKey, err
+	}
+	metadata := workspace.MetadataFromRemote(state.Remote)
+	if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), metadata); err != nil {
+		return dir, previous, oldKey, err
+	}
+	if oldKey != remoteID {
+		_ = os.Remove(ws.StatePathForKey(oldKey))
+	}
+	newDir := ws.TaskPath(workspace.DirectoryName(state.Remote))
+	if _, err := os.Stat(newDir); err == nil && newDir != dir {
+		newDir = ws.TaskPath(workspace.DirectoryName(state.Remote) + "-" + safeName(remoteID))
+	}
+	if newDir != dir {
+		if err := os.Rename(dir, newDir); err == nil {
+			dir = newDir
+		}
+	}
+	return dir, metadata, remoteID, nil
 }
 
 func pushTaskDirectories(ws *workspace.Workspace, selectors []string) ([]string, error) {

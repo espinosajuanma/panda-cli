@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"io"
+	"math"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -199,7 +200,7 @@ func editPackageSupplementalFields(record map[string]any, in io.Reader, out io.W
 		record["estimation"] = nil
 	} else if strings.TrimSpace(estimation) != "" {
 		value, err := strconv.ParseFloat(strings.TrimSpace(estimation), 64)
-		if err != nil || value < 0 {
+		if err != nil || value < 0 || math.IsNaN(value) || math.IsInf(value, 0) {
 			return fmt.Errorf("invalid package estimation %q; enter a nonnegative number", estimation)
 		}
 		record["estimation"] = value

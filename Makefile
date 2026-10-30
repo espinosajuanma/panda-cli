@@ -1,7 +1,10 @@
-.PHONY: fmt vet test build check
+.PHONY: fmt fmt-check vet test test-race build check
 
 fmt:
 	gofmt -w ./cmd ./internal
+
+fmt-check:
+	test -z "$(shell gofmt -l ./cmd ./internal)"
 
 vet:
 	go vet ./...
@@ -9,10 +12,14 @@ vet:
 test:
 	go test ./...
 
+test-race:
+	go test -race ./...
+
 build:
 	go build ./...
 
 check:
-	go vet ./...
-	go test ./...
-	go build ./...
+	$(MAKE) fmt-check
+	$(MAKE) vet
+	$(MAKE) test
+	$(MAKE) build

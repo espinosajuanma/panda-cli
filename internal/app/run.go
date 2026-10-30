@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os/signal"
 	"strings"
 
 	"github.com/espinosajuanma/panda-cli/internal/config"
@@ -12,6 +13,12 @@ import (
 )
 
 func Run(args []string, in io.Reader, out, errOut io.Writer) error {
+	ctx, stop := signal.NotifyContext(context.Background(), cancellationSignals()...)
+	defer stop()
+	return RunContext(ctx, args, in, out, errOut)
+}
+
+func RunContext(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
 		return printHelp(out)
 	}
@@ -37,9 +44,19 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 	command, args := args[0], args[1:]
 	switch command {
 	case "login":
-		return login(context.Background(), cfg, client, args, in, out)
+		return login(ctx, cfg, client, args, in, out)
+	case "logout":
+		if len(args) != 0 {
+			return errors.New("usage: panda logout")
+		}
+		cfg.Token, cfg.Email = "", ""
+		if err := cfg.Save(); err != nil {
+			return fmt.Errorf("save configuration: %w", err)
+		}
+		fmt.Fprintln(out, "Logged out.")
+		return nil
 	case "config":
-		return configCommand(context.Background(), cfg, client, args, out)
+		return configCommand(ctx, cfg, client, args, out)
 	case "completion":
 		return completionCommand(args, out)
 	case "path":
@@ -58,6 +75,13 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 		if err != nil {
 			return err
 		}
+		if commandMutatesWorkspace(command, args) {
+			lock, err := ws.LockWorkspace()
+			if err != nil {
+				return err
+			}
+			defer lock.Close()
+		}
 		switch command {
 		case "list":
 			return listTasks(ws, args, out)
@@ -70,14 +94,14 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 			if err := requireLogin(cfg); err != nil {
 				return err
 			}
-			return pull(context.Background(), client, ws, cfg.Project, out)
+			return pull(ctx, client, ws, cfg.Project, out)
 		case "diff":
 			return diff(ws, args, out)
 		case "push":
 			if err := requireLogin(cfg); err != nil {
 				return err
 			}
-			return pushSelected(context.Background(), client, ws, cfg.Project, args, out)
+			return pushSelected(ctx, client, ws, cfg.Project, args, out)
 		case "create":
 			return createTask(ws, cfg.Project, args, in, out)
 		case "edit":
@@ -85,16 +109,16 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 		case "assign":
 			return assignTask(ws, args, out)
 		case "link":
-			return linkTask(ws, args, out)
+			return linkTaskWithAPIURL(ws, args, cfg.APIURL, out)
 		case "edit-note":
 			if err := requireLogin(cfg); err != nil {
 				return err
 			}
-			return editNote(ws, args, client, out)
+			return editNoteContext(ctx, ws, args, client, out)
 		case "view":
-			return viewTask(ws, args, out)
+			return viewTaskWithAPIURL(ws, args, cfg.APIURL, out)
 		case "files":
-			return filesCommand(ws, args, client, out)
+			return filesCommandContext(ctx, ws, args, client, out)
 		case "add-note":
 			return addNote(ws, args, in, out)
 		case "discard":

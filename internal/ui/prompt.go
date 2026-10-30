@@ -39,9 +39,16 @@ func Prompt(in io.Reader, out io.Writer, message string) (string, error) {
 }
 
 func OpenEditor(path string) error {
-	editor := strings.Fields(os.Getenv("EDITOR"))
+	commandLine := os.Getenv("EDITOR")
+	if strings.TrimSpace(commandLine) == "" {
+		commandLine = os.Getenv("VISUAL")
+	}
+	editor, err := SplitCommand(commandLine)
+	if err != nil {
+		return fmt.Errorf("parse editor command: %w", err)
+	}
 	if len(editor) == 0 {
-		return errors.New("EDITOR is not set")
+		return errors.New("EDITOR and VISUAL are not set")
 	}
 	args := append(editor[1:], path)
 	command := exec.Command(editor[0], args...)

@@ -404,7 +404,7 @@ func loadTaskState(ws *workspace.Workspace, dir string, metadata map[string]any)
 	for _, key := range keys {
 		state, err := ws.ReadState(key)
 		if err == nil {
-			if isLocalDraft(dir, metadata) {
+			if isLocalDraft(dir, metadata) && stringField(state.Remote, "id") == "" {
 				state.LocalCreated = true
 			}
 			return state, key, nil

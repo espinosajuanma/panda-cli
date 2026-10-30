@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-var ansiSequenceForTests = regexp.MustCompile("\\x1b\\[[0-?]*[ -/]*[@-~]")
+var ansiSequenceForTests = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
 
 func TestCommandHelpUsesManPageSections(t *testing.T) {
 	var output bytes.Buffer
@@ -16,14 +16,17 @@ func TestCommandHelpUsesManPageSections(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := output.String()
-	if !strings.Contains(text, "\x1b[1;32mPANDA-EDIT(1)\x1b[0m") {
+	if !strings.Contains(text, "PANDA-EDIT(1)") {
 		t.Fatalf("man-page title is missing: %q", text)
 	}
 	plain := ansiSequenceForTests.ReplaceAllString(text, "")
 	for _, section := range []string{"NAME", "SYNOPSIS", "DESCRIPTION", "ARGUMENTS", "EXAMPLES", "SEE ALSO"} {
-		if !strings.Contains(plain, section+"\n") || !strings.Contains(text, "\x1b[1;32m"+section+"\x1b[0m") {
+		if !strings.Contains(plain, section+"\n") {
 			t.Errorf("man-page section %q missing from help: %q", section, text)
 		}
+	}
+	if strings.Contains(text, "\x1b[") {
+		t.Fatalf("non-terminal help output contains ANSI escapes: %q", text)
 	}
 	if strings.Contains(text, "Usage:") {
 		t.Fatalf("legacy usage format remains in command manual: %q", text)
@@ -40,7 +43,7 @@ func TestEveryCommandManualHasManPageCoreSections(t *testing.T) {
 			text := output.String()
 			plain := ansiSequenceForTests.ReplaceAllString(text, "")
 			for _, section := range []string{"NAME", "SYNOPSIS", "DESCRIPTION"} {
-				if !strings.Contains(plain, section+"\n") || !strings.Contains(text, "\x1b[1;32m"+section+"\x1b[0m") {
+				if !strings.Contains(plain, section+"\n") {
 					t.Errorf("manual %q missing %q:\n%s", command, section, output.String())
 				}
 			}
@@ -54,8 +57,8 @@ func TestOptionSectionTitlesAreBoldGreen(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := output.String()
-	if !strings.Contains(text, "\x1b[1;32mOPTIONS\x1b[0m") {
-		t.Fatalf("OPTIONS heading is not bold green:\n%s", text)
+	if !strings.Contains(text, "OPTIONS\n") || strings.Contains(text, "\x1b[") {
+		t.Fatalf("OPTIONS heading missing or non-terminal output contains color:\n%s", text)
 	}
 }
 
@@ -142,7 +145,7 @@ func TestGlobalHelpHasManSectionsAndCommandOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := output.String()
-	if !strings.Contains(text, "\x1b[1;32mPANDA(1)\x1b[0m") {
+	if !strings.Contains(text, "PANDA(1)") || strings.Contains(text, "\x1b[") {
 		t.Fatalf("main manual title is missing: %q", text)
 	}
 	plain := ansiSequenceForTests.ReplaceAllString(text, "")
@@ -154,11 +157,6 @@ func TestGlobalHelpHasManSectionsAndCommandOptions(t *testing.T) {
 	} {
 		if !strings.Contains(plain, expected) {
 			t.Errorf("main help missing %q:\n%s", expected, text)
-		}
-	}
-	for _, section := range []string{"NAME", "SYNOPSIS", "DESCRIPTION", "COMMANDS", "GLOBAL OPTIONS", "ENVIRONMENT", "FILES"} {
-		if !strings.Contains(text, "\x1b[1;32m"+section+"\x1b[0m") {
-			t.Errorf("main help section %q is not bold green:\n%s", section, text)
 		}
 	}
 }

@@ -20,3 +20,16 @@ func TestValueAtAndStringFieldTreatMissingValuesAsEmpty(t *testing.T) {
 		t.Fatalf("missing string field = %q, want empty", got)
 	}
 }
+
+func TestStringValueFormatsLargeJSONNumbersWithoutExponent(t *testing.T) {
+	for value, want := range map[any]string{
+		float64(100000):  "100000",
+		float64(1000000): "1000000",
+		float64(1.25e7):  "12500000",
+		float64(1.5):     "1.5",
+	} {
+		if got := StringValue(value); got != want {
+			t.Errorf("StringValue(%v) = %q, want %q", value, got, want)
+		}
+	}
+}

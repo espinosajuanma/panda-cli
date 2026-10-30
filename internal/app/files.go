@@ -22,14 +22,18 @@ type taskFileReference struct {
 }
 
 func filesCommand(ws *workspace.Workspace, args []string, client *solutions.Client, out io.Writer) error {
+	return filesCommandContext(context.Background(), ws, args, client, out)
+}
+
+func filesCommandContext(ctx context.Context, ws *workspace.Workspace, args []string, client *solutions.Client, out io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: panda files <taskNumber|draft-N> | upload <taskNumber|draft-N> <path> [--description <text>] | download <taskNumber|draft-N> <file-id|index|name> [--output <path>]")
+		return errors.New("usage: panda files <taskNumber|draft-N> | upload <taskNumber|draft-N> <path> [--description <text>] | download <taskNumber|draft-N> <file-id|index|name> [--output <path>] [--force]")
 	}
 	switch args[0] {
 	case "upload":
 		return stageFileUpload(ws, args[1:], out)
 	case "download":
-		return downloadTaskFile(ws, args[1:], client, out)
+		return downloadTaskFileContext(ctx, ws, args[1:], client, out)
 	default:
 		if len(args) != 1 {
 			return errors.New("usage: panda files <taskNumber|draft-N>")
@@ -143,14 +147,15 @@ func stageFileUpload(ws *workspace.Workspace, args []string, out io.Writer) erro
 	return nil
 }
 
-func downloadTaskFile(ws *workspace.Workspace, args []string, client *solutions.Client, out io.Writer) error {
+func downloadTaskFileContext(ctx context.Context, ws *workspace.Workspace, args []string, client *solutions.Client, out io.Writer) error {
 	if len(args) < 2 {
-		return errors.New("usage: panda files download <taskNumber|draft-N> <file-id|index|name> [--output <path>]")
+		return errors.New("usage: panda files download <taskNumber|draft-N> <file-id|index|name> [--output <path>] [--force]")
 	}
 	if client == nil || client.Token == "" {
 		return errors.New("not logged in; run `panda login` first")
 	}
 	outputPath := ""
+	force := false
 	for index := 2; index < len(args); index++ {
 		arg := args[index]
 		switch {
@@ -162,8 +167,10 @@ func downloadTaskFile(ws *workspace.Workspace, args []string, client *solutions.
 			outputPath = args[index]
 		case strings.HasPrefix(arg, "--output="):
 			outputPath = strings.TrimPrefix(arg, "--output=")
+		case arg == "--force", arg == "-f":
+			force = true
 		default:
-			return fmt.Errorf("unexpected option %q; usage: panda files download <taskNumber|draft-N> <file-id|index|name> [--output <path>]", arg)
+			return fmt.Errorf("unexpected option %q; usage: panda files download <taskNumber|draft-N> <file-id|index|name> [--output <path>] [--force]", arg)
 		}
 	}
 	if outputPath == "" && len(args) > 2 {
@@ -204,6 +211,11 @@ func downloadTaskFile(ws *workspace.Workspace, args []string, client *solutions.
 			return absErr
 		}
 		destinationPath = absolute
+		if _, statErr := os.Lstat(destinationPath); statErr == nil && !force {
+			return fmt.Errorf("output file %q already exists; use --force to replace it", destinationPath)
+		} else if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+			return fmt.Errorf("inspect output path: %w", statErr)
+		}
 		parent := filepath.Dir(destinationPath)
 		destinationFile, err = os.CreateTemp(parent, ".panda-download-*.tmp")
 		if err != nil {
@@ -220,7 +232,7 @@ func downloadTaskFile(ws *workspace.Workspace, args []string, client *solutions.
 	if err := destinationFile.Chmod(0o600); err != nil {
 		return err
 	}
-	remoteName, downloadErr := client.DownloadTaskFile(context.Background(), taskID, file.ID, destinationFile)
+	remoteName, downloadErr := client.DownloadTaskFile(ctx, taskID, file.ID, destinationFile)
 	if downloadErr != nil {
 		return downloadErr
 	}
@@ -231,7 +243,7 @@ func downloadTaskFile(ws *workspace.Workspace, args []string, client *solutions.
 		return err
 	}
 	if !temporary {
-		if err := os.Rename(destinationFile.Name(), destinationPath); err != nil {
+		if err := workspace.ReplaceFile(destinationFile.Name(), destinationPath); err != nil {
 			return fmt.Errorf("save downloaded file: %w", err)
 		}
 	}
@@ -356,7 +368,14 @@ func pushStagedFiles(ctx context.Context, client *solutions.Client, ws *workspac
 	}
 
 	attachments := make([]solutions.FileAttachment, 0, len(state.StagedFiles))
-	for _, staged := range state.StagedFiles {
+	preexistingUploadIDs := false
+	for index := range state.StagedFiles {
+		staged := state.StagedFiles[index]
+		if staged.RemoteID != "" {
+			preexistingUploadIDs = true
+			attachments = append(attachments, solutions.FileAttachment{FileID: staged.RemoteID, Description: staged.Description})
+			continue
+		}
 		file, err := os.Open(staged.Path)
 		if err != nil {
 			return state, fmt.Errorf("open staged file %q: %w", staged.Name, err)
@@ -376,13 +395,28 @@ func pushStagedFiles(ctx context.Context, client *solutions.Client, ws *workspac
 		attachments = append(attachments, solutions.FileAttachment{
 			FileID: link.FileID, Description: staged.Description,
 		})
+		state.StagedFiles[index].RemoteID = link.FileID
+		if err := ws.WriteState(key, state); err != nil {
+			return state, fmt.Errorf("save uploaded file ID for %q: %w", staged.Name, err)
+		}
 	}
 
-	updated, err := client.AttachFiles(ctx, taskID, attachments)
-	if err != nil {
-		return state, fmt.Errorf("attach uploaded files to task: %w", err)
+	var updated map[string]any
+	var err error
+	if preexistingUploadIDs {
+		updated, err = client.GetTask(ctx, taskID)
+		if err != nil {
+			return state, fmt.Errorf("check staged file attachments: %w", err)
+		}
 	}
-	if stringField(updated, "id") != taskID || !containsAttachedFiles(updated, attachments) {
+	pending := missingFileAttachments(updated, attachments)
+	if len(pending) > 0 {
+		updated, err = client.AttachFiles(ctx, taskID, pending)
+		if err != nil {
+			return state, fmt.Errorf("attach uploaded files to task: %w", err)
+		}
+	}
+	if updated == nil || stringField(updated, "id") != taskID || !containsAttachedFiles(updated, attachments) {
 		updated, err = client.GetTask(ctx, taskID)
 		if err != nil {
 			return state, fmt.Errorf("refresh task after attaching files: %w", err)
@@ -405,8 +439,25 @@ func pushStagedFiles(ctx context.Context, client *solutions.Client, ws *workspac
 	return state, nil
 }
 
+func missingFileAttachments(taskRecord map[string]any, attachments []solutions.FileAttachment) []solutions.FileAttachment {
+	attached := make(map[string]bool)
+	for _, file := range taskFileReferences(taskRecord) {
+		attached[file.ID] = true
+	}
+	pending := make([]solutions.FileAttachment, 0, len(attachments))
+	for _, attachment := range attachments {
+		if !attached[attachment.FileID] {
+			pending = append(pending, attachment)
+		}
+	}
+	return pending
+}
+
 func validateStagedFiles(files []workspace.StagedFile) error {
 	for _, staged := range files {
+		if staged.RemoteID != "" {
+			continue
+		}
 		info, err := os.Stat(staged.Path)
 		if err != nil {
 			return fmt.Errorf("staged file %q is unavailable: %w", staged.Name, err)
@@ -426,16 +477,7 @@ func validateStagedFiles(files []workspace.StagedFile) error {
 }
 
 func safeTempName(value string) string {
-	var builder strings.Builder
-	for _, char := range value {
-		switch {
-		case unicode.IsLetter(char) || unicode.IsDigit(char) || char == '-' || char == '_' || char == '.':
-			builder.WriteRune(char)
-		case unicode.IsSpace(char):
-			builder.WriteByte('-')
-		}
-	}
-	return strings.Trim(builder.String(), ".-_")
+	return workspace.SafeFileComponent(value)
 }
 
 func containsAttachedFiles(taskRecord map[string]any, attachments []solutions.FileAttachment) bool {

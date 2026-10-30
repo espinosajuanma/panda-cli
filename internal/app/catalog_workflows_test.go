@@ -469,3 +469,12 @@ func TestPullMergesTaskLabelAndPackageAssignments(t *testing.T) {
 		t.Fatalf("remote-only status update was not merged: %#v", local)
 	}
 }
+
+func TestPackageEstimationRejectsNonFiniteValues(t *testing.T) {
+	for _, value := range []string{"NaN", "+Inf", "-Inf"} {
+		record := map[string]any{}
+		if err := editPackageSupplementalFields(record, strings.NewReader("\n"+value+"\n"), io.Discard); err == nil {
+			t.Errorf("estimation %q was accepted", value)
+		}
+	}
+}

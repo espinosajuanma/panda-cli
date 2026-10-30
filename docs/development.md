@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Go 1.26 or newer (as specified in `go.mod`).
+- Go 1.26.10 or newer (as specified in `go.mod`).
 
 ## Local development
 
@@ -13,8 +13,8 @@ make check
 go test -race ./...
 ```
 
-`make check` runs `go vet ./...`, `go test ./...`, and `go build ./...`. Format
-Go files with `make fmt`.
+`make check` verifies formatting and runs `go vet ./...`, `go test ./...`, and
+`go build ./...`. Format Go files with `make fmt`.
 
 To install the working checkout for local use:
 
@@ -27,10 +27,10 @@ unset. Ensure that directory is on `PATH`.
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on pushes and pull requests. It checks Go
-formatting, runs `go vet ./...` and `go test ./...`, and builds all packages
-with `go build ./...`. CI validates changes but does not publish binaries or
-create releases.
+`.github/workflows/ci.yml` runs on pushes and pull requests across Linux, macOS,
+and Windows. It checks formatting, vet, tests, and builds; Linux also runs the
+race detector, static analysis, and vulnerability scanning. CI validates changes
+but does not publish binaries or create releases.
 
 ## Install from GitHub
 

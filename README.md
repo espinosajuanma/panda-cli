@@ -15,7 +15,7 @@ edit with your preferred tools.
 
 ## Requirements
 
-- Go 1.26 or newer.
+- Go 1.26.10 or newer.
 - A Solutions account and access to a project.
 
 ## Installation
@@ -56,6 +56,8 @@ them with `panda push`.
 | Command | Description |
 | --- | --- |
 | `panda pull` / `panda push` | Synchronize local changes with Solutions |
+| `panda login` / `panda logout` | Manage the saved Solutions session |
+| `panda config` / `panda path` | Select project, configure API URL, and inspect workspace |
 | `panda list` | List local tasks by workflow status |
 | `panda estimate` | Quickly assign complexity to selected task statuses and types |
 | `panda create` / `panda edit` | Create or edit tasks locally |
@@ -64,6 +66,9 @@ them with `panda push`.
 | `panda files <task>` | List task file references, stage uploads, and download files on demand |
 | `panda labels` / `panda packages` | Manage project catalogs locally |
 | `panda link <task>` | Print a verified Markdown link to a synced task |
+| `panda assign` / `panda add-note` / `panda discard` | Stage assignment and task actions |
+| `panda edit-note` / `panda clean` | Edit synced notes or restore the saved baseline |
+| `panda completion <shell>` | Generate Bash, Zsh, or Fish completions |
 
 Run `panda help <command>` for command-specific help. See the full
 [command reference](docs/commands.md) for flags, examples, and interactive
@@ -74,7 +79,8 @@ behavior.
 Configuration and task files live under the OS user configuration directory in
 `panda-dashboard/`. Run `panda path` to print the active workspace path. See
 [workspace documentation](docs/workspace.md) for the file layout, task data, and
-sync behavior.
+sync behavior. Configure the API with `panda config set api-url <url>` or the
+`PANDA_API_URL` environment variable; the environment variable takes precedence.
 
 ## Development
 
@@ -86,3 +92,7 @@ go test -race ./...
 See [development and release instructions](docs/development.md) and the
 [architecture guide](docs/architecture.md). The Solutions API schema is
 available in [`assets/solutions-openapi.json`](assets/solutions-openapi.json).
+
+## License
+
+MIT; see [`LICENSE`](LICENSE).

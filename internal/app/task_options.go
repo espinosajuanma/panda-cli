@@ -155,6 +155,11 @@ func applyTaskFieldOptions(ws *workspace.Workspace, metadata map[string]any, opt
 			updated["package"] = map[string]any{"id": catalogRecordID(match), "label": catalogRecordName(packageCatalog, match)}
 		}
 	}
+	if stringField(updated, "type") == "release" {
+		if _, explicitlySet := options.fields["package"]; !explicitlySet {
+			delete(updated, "package")
+		}
+	}
 
 	if options.assigneesProvided {
 		if len(options.assignees) == 1 && isNoneSelector(options.assignees[0]) {

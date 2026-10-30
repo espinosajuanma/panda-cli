@@ -46,6 +46,45 @@ func TestOptionEditPreservesUnspecifiedNullableAndAbsentMetadata(t *testing.T) {
 	}
 }
 
+func TestOptionEditClearsPackageWhenChangingTaskToRelease(t *testing.T) {
+	ws, dir := makeSyncedTask(t, map[string]any{
+		"id": "task-release-option", "number": float64(445), "title": "Packaged task",
+		"type": "feature", "priority": "medium", "status": "new",
+		"package":     map[string]any{"id": "package-1", "label": "Milestone"},
+		"description": "",
+	})
+	if err := editTask(ws, []string{"445", "--type", "release"}, strings.NewReader(""), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	metadata, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata["type"] != "release" {
+		t.Fatalf("type = %v, want release", metadata["type"])
+	}
+	if _, exists := metadata["package"]; exists {
+		t.Fatalf("package was not cleared: %#v", metadata["package"])
+	}
+}
+
+func TestOptionEditRejectsPackageOnReleaseTask(t *testing.T) {
+	ws, dir := makeSyncedTask(t, map[string]any{
+		"id": "task-release-package-option", "number": float64(446), "title": "Release",
+		"type": "feature", "priority": "medium", "status": "new", "description": "",
+	})
+	if err := editTask(ws, []string{"446", "--type", "release", "--package", "Milestone"}, strings.NewReader(""), io.Discard); err == nil {
+		t.Fatal("explicit package assignment to a release task should fail")
+	}
+	metadata, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata["type"] != "feature" {
+		t.Fatalf("failed edit changed task type: %v", metadata["type"])
+	}
+}
+
 func TestOptionEditDescriptionFileAndStdinPreserveMarkdownAndTrailingNewlines(t *testing.T) {
 	description := []byte("# Heading\n\nA **multiline** body.\n\n")
 	descriptionPath := filepath.Join(t.TempDir(), "body.md")

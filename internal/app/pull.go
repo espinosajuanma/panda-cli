@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -61,6 +60,25 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 	}
 	updated, created, conflictCount := 0, 0, labelConflicts+packageConflicts
 	remoteIDs := make(map[string]bool, len(tasks))
+	localByRemoteID := make(map[string]struct {
+		dir      string
+		metadata map[string]any
+	})
+	localDirs, err := ws.TaskDirectories()
+	if err != nil {
+		return err
+	}
+	for _, localDir := range localDirs {
+		metadata, readErr := workspace.ReadMap(filepath.Join(localDir, "metadata.json"))
+		if readErr == nil {
+			if id := stringField(metadata, "id"); id != "" {
+				localByRemoteID[id] = struct {
+					dir      string
+					metadata map[string]any
+				}{localDir, metadata}
+			}
+		}
+	}
 	for taskIndex, remote := range tasks {
 		id := stringField(remote, "id")
 		if id == "" {
@@ -68,8 +86,9 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 			continue
 		}
 		remoteIDs[id] = true
-		dir, local, err := ws.FindByRemoteID(id)
-		if errors.Is(err, os.ErrNotExist) {
+		localEntry, exists := localByRemoteID[id]
+		dir, local := localEntry.dir, localEntry.metadata
+		if !exists {
 			dir = ws.TaskPath(workspace.DirectoryName(remote))
 			if _, statErr := os.Stat(dir); statErr == nil {
 				dir = ws.TaskPath(workspace.DirectoryName(remote) + "-" + id)
@@ -89,7 +108,7 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 				return err
 			}
 			state := workspace.State{Remote: cloneMap(remote)}
-			if err := syncRemoteNotes(dir, remote, state.StagedNotes, nil); err != nil {
+			if err := syncRemoteNotes(dir, remote, state.StagedNotes, nil, nil); err != nil {
 				return err
 			}
 			if err := ws.WriteState(id, state); err != nil {
@@ -98,9 +117,6 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 			created++
 			updatePullStage(progress, 75, 95, taskIndex+1, len(tasks))
 			continue
-		}
-		if err != nil {
-			return err
 		}
 		state, err := ws.ReadState(id)
 		if err != nil {
@@ -167,7 +183,7 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 			}
 			reports = append(reports, fmt.Sprintf("%s task %s: %s", colorText(out, "1;31", "Conflict"), taskLabel(local), strings.Join(labels, ", ")))
 		}
-		if err := syncRemoteNotes(dir, remote, state.StagedNotes, localNoteNames); err != nil {
+		if err := syncRemoteNotes(dir, remote, state.StagedNotes, localNoteNames, state.Remote); err != nil {
 			return err
 		}
 		baseline := state.Remote
@@ -180,10 +196,6 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 		updatePullStage(progress, 75, 95, taskIndex+1, len(tasks))
 	}
 	missingRemote := 0
-	localDirs, err := ws.TaskDirectories()
-	if err != nil {
-		return err
-	}
 	for _, dir := range localDirs {
 		metadata, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
 		if err != nil {

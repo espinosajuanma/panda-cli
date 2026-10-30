@@ -13,17 +13,19 @@ var mainCommandDetails = map[string][]string{
 	},
 }
 
-func printHelp(out io.Writer) error { return writeHelpOutput(out, renderMainHelp) }
+func printHelp(out io.Writer) error {
+	return writeHelpOutput(out, renderMainHelp)
+}
 
-func renderMainHelp(out io.Writer) {
-	printManHeader(out, "PANDA")
-	writeManSection(out, "NAME", []string{"panda - synchronize Solutions tasks with a local task workspace"})
-	writeManSection(out, "SYNOPSIS", []string{"panda [global options] <command> [arguments]"})
-	writeManSection(out, "DESCRIPTION", []string{
+func renderMainHelp(out, colorTarget io.Writer) {
+	printManHeader(out, colorTarget, "PANDA")
+	writeManSection(out, colorTarget, "NAME", []string{"panda - synchronize Solutions tasks with a local task workspace"})
+	writeManSection(out, colorTarget, "SYNOPSIS", []string{"panda [global options] <command> [arguments]"})
+	writeManSection(out, colorTarget, "DESCRIPTION", []string{
 		"Panda pulls Solutions tasks into Markdown and JSON files, lets you edit them locally, and publishes selected changes with push.",
 		"Use command-specific help for detailed syntax and options: panda <command> --help or panda help <command>.",
 	})
-	writeSectionTitle(out, "COMMANDS")
+	writeSectionTitle(out, colorTarget, "COMMANDS")
 	for _, command := range mainCommands {
 		synopsis := "panda " + command.command
 		if command.synopsis != "" {
@@ -36,14 +38,15 @@ func renderMainHelp(out io.Writer) {
 		}
 		fmt.Fprintln(out)
 	}
-	writeSectionTitle(out, "GLOBAL OPTIONS")
+	writeSectionTitle(out, colorTarget, "GLOBAL OPTIONS")
 	writeManualOption(out, manualOption{"-h, --help", "Display the main manual. Append --help to a command for its manual page."})
 	fmt.Fprintln(out)
-	writeSectionTitle(out, "ENVIRONMENT")
+	writeSectionTitle(out, colorTarget, "ENVIRONMENT")
 	writeManualOption(out, manualOption{"EDITOR", "Select the editor used by edit, edit-note, and add-note."})
 	writeManualOption(out, manualOption{"PAGER", "Select the pager used for long output; less is configured to leave its output visible after exit."})
+	writeManualOption(out, manualOption{"PANDA_API_URL", "Override the configured Solutions API base URL."})
 	fmt.Fprintln(out)
-	writeManSection(out, "FILES", []string{"Configuration and task files are stored under the operating system's user config directory in panda-dashboard/. Run panda path to print the active workspace path."})
+	writeManSection(out, colorTarget, "FILES", []string{"Configuration and task files are stored under the operating system's user config directory in panda-dashboard/. Run panda path to print the active workspace path."})
 }
 
 func printCommandHelp(command string, out io.Writer) error {
@@ -52,31 +55,31 @@ func printCommandHelp(command string, out io.Writer) error {
 	if !ok {
 		return fmt.Errorf("no help available for %q", command)
 	}
-	return writeHelpOutput(out, func(out io.Writer) {
+	return writeHelpOutput(out, func(out, colorTarget io.Writer) {
 		pageTitle := "PANDA-" + strings.ToUpper(strings.ReplaceAll(command, " ", "-"))
-		printManHeader(out, pageTitle)
-		writeManSection(out, "NAME", []string{page.name})
-		writeManSection(out, "SYNOPSIS", page.synopsis)
-		writeManSection(out, "DESCRIPTION", page.description)
+		printManHeader(out, colorTarget, pageTitle)
+		writeManSection(out, colorTarget, "NAME", []string{page.name})
+		writeManSection(out, colorTarget, "SYNOPSIS", page.synopsis)
+		writeManSection(out, colorTarget, "DESCRIPTION", page.description)
 		if len(page.arguments) > 0 {
-			writeSectionTitle(out, "ARGUMENTS")
+			writeSectionTitle(out, colorTarget, "ARGUMENTS")
 			for _, argument := range page.arguments {
 				writeManualOption(out, argument)
 			}
 			fmt.Fprintln(out)
 		}
 		if len(page.options) > 0 {
-			writeSectionTitle(out, "OPTIONS")
+			writeSectionTitle(out, colorTarget, "OPTIONS")
 			for _, option := range page.options {
 				writeManualOption(out, option)
 			}
 			fmt.Fprintln(out)
 		}
 		if len(page.examples) > 0 {
-			writeManSection(out, "EXAMPLES", page.examples)
+			writeManSection(out, colorTarget, "EXAMPLES", page.examples)
 		}
 		if len(page.seeAlso) > 0 {
-			writeManSection(out, "SEE ALSO", []string{strings.Join(page.seeAlso, ", ")})
+			writeManSection(out, colorTarget, "SEE ALSO", []string{strings.Join(page.seeAlso, ", ")})
 		}
 	})
 }
@@ -90,7 +93,7 @@ func commandHelpKey(args []string) string {
 		if len(args) > 1 {
 			switch args[1] {
 			case "get", "set":
-				if len(args) > 2 && args[2] == "project" {
+				if len(args) > 2 && (args[2] == "project" || args[2] == "api-url") {
 					return "config " + args[1] + " " + args[2]
 				}
 				return "config " + args[1]
@@ -120,7 +123,7 @@ func commandHelpKey(args []string) string {
 	return args[0]
 }
 
-func printManHeader(out io.Writer, title string) {
+func printManHeader(out, colorTarget io.Writer, title string) {
 	title += "(1)"
 	const width = 80
 	middle := "Panda CLI Manual"
@@ -129,25 +132,27 @@ func printManHeader(out io.Writer, title string) {
 		gap = 2
 	}
 	leftGap, rightGap := gap/2, gap-gap/2
-	fmt.Fprintf(out, "\x1b[1;32m%s\x1b[0m%s%s%s\x1b[1;32m%s\x1b[0m\n\n", title, strings.Repeat(" ", leftGap), middle, strings.Repeat(" ", rightGap), title)
+	fmt.Fprintf(out, "%s%s%s%s%s\n\n", colorText(colorTarget, "1;32", title), strings.Repeat(" ", leftGap), middle, strings.Repeat(" ", rightGap), colorText(colorTarget, "1;32", title))
 }
 
-func writeManSection(out io.Writer, section string, paragraphs []string) {
+func writeManSection(out, colorTarget io.Writer, section string, paragraphs []string) {
 	if len(paragraphs) == 0 {
 		return
 	}
-	writeSectionTitle(out, section)
+	writeSectionTitle(out, colorTarget, section)
 	for _, paragraph := range paragraphs {
 		writeWrapped(out, "    ", paragraph, 84)
 	}
 	fmt.Fprintln(out)
 }
 
-func writeSectionTitle(out io.Writer, title string) { fmt.Fprintf(out, "\x1b[1;32m%s\x1b[0m\n", title) }
+func writeSectionTitle(out, colorTarget io.Writer, title string) {
+	fmt.Fprintln(out, colorText(colorTarget, "1;32", title))
+}
 
-func writeHelpOutput(out io.Writer, render func(io.Writer)) error {
+func writeHelpOutput(out io.Writer, render func(io.Writer, io.Writer)) error {
 	return writePagedOutput(out, func(rendered io.Writer) error {
-		render(rendered)
+		render(rendered, out)
 		return nil
 	})
 }

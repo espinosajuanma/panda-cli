@@ -124,6 +124,22 @@ func login(ctx context.Context, cfg *config.Config, client *solutions.Client, ar
 }
 
 func configCommand(ctx context.Context, cfg *config.Config, client *solutions.Client, args []string, out io.Writer) error {
+	if len(args) == 2 && args[0] == "get" && args[1] == "api-url" {
+		fmt.Fprintln(out, cfg.APIURL)
+		return nil
+	}
+	if len(args) == 3 && args[0] == "set" && args[1] == "api-url" {
+		apiURL, err := config.ValidateAPIURL(args[2])
+		if err != nil {
+			return err
+		}
+		cfg.APIURL = apiURL
+		if err := cfg.Save(); err != nil {
+			return fmt.Errorf("save configuration: %w", err)
+		}
+		fmt.Fprintf(out, "Set Solutions API URL to %s.\n", apiURL)
+		return nil
+	}
 	if len(args) == 2 && args[0] == "get" && args[1] == "project" {
 		if cfg.Project == nil {
 			fmt.Fprintln(out, "No project selected.")
@@ -147,5 +163,5 @@ func configCommand(ctx context.Context, cfg *config.Config, client *solutions.Cl
 		fmt.Fprintf(out, "Selected project %s (%s).\n", project.Name, project.ID)
 		return nil
 	}
-	return errors.New("usage: panda config get project | panda config set project <name>")
+	return errors.New("usage: panda config get project|api-url | panda config set project <name> | panda config set api-url <url>")
 }

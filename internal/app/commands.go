@@ -12,8 +12,11 @@ type mainCommand struct {
 // mainCommands is the source for both the help index and root command completion.
 var mainCommands = []mainCommand{
 	{"login", "[email]", "Authenticate with Solutions and save a session.", false},
+	{"logout", "", "Clear the saved Solutions login session.", false},
 	{"config set project <name>", "", "Validate and select the active project.", false},
 	{"config get project", "", "Display the active project.", false},
+	{"config set api-url <url>", "", "Set the Solutions API base URL.", false},
+	{"config get api-url", "", "Display the Solutions API base URL.", false},
 	{"path", "", "Print the selected project's workspace path.", false},
 	{"completion <bash|zsh|fish>", "", "Print shell completion setup code.", false},
 	{"labels [list|create|edit|delete]", "", "Manage project labels locally.", true},
@@ -60,4 +63,17 @@ func commandNeedsWorkspace(name string) bool {
 		}
 	}
 	return false
+}
+
+func commandMutatesWorkspace(name string, args []string) bool {
+	switch name {
+	case "estimate", "pull", "push", "create", "edit", "assign", "edit-note", "add-note", "discard", "clean":
+		return true
+	case "files":
+		return len(args) > 0 && args[0] == "upload"
+	case "labels", "packages":
+		return len(args) == 0 || args[0] != "list"
+	default:
+		return false
+	}
 }

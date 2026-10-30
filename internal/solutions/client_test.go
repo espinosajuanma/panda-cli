@@ -35,6 +35,28 @@ func TestLoginSendsCredentials(t *testing.T) {
 	}
 }
 
+func TestGetRequestRetriesTransientServerFailure(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if requests < 2 {
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"task-1"}`))
+	}))
+	defer server.Close()
+
+	task, err := NewClient(server.URL, "").GetTask(context.Background(), "task-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests != 2 || task["id"] != "task-1" {
+		t.Fatalf("requests=%d task=%#v", requests, task)
+	}
+}
+
 func TestListTasksFollowsOffsetAndSendsProjectFilter(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

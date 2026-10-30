@@ -14,7 +14,7 @@ import (
 	"golang.org/x/term"
 )
 
-var ansiEscapeSequence = regexp.MustCompile("\\x1b\\[[0-?]*[ -/]*[@-~]")
+var ansiEscapeSequence = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
 
 func OutputFitsScreen(output []byte, width, height int) bool {
 	if width <= 0 || height <= 0 {
@@ -42,7 +42,11 @@ func OutputFitsScreen(output []byte, width, height int) bool {
 }
 
 func PageOutput(out io.Writer, content []byte) error {
-	pager := strings.Fields(os.Getenv("PAGER"))
+	pager, parseErr := SplitCommand(os.Getenv("PAGER"))
+	if parseErr != nil {
+		_, writeErr := io.Copy(out, bytes.NewReader(content))
+		return writeErr
+	}
 	if len(pager) == 0 {
 		pager = []string{"less", "-FRX"}
 	}

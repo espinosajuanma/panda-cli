@@ -246,10 +246,6 @@ func parseDiffOptions(args []string) (diffOptions, error) {
 func isTerminal(out io.Writer) bool                 { return ui.IsTerminal(out) }
 func pageOutput(out io.Writer, output []byte) error { return ui.PageOutput(out, output) }
 func configureLessPager(pager []string) []string    { return ui.ConfigureLessPager(pager) }
-func hasLessOption(args []string, shortOptions, longOption string) bool {
-	return ui.HasLessOption(args, shortOptions, longOption)
-}
-
 func formatDiffValue(value any) string {
 	switch value := value.(type) {
 	case nil:

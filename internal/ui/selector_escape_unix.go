@@ -1,6 +1,6 @@
 //go:build aix || android || darwin || dragonfly || freebsd || illumos || linux || netbsd || openbsd || solaris
 
-package app
+package ui
 
 import (
 	"errors"

@@ -58,12 +58,14 @@ func TestPushUploadsAndAttachesStagedFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	var uploadSeen, attachSeen bool
+	var uploadCount, attachAttempts int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/data/dev.tasks/task-files":
 			_ = json.NewEncoder(w).Encode(remote)
 		case r.Method == http.MethodPost && r.URL.Path == "/files":
+			uploadCount++
 			mediaType, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 			if err != nil || mediaType != "multipart/form-data" {
 				t.Errorf("unexpected upload content type: %q, err=%v", r.Header.Get("Content-Type"), err)
@@ -86,6 +88,7 @@ func TestPushUploadsAndAttachesStagedFiles(t *testing.T) {
 			uploadSeen = true
 			_, _ = io.WriteString(w, `{"fileId":"uploaded-1","fileLink":"/files/uploaded-1"}`)
 		case r.Method == http.MethodPut && r.URL.Path == "/data/dev.tasks/task-files/attachFile":
+			attachAttempts++
 			var body map[string][]map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				t.Error(err)
@@ -100,6 +103,10 @@ func TestPushUploadsAndAttachesStagedFiles(t *testing.T) {
 				"description": "Requirements",
 			}}
 			attachSeen = true
+			if attachAttempts == 1 {
+				http.Error(w, "temporary attach failure", http.StatusInternalServerError)
+				return
+			}
 			_ = json.NewEncoder(w).Encode(remote)
 		default:
 			http.NotFound(w, r)
@@ -109,11 +116,19 @@ func TestPushUploadsAndAttachesStagedFiles(t *testing.T) {
 
 	var output strings.Builder
 	client := solutions.NewClient(server.URL, "token")
-	if err := push(context.Background(), client, ws, &config.Project{ID: "project-1", Name: "Alpha"}, &output); err != nil {
+	project := &config.Project{ID: "project-1", Name: "Alpha"}
+	if err := push(context.Background(), client, ws, project, &output); err == nil {
+		t.Fatal("first attach attempt should fail")
+	}
+	state, err = ws.ReadState("task-files")
+	if err != nil || len(state.StagedFiles) != 1 || state.StagedFiles[0].RemoteID != "uploaded-1" {
+		t.Fatalf("uploaded ID was not saved for retry: %#v, error=%v", state.StagedFiles, err)
+	}
+	if err := push(context.Background(), client, ws, project, &output); err != nil {
 		t.Fatal(err)
 	}
-	if !uploadSeen || !attachSeen {
-		t.Fatalf("upload/attach requests seen = %v/%v", uploadSeen, attachSeen)
+	if !uploadSeen || !attachSeen || uploadCount != 1 || attachAttempts != 1 {
+		t.Fatalf("upload/attach counts = %d/%d, seen=%v/%v", uploadCount, attachAttempts, uploadSeen, attachSeen)
 	}
 	local, err := workspace.ReadMap(filepath.Join(ws.TaskPath("42"), "metadata.json"))
 	if err != nil {
@@ -160,6 +175,23 @@ func TestFilesDownloadWritesToRequestedPath(t *testing.T) {
 	}
 	if string(data) != "report content" || !strings.Contains(output.String(), destination) {
 		t.Fatalf("download content=%q output=%q", data, output.String())
+	}
+	if err := os.WriteFile(destination, []byte("keep existing"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := filesCommand(ws, []string{"download", "42", "file-1", "--output", destination}, client, io.Discard); err == nil {
+		t.Fatal("download unexpectedly overwrote an existing file")
+	}
+	data, err = os.ReadFile(destination)
+	if err != nil || string(data) != "keep existing" {
+		t.Fatalf("existing file changed after rejected download: %q, %v", data, err)
+	}
+	if err := filesCommand(ws, []string{"download", "42", "file-1", "--output", destination, "--force"}, client, io.Discard); err != nil {
+		t.Fatalf("forced download failed: %v", err)
+	}
+	data, err = os.ReadFile(destination)
+	if err != nil || string(data) != "report content" {
+		t.Fatalf("forced download content=%q, error=%v", data, err)
 	}
 }
 

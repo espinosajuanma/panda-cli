@@ -67,3 +67,19 @@ func TestLoadIgnoresLegacyProjectViewID(t *testing.T) {
 		t.Fatalf("obsolete per-project view setting was saved: %s", saved)
 	}
 }
+
+func TestLoadUsesValidatedAPIURLEnvironmentOverride(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("PANDA_API_URL", "https://solutions.example/runtime/api/")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.APIURL != "https://solutions.example/runtime/api" {
+		t.Fatalf("API URL = %q", cfg.APIURL)
+	}
+	t.Setenv("PANDA_API_URL", "file:///etc/passwd")
+	if _, err := Load(); err == nil {
+		t.Fatal("invalid API URL override was accepted")
+	}
+}

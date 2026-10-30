@@ -8,7 +8,7 @@ and `push` reconcile that workspace with the Solutions API.
 ```text
 cmd/panda
   └── internal/app       command dispatch and command workflows
-        ├── internal/ui  terminal styling, paging, prompts, and editor launch
+        ├── internal/ui  terminal styling, paging, prompts, selectors, and editor launch
         ├── internal/task task field/status/effort definitions
         ├── internal/catalog catalog kind and field definitions
         ├── internal/diff line diff algorithm
@@ -23,10 +23,6 @@ Solutions and metadata boundaries. Keep those maps at the boundary so unknown
 API fields continue to survive local reads, edits, and writes. Stable
 application concepts such as sync state and remote notes should use explicit
 types.
-
-Interactive selector rendering and terminal-mode handling are still
-implemented in `internal/app`; moving them into `internal/ui` is a remaining
-extraction step.
 
 The intended dependency direction is from command entry points toward domain,
 filesystem, and transport helpers. Lower-level packages must not import
@@ -44,8 +40,11 @@ reviewed migration is introduced.
 - Pull fetches project catalogs, members, and tasks; it merges remote changes
   against the saved baseline while retaining independent local changes.
 - Push checks for overlapping remote edits before sending local task/catalog
-  changes and staged actions. Staged file uploads retain only a source-path
-  reference until push; successful sync stores remote file IDs, not binaries.
+  changes and staged actions. Staged file uploads retain a source-path reference
+  until upload; their remote ID is saved until attachment succeeds. Binaries are
+  never stored in the workspace.
+- Mutating commands hold an exclusive workspace lock. HTTP GET requests use
+  bounded retries for transient failures and honor cancellation.
 - Merge and conflict rules should be pure computations where practical; file
   writes and API calls belong in orchestration/repository code.
 - Baselines advance only for successfully synchronized data, preserving the

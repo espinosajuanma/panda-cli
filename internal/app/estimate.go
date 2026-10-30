@@ -67,7 +67,6 @@ func estimateTasks(ws *workspace.Workspace, args []string, in io.Reader, out io.
 				continue
 			case estimateQuit:
 				quit = true
-				break
 			case estimateSet:
 				if err := saveTaskComplexity(current, selected, out); err != nil {
 					return err
@@ -85,7 +84,6 @@ func estimateTasks(ws *workspace.Workspace, args []string, in io.Reader, out io.
 				continue
 			case estimateQuit:
 				quit = true
-				break
 			case estimateSet:
 				if err := saveTaskComplexity(current, selected, out); err != nil {
 					return err
@@ -231,16 +229,7 @@ func findEstimateTasks(ws *workspace.Workspace, options estimateOptions) ([]esti
 	for _, status := range options.statuses {
 		group := byStatus[status]
 		sort.SliceStable(group, func(i, j int) bool {
-			leftRank := stringField(group[i].metadata, "rank")
-			rightRank := stringField(group[j].metadata, "rank")
-			if leftRank == "" || rightRank == "" {
-				if leftRank != rightRank {
-					return leftRank != ""
-				}
-			} else if leftRank != rightRank {
-				return leftRank < rightRank
-			}
-			return compareTaskNumbers(group[i].metadata["number"], group[j].metadata["number"]) < 0
+			return taskMetadataRankLess(group[i].metadata, group[j].metadata)
 		})
 		allTasks = append(allTasks, group...)
 		for _, current := range group {

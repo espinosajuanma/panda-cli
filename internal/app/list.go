@@ -219,18 +219,19 @@ func orderedTaskStatuses(groups map[string][]map[string]any) []string {
 }
 
 func sortTasksByRank(tasks []map[string]any) {
-	sort.SliceStable(tasks, func(i, j int) bool {
-		leftRank := stringField(tasks[i], "rank")
-		rightRank := stringField(tasks[j], "rank")
-		if leftRank == "" || rightRank == "" {
-			if leftRank != rightRank {
-				return leftRank != ""
-			}
-		} else if leftRank != rightRank {
-			return leftRank < rightRank
+	sort.SliceStable(tasks, func(i, j int) bool { return taskMetadataRankLess(tasks[i], tasks[j]) })
+}
+
+func taskMetadataRankLess(left, right map[string]any) bool {
+	leftRank, rightRank := stringField(left, "rank"), stringField(right, "rank")
+	if leftRank == "" || rightRank == "" {
+		if leftRank != rightRank {
+			return leftRank != ""
 		}
-		return compareTaskNumbers(tasks[i]["number"], tasks[j]["number"]) < 0
-	})
+	} else if leftRank != rightRank {
+		return leftRank < rightRank
+	}
+	return compareTaskNumbers(left["number"], right["number"]) < 0
 }
 
 func compareTaskNumbers(left, right any) int {

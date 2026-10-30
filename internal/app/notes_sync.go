@@ -153,8 +153,9 @@ func pushStagedNotes(ctx context.Context, client *solutions.Client, ws *workspac
 		if err != nil {
 			return state, err
 		}
+		previous := state.Remote
 		state.Remote = cloneMap(updated)
-		if err := syncRemoteNotes(dir, updated, state.StagedNotes, nil); err != nil {
+		if err := syncRemoteNotes(dir, updated, state.StagedNotes, nil, previous); err != nil {
 			return state, err
 		}
 		_ = os.Remove(filepath.Join(dir, "notes", filename))
@@ -312,7 +313,7 @@ func changedNoteFilenames(dir string, baseline map[string]any) ([]string, error)
 	return filenames, nil
 }
 
-func syncRemoteNotes(dir string, remote map[string]any, stagedNotes, preservedNotes []string) error {
+func syncRemoteNotes(dir string, remote map[string]any, stagedNotes, preservedNotes []string, previous map[string]any) error {
 	notes, err := getRemoteNotes(remote)
 	if err != nil {
 		return err
@@ -331,6 +332,22 @@ func syncRemoteNotes(dir string, remote map[string]any, stagedNotes, preservedNo
 			continue
 		}
 		if err := workspace.WriteFileAtomic(path, []byte(note.markdown), 0o600); err != nil {
+			return err
+		}
+	}
+	current := make(map[string]bool, len(notes))
+	for _, note := range notes {
+		current[note.filename] = true
+	}
+	previousNotes, err := getRemoteNotes(previous)
+	if err != nil {
+		return err
+	}
+	for _, note := range previousNotes {
+		if current[note.filename] || staged[note.filename] || preserved[note.filename] {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, "notes", note.filename)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 	}

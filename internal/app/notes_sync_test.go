@@ -56,6 +56,56 @@ func TestEditNoteOpensOnlyCurrentUsersSyncedNote(t *testing.T) {
 	}
 }
 
+func TestSyncRemoteNotesRemovesDeletedBaselineNotesOnly(t *testing.T) {
+	dir := t.TempDir()
+	notesDir := filepath.Join(dir, "notes")
+	if err := os.MkdirAll(notesDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const timestamp = int64(1793188800000)
+	oldFilename := noteFilename(time.UnixMilli(timestamp), "Juan", 1)
+	for _, filename := range []string{oldFilename, "personal.md"} {
+		if err := os.WriteFile(filepath.Join(notesDir, filename), []byte("keep or remove"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	previous := map[string]any{"notes": []any{map[string]any{
+		"note": "<p>Deleted remotely</p>", "timestamp": float64(timestamp),
+		"addedBy": map[string]any{"id": "user-1", "label": "Juan"},
+	}}}
+	if err := syncRemoteNotes(dir, map[string]any{"notes": []any{}}, nil, nil, previous); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(notesDir, oldFilename)); !os.IsNotExist(err) {
+		t.Fatalf("deleted remote note remained: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(notesDir, "personal.md")); err != nil {
+		t.Fatalf("untracked note was removed: %v", err)
+	}
+}
+
+func TestSyncRemoteNotesPreservesStagedOrEditedDeletedNotes(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "notes"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const timestamp = int64(1793188800000)
+	filename := noteFilename(time.UnixMilli(timestamp), "Juan", 1)
+	if err := os.WriteFile(filepath.Join(dir, "notes", filename), []byte("local edit"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	previous := map[string]any{"notes": []any{map[string]any{
+		"note": "<p>Original</p>", "timestamp": float64(timestamp),
+		"addedBy": map[string]any{"id": "user-1", "label": "Juan"},
+	}}}
+	if err := syncRemoteNotes(dir, map[string]any{"notes": []any{}}, nil, []string{filename}, previous); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, "notes", filename)); err != nil || string(data) != "local edit" {
+		t.Fatalf("edited note not preserved: %q, %v", data, err)
+	}
+}
+
 func TestPullPreservesEditedNotesAndReportsOverlappingRemoteEdits(t *testing.T) {
 	const timestamp = int64(1793188800000)
 	baseline := map[string]any{"id": "task-note-pull", "number": float64(13768), "version": float64(1), "title": "Pull edited notes", "type": "feature", "priority": "medium", "complexity": "s", "status": "new", "description": "", "project": map[string]any{"id": "project-1"}, "labels": []any{}, "assignees": []any{}, "reviewers": []any{}, "notes": []any{map[string]any{"note": "<p>Original note body</p>", "timestamp": float64(timestamp), "addedBy": map[string]any{"id": "user-1", "label": "Juan"}}}}

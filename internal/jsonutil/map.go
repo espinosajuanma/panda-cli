@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strconv"
 )
 
 // CloneMap returns an independent JSON-shaped copy of value.
@@ -32,13 +33,19 @@ func StringField(values map[string]any, key string) string {
 	if values == nil || values[key] == nil {
 		return ""
 	}
-	return fmt.Sprint(values[key])
+	return StringValue(values[key])
 }
 
 // StringValue formats an optional JSON value.
 func StringValue(value any) string {
 	if value == nil {
 		return ""
+	}
+	switch number := value.(type) {
+	case float64:
+		return strconv.FormatFloat(number, 'f', -1, 64)
+	case float32:
+		return strconv.FormatFloat(float64(number), 'f', -1, 32)
 	}
 	return fmt.Sprint(value)
 }

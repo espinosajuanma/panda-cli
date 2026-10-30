@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/espinosajuanma/panda-cli/internal/solutions"
 	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
@@ -171,6 +172,27 @@ func TestTaskViewShowsLocalDraftContextWithoutRemoteLink(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "Sync        Local draft") || strings.Contains(output.String(), "Task link:") {
 		t.Fatalf("unexpected local draft view:\n%s", output.String())
+	}
+}
+
+func TestCanonicalTaskLinkFormatsLargeNumberAsDecimal(t *testing.T) {
+	link, err := canonicalTaskLink(float64(1000000), "task-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(link, "[#1000000]") {
+		t.Fatalf("large task number formatted incorrectly: %s", link)
+	}
+}
+
+func TestCanonicalTaskLinkUsesConfiguredSolutionsHost(t *testing.T) {
+	link, err := canonicalTaskLinkForAPIURL("https://solutions.example/prod/runtime/api", float64(42), "task-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "[#42](https://solutions.example/prod/runtime/#views/" + solutions.TaskViewId + "/readOnly/task-id)"
+	if link != want {
+		t.Fatalf("canonical link = %q, want %q", link, want)
 	}
 }
 

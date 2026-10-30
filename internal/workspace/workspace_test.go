@@ -125,3 +125,33 @@ func TestReadStateAcceptsLegacyStateWithoutStagedFiles(t *testing.T) {
 		t.Fatalf("unexpected legacy state: %#v", state)
 	}
 }
+
+func TestDirectoryNameFormatsLargeTaskNumbersAsDecimal(t *testing.T) {
+	if got := DirectoryName(map[string]any{"number": float64(1000000)}); got != "1000000" {
+		t.Fatalf("DirectoryName() = %q, want 1000000", got)
+	}
+}
+
+func TestWorkspaceLockRejectsConcurrentMutationAndReleases(t *testing.T) {
+	ws := New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	first, err := ws.LockWorkspace()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ws.LockWorkspace(); err == nil {
+		t.Fatal("second lock unexpectedly succeeded")
+	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	second, err := ws.LockWorkspace()
+	if err != nil {
+		t.Fatalf("lock was not released: %v", err)
+	}
+	if err := second.Close(); err != nil {
+		t.Fatal(err)
+	}
+}

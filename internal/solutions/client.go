@@ -12,6 +12,7 @@ import (
 	"net/textproto"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -345,7 +346,7 @@ func (c *Client) DownloadTaskFile(ctx context.Context, taskID, fileID string, de
 	if c.Token != "" {
 		request.Header.Set("token", c.Token)
 	}
-	response, err := c.httpClient().Do(request)
+	response, err := c.do(request, true)
 	if err != nil {
 		return "", err
 	}
@@ -379,10 +380,13 @@ func (c *Client) responseError(method, path, status string, data []byte) error {
 		return fmt.Errorf("your Solutions login token is invalid or expired; run `panda login` to sign in again")
 	}
 	message := strings.TrimSpace(string(data))
+	if len(message) > 4096 {
+		message = message[:4096] + "… (response truncated)"
+	}
 	if message == "" {
 		message = status
 	}
-	return fmt.Errorf("Solutions API %s %s: %s", method, path, message)
+	return fmt.Errorf("solutions API %s %s: %s", method, path, message)
 }
 
 func (c *Client) list(ctx context.Context, endpoint string, query url.Values) ([]json.RawMessage, error) {
@@ -444,11 +448,7 @@ func (c *Client) request(ctx context.Context, method, path string, body, output 
 	if c.Token != "" {
 		request.Header.Set("token", c.Token)
 	}
-	client := c.HTTP
-	if client == nil {
-		client = http.DefaultClient
-	}
-	response, err := client.Do(request)
+	response, err := c.do(request, method == http.MethodGet)
 	if err != nil {
 		return err
 	}
@@ -467,6 +467,76 @@ func (c *Client) request(ctx context.Context, method, path string, body, output 
 		return fmt.Errorf("decode Solutions API response: %w", err)
 	}
 	return nil
+}
+
+const maxRequestAttempts = 3
+
+func (c *Client) do(request *http.Request, retry bool) (*http.Response, error) {
+	client := c.httpClient()
+	attempts := 1
+	if retry {
+		attempts = maxRequestAttempts
+	}
+	var lastErr error
+	for attempt := 0; attempt < attempts; attempt++ {
+		current := request
+		if attempt > 0 {
+			current = request.Clone(request.Context())
+			if request.GetBody != nil {
+				body, err := request.GetBody()
+				if err != nil {
+					return nil, err
+				}
+				current.Body = body
+			}
+		}
+		response, err := client.Do(current)
+		if err == nil && (response.StatusCode < http.StatusInternalServerError && response.StatusCode != http.StatusTooManyRequests || attempt+1 == attempts) {
+			return response, nil
+		}
+		if response != nil {
+			_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
+			_ = response.Body.Close()
+			lastErr = fmt.Errorf("HTTP status %s", response.Status)
+		} else {
+			lastErr = err
+		}
+		if !retry || attempt+1 == attempts || request.Context().Err() != nil {
+			return nil, lastErr
+		}
+		delay := time.Duration(100*(1<<attempt)) * time.Millisecond
+		if response != nil {
+			if retryAfter := parseRetryAfter(response.Header.Get("Retry-After"), time.Now()); retryAfter > 0 {
+				delay = min(retryAfter, 5*time.Second)
+			}
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-request.Context().Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			return nil, request.Context().Err()
+		case <-timer.C:
+		}
+	}
+	return nil, lastErr
+}
+
+func parseRetryAfter(value string, now time.Time) time.Duration {
+	if seconds, err := strconv.Atoi(strings.TrimSpace(value)); err == nil && seconds > 0 {
+		if seconds >= 5 {
+			return 5 * time.Second
+		}
+		return time.Duration(seconds) * time.Second
+	}
+	if date, err := http.ParseTime(value); err == nil && date.After(now) {
+		return min(date.Sub(now), 5*time.Second)
+	}
+	return 0
 }
 
 func stringValue(value any) string {

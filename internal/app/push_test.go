@@ -28,6 +28,41 @@ func TestNoteFilenameDisambiguatesSameTimestampAndAuthor(t *testing.T) {
 	}
 }
 
+func TestRecoverCreatedTaskCompletesLocalPersistenceAfterRemoteCreate(t *testing.T) {
+	ws := workspace.New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	draftID, dir, err := ws.ReserveDraftTask()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), map[string]any{"localId": draftID, "title": "Created task"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := workspace.WriteFileAtomic(filepath.Join(dir, "description.md"), []byte("Body"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	remote := map[string]any{"id": "remote-task", "number": float64(101), "title": "Created task", "type": "feature", "status": "new"}
+	state := workspace.State{Remote: remote, LocalCreated: false}
+	if err := ws.WriteState(draftID, state); err != nil {
+		t.Fatal(err)
+	}
+	recoveredDir, metadata, key, err := recoverCreatedTask(ws, dir, map[string]any{"localId": draftID}, draftID, state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key != "remote-task" || recoveredDir != ws.TaskPath("101") || stringField(metadata, "id") != "remote-task" {
+		t.Fatalf("recovered task = dir %q key %q metadata %#v", recoveredDir, key, metadata)
+	}
+	if _, err := os.Stat(ws.StatePathForKey(draftID)); !os.IsNotExist(err) {
+		t.Fatalf("draft state still exists: %v", err)
+	}
+	if persisted, err := ws.ReadState("remote-task"); err != nil || stringField(persisted.Remote, "id") != "remote-task" {
+		t.Fatalf("remote state was not persisted: %#v, error=%v", persisted, err)
+	}
+}
+
 func TestPushDoesNotOverwriteAnOverlappingRemoteEdit(t *testing.T) {
 	remote := map[string]any{
 		"id": "task-1", "number": float64(14), "title": "Remote title", "type": "feature",

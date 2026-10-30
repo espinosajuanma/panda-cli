@@ -31,6 +31,7 @@ type StagedFile struct {
 	Path        string `json:"path"`
 	Name        string `json:"name,omitempty"`
 	Description string `json:"description,omitempty"`
+	RemoteID    string `json:"remote_id,omitempty"`
 }
 
 func New(root string) *Workspace {
@@ -283,7 +284,7 @@ func WriteFileAtomic(path string, data []byte, mode os.FileMode) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, path)
+	return ReplaceFile(tmpName, path)
 }
 
 func MetadataFromRemote(remote map[string]any) map[string]any {
@@ -298,7 +299,7 @@ func MetadataFromRemote(remote map[string]any) map[string]any {
 
 func DirectoryName(task map[string]any) string {
 	if number := task["number"]; number != nil {
-		return fmt.Sprintf("%v", number)
+		return jsonutil.StringValue(number)
 	}
 	return safeSegment(stringValue(task["id"]))
 }
@@ -312,6 +313,15 @@ func WorkspacePath(projectName string) (string, error) {
 }
 
 func safeSegment(value string) string {
+	result := SafeFileComponent(value)
+	if result == "" {
+		return "task"
+	}
+	return result
+}
+
+// SafeFileComponent returns a Unicode-aware path component without separators.
+func SafeFileComponent(value string) string {
 	value = strings.TrimSpace(value)
 	var builder strings.Builder
 	for _, r := range value {
@@ -321,11 +331,7 @@ func safeSegment(value string) string {
 			builder.WriteRune('-')
 		}
 	}
-	result := strings.Trim(builder.String(), ".-_")
-	if result == "" {
-		return "task"
-	}
-	return result
+	return strings.Trim(builder.String(), ".-_")
 }
 
 func stringValue(value any) string {

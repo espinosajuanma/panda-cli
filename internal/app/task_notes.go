@@ -15,6 +15,10 @@ import (
 )
 
 func editNote(ws *workspace.Workspace, args []string, client *solutions.Client, out io.Writer) error {
+	return editNoteContext(context.Background(), ws, args, client, out)
+}
+
+func editNoteContext(ctx context.Context, ws *workspace.Workspace, args []string, client *solutions.Client, out io.Writer) error {
 	if len(args) != 2 {
 		return errors.New("usage: panda edit-note <taskNumber|draft-N> <note-file>")
 	}
@@ -25,11 +29,11 @@ func editNote(ws *workspace.Workspace, args []string, client *solutions.Client, 
 	if err != nil {
 		return err
 	}
-	state, err := ws.ReadState(stateKey(dir, metadata))
+	state, _, err := loadTaskState(ws, dir, metadata)
 	if err != nil {
 		return err
 	}
-	user, err := client.FindUser(context.Background(), client.Email)
+	user, err := client.FindUser(ctx, client.Email)
 	if err != nil {
 		return err
 	}
@@ -94,8 +98,7 @@ func discard(ws *workspace.Workspace, args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	key := stateKey(dir, metadata)
-	state, err := ws.ReadState(key)
+	state, key, err := loadTaskState(ws, dir, metadata)
 	if err != nil {
 		return err
 	}
@@ -115,8 +118,7 @@ func discard(ws *workspace.Workspace, args []string, out io.Writer) error {
 }
 
 func stageNote(ws *workspace.Workspace, dir string, metadata map[string]any, text string, out io.Writer) error {
-	key := stateKey(dir, metadata)
-	state, err := ws.ReadState(key)
+	state, key, err := loadTaskState(ws, dir, metadata)
 	if err != nil {
 		return err
 	}
@@ -220,7 +222,7 @@ func clean(ws *workspace.Workspace, args []string, in io.Reader, out io.Writer) 
 			}
 			return err
 		}
-		if err := syncRemoteNotes(dir, state.Remote, nil, nil); err != nil {
+		if err := syncRemoteNotes(dir, state.Remote, nil, nil, state.Remote); err != nil {
 			if all {
 				problems = append(problems, fmt.Sprintf("%s: restore notes: %v", taskLabel(metadata), err))
 				continue

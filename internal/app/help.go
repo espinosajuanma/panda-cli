@@ -45,11 +45,18 @@ var manualPages = map[string]manualPage{
 		examples:    []string{"panda login", "panda login user@example.com"},
 		seeAlso:     []string{"panda-config(1)", "panda-pull(1)", "panda-push(1)"},
 	},
+	"logout": {
+		name:        "panda logout - clear the saved session",
+		synopsis:    []string{"panda logout"},
+		description: []string{"Remove the saved Solutions token and login email from the local configuration."},
+		examples:    []string{"panda logout"},
+		seeAlso:     []string{"panda-login(1)"},
+	},
 	"config": {
-		name:        "panda config - manage project configuration",
-		synopsis:    []string{"panda config set project <name>", "panda config get project"},
-		description: []string{"Select a Solutions project or display the active project. Configuration is stored locally. Task links use Panda's shared Solutions task view."},
-		examples:    []string{"panda config set project \"Project Name\"", "panda config get project"},
+		name:        "panda config - manage local configuration",
+		synopsis:    []string{"panda config set project <name>", "panda config get project", "panda config set api-url <url>", "panda config get api-url"},
+		description: []string{"Select a Solutions project, configure the API base URL, or display current values. PANDA_API_URL overrides the saved API URL when set."},
+		examples:    []string{"panda config set project \"Project Name\"", "panda config get project", "panda config set api-url https://solutions.example/api"},
 		seeAlso:     []string{"panda-login(1)", "panda-path(1)"},
 	},
 	"config set": {
@@ -81,6 +88,19 @@ var manualPages = map[string]manualPage{
 		description: []string{"Print the active project name and ID, or report that no project is selected."},
 		examples:    []string{"panda config get project"},
 		seeAlso:     []string{"panda-config-set-project(1)"},
+	},
+	"config get api-url": {
+		name:        "panda config get api-url - display the Solutions API URL",
+		synopsis:    []string{"panda config get api-url"},
+		description: []string{"Print the active Solutions API base URL, including any PANDA_API_URL environment override."},
+		examples:    []string{"panda config get api-url"},
+	},
+	"config set api-url": {
+		name:        "panda config set api-url - set the Solutions API URL",
+		synopsis:    []string{"panda config set api-url <url>"},
+		description: []string{"Save an absolute http(s) API base URL. PANDA_API_URL takes precedence over the saved value."},
+		arguments:   []manualOption{{"url", "Absolute http(s) API base URL without credentials, query, or fragment."}},
+		examples:    []string{"panda config set api-url https://solutions.example/api"},
 	},
 	"path": {
 		name:        "panda path - print the active workspace path",
@@ -307,9 +327,9 @@ var manualPages = map[string]manualPage{
 	},
 	"files": {
 		name:        "panda files - list, stage, and download task files",
-		synopsis:    []string{"panda files <taskNumber|draft-N>", "panda files upload <taskNumber|draft-N> <path> [--description <text>]", "panda files download <taskNumber|draft-N> <file-id|index|name> [--output <path>]"},
-		description: []string{"List file references stored with a task, stage a local file for upload, or download an attached file on demand. Pull stores only file references; it never downloads file content. Uploads are sent and attached by panda push. Downloads are written to an OS temporary file unless --output is supplied."},
-		examples:    []string{"panda files 12345", "panda files upload 12345 screenshot.png --description \"Login screen\"", "panda push", "panda files download 12345 1", "panda files download 12345 file-id --output ./screenshot.png"},
+		synopsis:    []string{"panda files <taskNumber|draft-N>", "panda files upload <taskNumber|draft-N> <path> [--description <text>]", "panda files download <taskNumber|draft-N> <file-id|index|name> [--output <path>] [--force]"},
+		description: []string{"List file references stored with a task, stage a local file for upload, or download an attached file on demand. Pull stores only file references; it never downloads file content. Uploads are sent and attached by panda push. Downloads are written to an OS temporary file unless --output is supplied; existing output files require --force to replace."},
+		examples:    []string{"panda files 12345", "panda files upload 12345 screenshot.png --description \"Login screen\"", "panda push", "panda files download 12345 1", "panda files download 12345 file-id --output ./screenshot.png --force"},
 		seeAlso:     []string{"panda-pull(1)", "panda-push(1)", "panda-view(1)"},
 	},
 	"files upload": {
@@ -323,11 +343,11 @@ var manualPages = map[string]manualPage{
 	},
 	"files download": {
 		name:        "panda files download - download an attached task file",
-		synopsis:    []string{"panda files download <taskNumber|draft-N> <file-id|index|name> [--output <path>]"},
-		description: []string{"Fetch an attached file only when requested. Select it by file ID, 1-based list index, or an unambiguous name. By default, the binary is written to an OS temporary file and its path is printed. Requires a successful login."},
+		synopsis:    []string{"panda files download <taskNumber|draft-N> <file-id|index|name> [--output <path>] [--force]"},
+		description: []string{"Fetch an attached file only when requested. Select it by file ID, 1-based list index, or an unambiguous name. By default, the binary is written to an OS temporary file and its path is printed. Existing output files are protected unless --force is used. Requires a successful login."},
 		arguments:   []manualOption{{"taskNumber|draft-N", "Task containing the attached file."}, {"file-id|index|name", "File identifier, 1-based position from panda files, or unambiguous file name."}},
-		options:     []manualOption{{"--output <path>, -o <path>", "Write to this path instead of an OS temporary file."}},
-		examples:    []string{"panda files 12345", "panda files download 12345 1", "panda files download 12345 file-id --output ./report.pdf"},
+		options:     []manualOption{{"--output <path>, -o <path>", "Write to this path instead of an OS temporary file."}, {"--force, -f", "Replace an existing output file."}},
+		examples:    []string{"panda files 12345", "panda files download 12345 1", "panda files download 12345 file-id --output ./report.pdf --force"},
 		seeAlso:     []string{"panda-files(1)", "panda-login(1)"},
 	},
 	"link": {

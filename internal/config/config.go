@@ -3,8 +3,11 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const DefaultAPIURL = "https://solutions.slingrs.io/prod/runtime/api"
@@ -45,7 +48,7 @@ func Load() (*Config, error) {
 	cfg := &Config{APIURL: DefaultAPIURL}
 	data, err := os.ReadFile(filepath.Join(dir, "config.json"))
 	if errors.Is(err, os.ErrNotExist) {
-		return cfg, nil
+		return applyAPIURLEnv(cfg)
 	}
 	if err != nil {
 		return nil, err
@@ -56,7 +59,33 @@ func Load() (*Config, error) {
 	if cfg.APIURL == "" {
 		cfg.APIURL = DefaultAPIURL
 	}
+	return applyAPIURLEnv(cfg)
+}
+
+func applyAPIURLEnv(cfg *Config) (*Config, error) {
+	if value := strings.TrimSpace(os.Getenv("PANDA_API_URL")); value != "" {
+		validated, err := ValidateAPIURL(value)
+		if err != nil {
+			return nil, fmt.Errorf("PANDA_API_URL: %w", err)
+		}
+		cfg.APIURL = validated
+	} else {
+		validated, err := ValidateAPIURL(cfg.APIURL)
+		if err != nil {
+			return nil, fmt.Errorf("configured API URL: %w", err)
+		}
+		cfg.APIURL = validated
+	}
 	return cfg, nil
+}
+
+func ValidateAPIURL(value string) (string, error) {
+	value = strings.TrimRight(strings.TrimSpace(value), "/")
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("API URL must be an absolute http(s) URL without credentials, query, or fragment")
+	}
+	return value, nil
 }
 
 func (c *Config) Save() error {
@@ -96,5 +125,5 @@ func (c *Config) Save() error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, path)
+	return replaceConfigFile(tmpName, path)
 }
