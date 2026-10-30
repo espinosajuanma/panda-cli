@@ -28,7 +28,7 @@ var mainCommands = []mainCommand{
 	{"assign", "<task> <teamLead|developer|qa|none>", "Assign eligible project members to a task by role.", true},
 	{"link", "<task>", "Print a canonical Markdown link to a verified synced task.", true},
 	{"edit-note", "<task> <note-file>", "Edit one of your synced notes.", true},
-	{"view", "<task>", "Display task metadata, description, and notes.", true},
+	{"view", "<task> [--no-description] [--no-notes] [--json]", "Display a task's metadata, description, files, and notes.", true},
 	{"files", "[<task>|upload|download]", "List task file references, stage uploads, or download a file on demand.", true},
 	{"add-note", "<task> [text]", "Stage a new task note.", true},
 	{"discard", "<task> [note]", "Stage a task discard and optional note.", true},

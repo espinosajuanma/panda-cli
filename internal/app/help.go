@@ -298,10 +298,11 @@ var manualPages = map[string]manualPage{
 	},
 	"view": {
 		name:        "panda view - display a task",
-		synopsis:    []string{"panda view <taskNumber|draft-N>"},
-		description: []string{"Display task metadata, the local Markdown description, attached file references, and synced notes. Staged notes and file uploads are marked in the output. Long terminal output uses $PAGER and remains visible after leaving the pager."},
+		synopsis:    []string{"panda view <taskNumber|draft-N> [--no-description] [--no-notes] [--json]"},
+		description: []string{"Display task metadata in an aligned table, plus the local Markdown description, attached file references, and synced notes. Creator/date and sync context are shown when available. Staged notes and file uploads are marked. --no-description and --no-notes omit those sections; --json emits structured output without paging."},
 		arguments:   []manualOption{{"taskNumber|draft-N", "Identifier of the task to display. Legacy local-* IDs are also accepted."}},
-		examples:    []string{"panda view 12345"},
+		options:     []manualOption{{"--no-description", "Omit the Markdown description section."}, {"--no-notes", "Omit the notes section."}, {"--json", "Emit structured JSON instead of the formatted view."}},
+		examples:    []string{"panda view 12345", "panda view 12345 --no-notes", "panda view 12345 --json"},
 		seeAlso:     []string{"panda-edit(1)", "panda-edit-note(1)", "panda-diff(1)"},
 	},
 	"files": {

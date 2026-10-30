@@ -68,6 +68,7 @@ func TestNestedCommandHelpResolvesToSubcommandManual(t *testing.T) {
 		{args: []string{"help", "config", "set", "project"}, page: "PANDA-CONFIG-SET-PROJECT(1)", synopsis: "panda config set project <name>"},
 		{args: []string{"config", "set", "project", "--help"}, page: "PANDA-CONFIG-SET-PROJECT(1)", synopsis: "panda config set project <name>"},
 		{args: []string{"link", "--help"}, page: "PANDA-LINK(1)", synopsis: "panda link <taskNumber|draft-N>"},
+		{args: []string{"view", "--help"}, page: "PANDA-VIEW(1)", synopsis: "panda view <taskNumber|draft-N> [--no-description] [--no-notes] [--json]"},
 		{args: []string{"labels", "edit", "--help"}, page: "PANDA-LABELS-EDIT(1)", synopsis: "panda labels edit <name|id>"},
 		{args: []string{"completion", "bash", "--help"}, page: "PANDA-COMPLETION-BASH(1)", synopsis: "panda completion bash"},
 		{args: []string{"labels", "create", "--help"}, page: "PANDA-LABELS-CREATE(1)", synopsis: "panda labels create [name] [description]"},

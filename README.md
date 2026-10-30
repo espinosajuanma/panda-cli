@@ -60,7 +60,7 @@ them with `panda push`.
 | `panda estimate` | Quickly assign complexity to selected task statuses and types |
 | `panda create` / `panda edit` | Create or edit tasks locally |
 | `panda diff` | Review pending changes and conflicts |
-| `panda view <task>` | Display task details, description, and notes |
+| `panda view <task>` | Display task metadata, description, files, and notes |
 | `panda files <task>` | List task file references, stage uploads, and download files on demand |
 | `panda labels` / `panda packages` | Manage project catalogs locally |
 | `panda link <task>` | Print a verified Markdown link to a synced task |

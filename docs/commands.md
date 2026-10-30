@@ -199,12 +199,30 @@ Assigns every synced project member matching one or more eligible roles. Roles
 can be comma- or space-separated. `none` clears all assignees. Run `panda pull`
 first to sync current members.
 
-### `panda view <taskNumber|draft-N>`
+### `panda view <taskNumber|draft-N> [--no-description] [--no-notes] [--json]`
 
-Displays task metadata, the local Markdown description, attached file
-references, and notes. Staged notes and file uploads are marked. Long terminal
-output uses `$PAGER` (default `less -FRX`) and remains visible after leaving the
-pager; piped output is printed directly.
+Displays task metadata in an aligned table, followed by the local Markdown
+description, attached file references, and notes. The metadata includes creator,
+creation time, verified task link, and local sync status when available. The
+active project is implicit in the selected workspace and is not repeated in the
+metadata table.
+Empty relationship fields display as `None`; staged notes and file uploads are
+marked. Long terminal output uses `$PAGER` (default `less -FRX`) and remains
+visible after leaving the pager; piped output uses the same table without color.
+
+Options:
+
+- `--no-description`: omit the Markdown description section.
+- `--no-notes`: omit the notes section.
+- `--json`: emit structured JSON with task metadata, Markdown description, notes,
+  and sync context. JSON output is not paged. The suppression flags also omit
+  their corresponding JSON fields.
+
+```sh
+panda view 12345
+panda view 12345 --no-notes
+panda view 12345 --json
+```
 
 ### `panda link <taskNumber|draft-N>`
 
