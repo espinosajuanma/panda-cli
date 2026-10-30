@@ -22,8 +22,15 @@ type Workspace struct {
 type State struct {
 	Remote        map[string]any `json:"remote,omitempty"`
 	StagedNotes   []string       `json:"staged_notes,omitempty"`
+	StagedFiles   []StagedFile   `json:"staged_files,omitempty"`
 	StagedDiscard bool           `json:"staged_discard,omitempty"`
 	LocalCreated  bool           `json:"local_created,omitempty"`
+}
+
+type StagedFile struct {
+	Path        string `json:"path"`
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
 }
 
 func New(root string) *Workspace {

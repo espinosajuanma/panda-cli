@@ -103,6 +103,10 @@ func commandHelpKey(args []string) string {
 				return "completion " + args[1]
 			}
 		}
+	case "files":
+		if len(args) > 1 && (args[1] == "upload" || args[1] == "download") {
+			return "files " + args[1]
+		}
 	case "labels", "packages":
 		if len(args) > 1 {
 			switch args[1] {

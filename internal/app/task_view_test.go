@@ -14,6 +14,7 @@ func TestTaskViewRendersMetadataDescriptionNotesAndStagedMarker(t *testing.T) {
 		"id": "view-task", "number": float64(42), "title": "Readable view", "type": "feature",
 		"priority": "high", "status": "inProgress", "description": "<p>View body</p>",
 		"project": map[string]any{"id": "project-1"}, "labels": []any{}, "assignees": []any{}, "reviewers": []any{}, "notes": []any{},
+		"files": []any{map[string]any{"file": map[string]any{"id": "file-1", "name": "spec.pdf"}, "description": "Specification"}},
 	}
 	ws, dir := makeSyncedTask(t, remote)
 	filename := "20261029T120000.000Z-local.md"
@@ -25,6 +26,7 @@ func TestTaskViewRendersMetadataDescriptionNotesAndStagedMarker(t *testing.T) {
 		t.Fatal(err)
 	}
 	state.StagedNotes = []string{filename}
+	state.StagedFiles = []workspace.StagedFile{{Path: "/tmp/design.png", Name: "design.png"}}
 	if err := ws.WriteState("view-task", state); err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +34,7 @@ func TestTaskViewRendersMetadataDescriptionNotesAndStagedMarker(t *testing.T) {
 	if err := viewTask(ws, []string{"42"}, &output); err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"Readable view", "**status:** inProgress", "View body", "Staged note body", "[staged]"} {
+	for _, expected := range []string{"Readable view", "**status:** inProgress", "View body", "file-1", "spec.pdf", "design.png (staged upload)", "Staged note body", "[staged]"} {
 		if !strings.Contains(output.String(), expected) {
 			t.Errorf("view output missing %q:\n%s", expected, output.String())
 		}

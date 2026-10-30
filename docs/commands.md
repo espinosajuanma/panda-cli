@@ -41,15 +41,17 @@ and roles are saved locally for assignment commands. Tasks whose remote version
 has not changed are not rewritten.
 
 Changes remain local until `panda push`.
+Task file references are stored in metadata, but file content is not downloaded
+during pull.
 
 ### `panda push [taskNumber|draft-N ...]`
 
 Checks for remote changes before sending local task and catalog edits. It skips
-unchanged tasks, applies staged notes and discards, and advances synchronization
-baselines after successful API operations. Overlapping edits are reported
-instead of overwritten. With no selectors it processes every task; with one or
-more selectors it processes only those tasks. Pending project label/package
-changes are still synchronized, since those catalogs are shared by the project.
+unchanged tasks, applies staged notes, file uploads, and discards. Baselines
+advance after successful API operations. Overlapping edits are reported instead
+of overwritten. With no selectors it processes every task; with one or more
+selectors it processes only those tasks. Pending project label/package changes
+are still synchronized, since those catalogs are shared by the project.
 All task selectors are validated before any API operation begins.
 Local drafts can be pushed without a sync-state file; synced tasks need a
 baseline, so run `panda pull` first if one is missing.
@@ -68,7 +70,7 @@ limits output to one task.
 
 - Default output summarizes changed fields and descriptions.
 - `--verbose` shows changed Markdown description and note lines with `-` and `+`
-  prefixes.
+  prefixes, and shows staged file upload paths.
 - `--summary` prints counts of edited, discarded, and new tasks.
 - Long terminal output uses `$PAGER`, defaulting to `less -FRX`; leaving the
   pager keeps its output visible. Piped output is printed directly.
@@ -199,15 +201,52 @@ first to sync current members.
 
 ### `panda view <taskNumber|draft-N>`
 
-Displays task metadata, the local Markdown description, and notes. Staged notes
-are marked. Long terminal output uses `$PAGER` (default `less -FRX`) and remains
-visible after leaving the pager; piped output is printed directly.
+Displays task metadata, the local Markdown description, attached file
+references, and notes. Staged notes and file uploads are marked. Long terminal
+output uses `$PAGER` (default `less -FRX`) and remains visible after leaving the
+pager; piped output is printed directly.
 
 ### `panda link <taskNumber|draft-N>`
 
 Prints a Markdown link for a synced task with a verified remote ID and baseline.
 Links use the shared Solutions task view, ID `680b8e41805d3740e97cfecb`.
 Locally created or unverifiable tasks cannot be linked.
+
+### `panda files <taskNumber|draft-N>`
+
+Lists attached file references stored in the task's local metadata and any
+uploads staged for that task. File binaries are not stored in the workspace.
+
+```sh
+panda files 12345
+```
+
+#### `panda files upload <taskNumber|draft-N> <path> [--description <text>]`
+
+Stages an upload by saving the source file's absolute path in sync state. The
+file is uploaded and attached when `panda push` runs; keep it at that path until
+then. After a successful push, Panda stores only the remote file reference in
+task metadata. Draft tasks can also stage uploads.
+
+```sh
+panda files upload 12345 screenshot.png --description "Login screen"
+panda files upload draft-1 report.pdf -d "Test report"
+panda diff
+panda push
+```
+
+#### `panda files download <taskNumber|draft-N> <file-id|index|name> [--output <path>]`
+
+Downloads an attached file on demand using its file ID. Select a file by its
+ID, its 1-based position from `panda files`, or an unambiguous name. By default,
+Panda writes to an OS temporary file and prints its path. Use `--output` (or
+`-o`) to choose a destination. Requires a successful login.
+
+```sh
+panda files 12345
+panda files download 12345 1
+panda files download 12345 file-id --output ./screenshot.png
+```
 
 ## Notes and status
 
@@ -229,7 +268,8 @@ the status change. `panda push` applies it.
 
 ### `panda clean [taskNumber|draft-N] [--yes|-y]`
 
-Restores the last-synced task files and discards staged actions. With no task
+Restores the last-synced task files and discards staged notes, uploads, and
+other staged actions. It does not delete local upload source files. With no task
 identifier, it also restores project catalogs and asks for confirmation;
 `--yes` skips that confirmation. Unpushed locally created tasks are removed.
 Local drafts can still be removed if their sync-state file is missing. A synced

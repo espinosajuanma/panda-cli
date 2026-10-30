@@ -27,7 +27,10 @@ Print the active workspace path with `panda path`.
 
 Configuration and workspace directories use private permissions where
 supported by the operating system. `metadata.json` stores task fields and
-relationships; descriptions and notes are Markdown files.
+relationships, including task file IDs and names; descriptions and notes are
+Markdown files. File binaries are not stored in the workspace. Uploads are
+staged as source-path references in sync state until `panda push`; downloads
+are fetched on demand into a temporary file unless an output path is supplied.
 
 The `.panda/state` directory stores remote baselines, staged actions, and remote
 task IDs. A locally created task uses the next `draft-N` ID until a successful
@@ -47,10 +50,11 @@ as title, type, priority, complexity, package, and labels, and tracks status,
 assignees, reviewers, and notes.
 
 `pull` compares fetched data with the last-synced baseline. Independent local and
-remote changes are merged; overlapping edits are reported as conflicts. `push`
-checks for remote changes before applying local edits. Baselines advance after
-successful operations. Catalog baselines are stored alongside local labels and
-packages.
+remote changes are merged; overlapping edits are reported as conflicts. Pull
+stores task file references but never downloads their content. `push` checks for
+remote changes before applying local edits and uploads staged files only when
+they can be attached to a task. Baselines advance after successful operations.
+Catalog baselines are stored alongside local labels and packages.
 
 Run `panda clean <task>` to restore a task to its last-synced state. `panda
 clean --yes` restores the entire project, including catalogs.

@@ -59,13 +59,37 @@ func renderTaskView(ws *workspace.Workspace, args []string, out, colorTarget io.
 		return err
 	}
 	fmt.Fprintln(out, highlightMarkdown(out, string(description)))
+	fmt.Fprintln(out, colorText(colorTarget, "1;32", "\n## Files"))
+	files := taskFileReferences(metadata)
+	if len(files) == 0 {
+		fmt.Fprintln(out, "No attached files.")
+	} else {
+		for _, file := range files {
+			fmt.Fprintf(out, "- %s (id: %s)", file.Name, file.ID)
+			if file.Description != "" {
+				fmt.Fprintf(out, " — %s", file.Description)
+			}
+			fmt.Fprintln(out)
+		}
+	}
+	state, _ := ws.ReadState(stateKey(dir, metadata))
+	for _, staged := range state.StagedFiles {
+		name := staged.Name
+		if name == "" {
+			name = filepath.Base(staged.Path)
+		}
+		fmt.Fprintf(out, "- %s (staged upload)", name)
+		if staged.Description != "" {
+			fmt.Fprintf(out, " — %s", staged.Description)
+		}
+		fmt.Fprintln(out)
+	}
 	fmt.Fprintln(out, colorText(colorTarget, "1;32", "\n## Notes"))
 	notesDir := filepath.Join(dir, "notes")
 	entries, err := os.ReadDir(notesDir)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	state, _ := ws.ReadState(stateKey(dir, metadata))
 	staged := make(map[string]bool, len(state.StagedNotes))
 	for _, name := range state.StagedNotes {
 		staged[name] = true

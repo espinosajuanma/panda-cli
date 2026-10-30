@@ -155,6 +155,25 @@ func renderDiff(ws *workspace.Workspace, args []string, out, colorTarget io.Writ
 			changes += len(state.StagedNotes)
 			taskChanged = true
 		}
+		if stateErr == nil && len(state.StagedFiles) > 0 {
+			if options.verbose {
+				for _, staged := range state.StagedFiles {
+					status := "staged file upload"
+					if _, statErr := os.Stat(staged.Path); statErr != nil {
+						status += " (source missing)"
+					}
+					fmt.Fprintf(&taskChanges, "  %s: %s\n", colorText(colorTarget, "1;36", status), staged.Name)
+					fmt.Fprintf(&taskChanges, "    source: %s\n", staged.Path)
+					if staged.Description != "" {
+						fmt.Fprintf(&taskChanges, "    description: %s\n", staged.Description)
+					}
+				}
+			} else {
+				fmt.Fprintf(&taskChanges, "  %s\n", colorText(colorTarget, "36", fmt.Sprintf("files: %d upload(s) staged", len(state.StagedFiles))))
+			}
+			changes += len(state.StagedFiles)
+			taskChanged = true
+		}
 		if newTask {
 			counts.new++
 		} else if taskChanged {

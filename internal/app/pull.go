@@ -249,7 +249,8 @@ func sameTaskVersion(remote, baseline map[string]any) bool {
 	baseVersion, baselineHasVersion := baseline["version"]
 	return remoteHasVersion && baselineHasVersion && remoteVersion != nil && baseVersion != nil &&
 		same(remoteVersion, baseVersion) && same(valueAt(remote, "labels"), valueAt(baseline, "labels")) &&
-		same(valueAt(remote, "package"), valueAt(baseline, "package"))
+		same(valueAt(remote, "package"), valueAt(baseline, "package")) &&
+		same(valueAt(remote, "files"), valueAt(baseline, "files"))
 }
 
 type pullProgress struct {

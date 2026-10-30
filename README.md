@@ -9,6 +9,7 @@ edit with your preferred tools.
 
 - Sync tasks, labels, packages, and team members with a local workspace.
 - Edit task metadata, descriptions, and notes as files.
+- Keep task file references locally, stage uploads for `push`, and download file content only on demand.
 - Review changes and conflicts before pushing updates to Solutions.
 - Use interactive selectors, scriptable options, and shell completions.
 
@@ -60,6 +61,7 @@ them with `panda push`.
 | `panda create` / `panda edit` | Create or edit tasks locally |
 | `panda diff` | Review pending changes and conflicts |
 | `panda view <task>` | Display task details, description, and notes |
+| `panda files <task>` | List task file references, stage uploads, and download files on demand |
 | `panda labels` / `panda packages` | Manage project catalogs locally |
 | `panda link <task>` | Print a verified Markdown link to a synced task |
 

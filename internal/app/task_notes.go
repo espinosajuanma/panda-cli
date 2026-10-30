@@ -211,6 +211,7 @@ func clean(ws *workspace.Workspace, args []string, in io.Reader, out io.Writer) 
 			return err
 		}
 		state.StagedNotes = nil
+		state.StagedFiles = nil
 		state.StagedDiscard = false
 		if err := clearNotes(dir, state.Remote); err != nil {
 			if all {

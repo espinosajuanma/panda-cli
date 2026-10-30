@@ -29,6 +29,7 @@ var mainCommands = []mainCommand{
 	{"link", "<task>", "Print a canonical Markdown link to a verified synced task.", true},
 	{"edit-note", "<task> <note-file>", "Edit one of your synced notes.", true},
 	{"view", "<task>", "Display task metadata, description, and notes.", true},
+	{"files", "[<task>|upload|download]", "List task file references, stage uploads, or download a file on demand.", true},
 	{"add-note", "<task> [text]", "Stage a new task note.", true},
 	{"discard", "<task> [note]", "Stage a task discard and optional note.", true},
 	{"clean", "[task] [--yes]", "Discard local edits for one task or the project.", true},

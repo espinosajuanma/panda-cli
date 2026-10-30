@@ -108,3 +108,20 @@ func TestReserveDraftTaskUsesNextNumberAndIgnoresLegacyIDs(t *testing.T) {
 		t.Fatalf("next draft = %q, dir=%q, error=%v; want draft-8", nextID, nextDir, err)
 	}
 }
+
+func TestReadStateAcceptsLegacyStateWithoutStagedFiles(t *testing.T) {
+	ws := New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFileAtomic(ws.StatePathForKey("task-legacy"), []byte(`{"remote":{"id":"task-legacy"},"staged_notes":["note.md"]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state, err := ws.ReadState("task-legacy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Remote["id"] != "task-legacy" || len(state.StagedNotes) != 1 || len(state.StagedFiles) != 0 {
+		t.Fatalf("unexpected legacy state: %#v", state)
+	}
+}

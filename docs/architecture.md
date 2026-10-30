@@ -44,7 +44,8 @@ reviewed migration is introduced.
 - Pull fetches project catalogs, members, and tasks; it merges remote changes
   against the saved baseline while retaining independent local changes.
 - Push checks for overlapping remote edits before sending local task/catalog
-  changes and staged actions.
+  changes and staged actions. Staged file uploads retain only a source-path
+  reference until push; successful sync stores remote file IDs, not binaries.
 - Merge and conflict rules should be pure computations where practical; file
   writes and API calls belong in orchestration/repository code.
 - Baselines advance only for successfully synchronized data, preserving the

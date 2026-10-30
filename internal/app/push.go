@@ -64,6 +64,10 @@ func pushSelected(ctx context.Context, client *solutions.Client, ws *workspace.W
 		if !dirty {
 			continue
 		}
+		if err := validateStagedFiles(state.StagedFiles); err != nil {
+			problems = append(problems, fmt.Sprintf("%s: %v", taskLabel(local), err))
+			continue
+		}
 		if state.LocalCreated {
 			remote, err := createRemoteTask(ctx, client, dir, local, project, catalogIDs)
 			if err != nil {
@@ -204,6 +208,11 @@ func pushSelected(ctx context.Context, client *solutions.Client, ws *workspace.W
 			problems = append(problems, fmt.Sprintf("%s: %v", taskLabel(local), err))
 			continue
 		}
+		state, err = pushStagedFiles(ctx, client, ws, dir, local, key, state)
+		if err != nil {
+			problems = append(problems, fmt.Sprintf("%s: %v", taskLabel(local), err))
+			continue
+		}
 		fmt.Fprintf(out, "%s %s.\n", colorText(out, "1;32", "Pushed"), taskLabel(local))
 		pushed++
 	}
@@ -251,7 +260,7 @@ func pushTaskDirectories(ws *workspace.Workspace, selectors []string) ([]string,
 }
 
 func taskHasLocalChanges(local map[string]any, state workspace.State, dir string) (bool, error) {
-	if state.LocalCreated || state.StagedDiscard || len(state.StagedNotes) > 0 {
+	if state.LocalCreated || state.StagedDiscard || len(state.StagedNotes) > 0 || len(state.StagedFiles) > 0 {
 		return true, nil
 	}
 	for _, field := range editableFields {

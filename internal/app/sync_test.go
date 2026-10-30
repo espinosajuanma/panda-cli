@@ -263,7 +263,7 @@ func TestPullSkipsTasksWithUnchangedVersion(t *testing.T) {
 func TestSameTaskVersionStillChecksLabelAndPackageRelationships(t *testing.T) {
 	baseline := map[string]any{
 		"version": float64(4), "labels": []any{map[string]any{"id": "label-1", "label": "Old label"}},
-		"package": map[string]any{"id": "package-1", "label": "Old package"},
+		"package": map[string]any{"id": "package-1", "label": "Old package"}, "files": []any{},
 	}
 	remote := cloneMap(baseline)
 	if !sameTaskVersion(remote, baseline) {
@@ -277,6 +277,11 @@ func TestSameTaskVersionStillChecksLabelAndPackageRelationships(t *testing.T) {
 	remote["package"] = map[string]any{"id": "package-2", "label": "New package"}
 	if sameTaskVersion(remote, baseline) {
 		t.Fatal("changed package should be pulled even without a task version bump")
+	}
+	remote = cloneMap(baseline)
+	remote["files"] = []any{map[string]any{"file": map[string]any{"id": "file-1"}}}
+	if sameTaskVersion(remote, baseline) {
+		t.Fatal("changed files should be pulled even without a task version bump")
 	}
 }
 

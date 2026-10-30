@@ -93,6 +93,8 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 			return editNote(ws, args, client, out)
 		case "view":
 			return viewTask(ws, args, out)
+		case "files":
+			return filesCommand(ws, args, client, out)
 		case "add-note":
 			return addNote(ws, args, in, out)
 		case "discard":

@@ -72,6 +72,8 @@ func TestNestedCommandHelpResolvesToSubcommandManual(t *testing.T) {
 		{args: []string{"completion", "bash", "--help"}, page: "PANDA-COMPLETION-BASH(1)", synopsis: "panda completion bash"},
 		{args: []string{"labels", "create", "--help"}, page: "PANDA-LABELS-CREATE(1)", synopsis: "panda labels create [name] [description]"},
 		{args: []string{"packages", "delete", "--help"}, page: "PANDA-PACKAGES-DELETE(1)", synopsis: "panda packages delete <title|id>"},
+		{args: []string{"files", "upload", "--help"}, page: "PANDA-FILES-UPLOAD(1)", synopsis: "panda files upload <taskNumber|draft-N> <path> [--description <text>]"},
+		{args: []string{"files", "download", "--help"}, page: "PANDA-FILES-DOWNLOAD(1)", synopsis: "panda files download <taskNumber|draft-N> <file-id|index|name> [--output <path>]"},
 	}
 	for _, test := range tests {
 		var output bytes.Buffer

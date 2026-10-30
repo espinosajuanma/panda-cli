@@ -6,8 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -24,6 +28,16 @@ type Client struct {
 type Project struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+}
+
+type FileLink struct {
+	FileID   string `json:"fileId"`
+	FileLink string `json:"fileLink"`
+}
+
+type FileAttachment struct {
+	FileID      string
+	Description string
 }
 
 type listResponse struct {
@@ -233,6 +247,144 @@ func (c *Client) EditMyNotes(ctx context.Context, id string, myNotes []map[strin
 	return updated, err
 }
 
+func (c *Client) UploadFile(ctx context.Context, filename string, content io.Reader) (*FileLink, error) {
+	pipeReader, pipeWriter := io.Pipe()
+	form := multipart.NewWriter(pipeWriter)
+	writeResult := make(chan error, 1)
+	go func() {
+		header := make(textproto.MIMEHeader)
+		header.Set("Content-Disposition", mime.FormatMediaType("form-data", map[string]string{
+			"name": "file", "filename": filepath.Base(filename),
+		}))
+		contentType := mime.TypeByExtension(filepath.Ext(filename))
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		header.Set("Content-Type", contentType)
+		part, err := form.CreatePart(header)
+		if err == nil {
+			_, err = io.Copy(part, content)
+		}
+		if err == nil {
+			err = form.Close()
+		}
+		if err != nil {
+			_ = pipeWriter.CloseWithError(err)
+		} else {
+			_ = pipeWriter.Close()
+		}
+		writeResult <- err
+	}()
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/files", pipeReader)
+	if err != nil {
+		_ = pipeReader.CloseWithError(err)
+		<-writeResult
+		return nil, err
+	}
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Content-Type", form.FormDataContentType())
+	if c.Token != "" {
+		request.Header.Set("token", c.Token)
+	}
+	response, err := c.httpClient().Do(request)
+	if err != nil {
+		_ = pipeReader.CloseWithError(err)
+		writeErr := <-writeResult
+		if writeErr != nil {
+			return nil, fmt.Errorf("write multipart file: %w", writeErr)
+		}
+		return nil, err
+	}
+	defer response.Body.Close()
+	data, readErr := io.ReadAll(io.LimitReader(response.Body, 8<<20))
+	_ = pipeReader.Close()
+	writeErr := <-writeResult
+	if writeErr != nil {
+		return nil, fmt.Errorf("write multipart file: %w", writeErr)
+	}
+	if readErr != nil {
+		return nil, readErr
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, c.responseError(http.MethodPost, "/files", response.Status, data)
+	}
+	var result FileLink
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("decode Solutions API response: %w", err)
+	}
+	if result.FileID == "" {
+		return nil, fmt.Errorf("file upload response did not include a file ID")
+	}
+	return &result, nil
+}
+
+func (c *Client) AttachFiles(ctx context.Context, taskID string, files []FileAttachment) (map[string]any, error) {
+	attachments := make([]map[string]any, 0, len(files))
+	for _, file := range files {
+		attachment := map[string]any{"file": map[string]any{"id": file.FileID}}
+		if file.Description != "" {
+			attachment["description"] = file.Description
+		}
+		attachments = append(attachments, attachment)
+	}
+	var updated map[string]any
+	err := c.request(ctx, http.MethodPut, "/data/dev.tasks/"+url.PathEscape(taskID)+"/attachFile", map[string]any{
+		"files": attachments,
+	}, &updated)
+	return updated, err
+}
+
+func (c *Client) DownloadTaskFile(ctx context.Context, taskID, fileID string, destination io.Writer) (string, error) {
+	path := "/data/dev.tasks/" + url.PathEscape(taskID) + "/files/" + url.PathEscape(fileID)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+path, nil)
+	if err != nil {
+		return "", err
+	}
+	request.Header.Set("Accept", "application/octet-stream")
+	if c.Token != "" {
+		request.Header.Set("token", c.Token)
+	}
+	response, err := c.httpClient().Do(request)
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		data, readErr := io.ReadAll(io.LimitReader(response.Body, 8<<20))
+		if readErr != nil {
+			return "", readErr
+		}
+		return "", c.responseError(http.MethodGet, path, response.Status, data)
+	}
+	if _, err := io.Copy(destination, response.Body); err != nil {
+		return "", err
+	}
+	_, params, err := mime.ParseMediaType(response.Header.Get("Content-Disposition"))
+	if err != nil {
+		return "", nil
+	}
+	return params["filename"], nil
+}
+
+func (c *Client) httpClient() *http.Client {
+	if c.HTTP != nil {
+		return c.HTTP
+	}
+	return http.DefaultClient
+}
+
+func (c *Client) responseError(method, path, status string, data []byte) error {
+	if c.Token != "" && path != "/auth/login" && isInvalidTokenResponse(data) {
+		return fmt.Errorf("your Solutions login token is invalid or expired; run `panda login` to sign in again")
+	}
+	message := strings.TrimSpace(string(data))
+	if message == "" {
+		message = status
+	}
+	return fmt.Errorf("Solutions API %s %s: %s", method, path, message)
+}
+
 func (c *Client) list(ctx context.Context, endpoint string, query url.Values) ([]json.RawMessage, error) {
 	items := make([]json.RawMessage, 0)
 	seenOffsets := make(map[string]bool)
@@ -306,14 +458,7 @@ func (c *Client) request(ctx context.Context, method, path string, body, output 
 		return err
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		if c.Token != "" && path != "/auth/login" && isInvalidTokenResponse(data) {
-			return fmt.Errorf("your Solutions login token is invalid or expired; run `panda login` to sign in again")
-		}
-		message := strings.TrimSpace(string(data))
-		if message == "" {
-			message = response.Status
-		}
-		return fmt.Errorf("Solutions API %s %s: %s", method, path, message)
+		return c.responseError(method, path, response.Status, data)
 	}
 	if output == nil || len(data) == 0 {
 		return nil
