@@ -75,12 +75,17 @@ limits output to one task.
 
 ## Tasks
 
-### `panda estimate [status[,status...]] [--all]`
+### `panda estimate [status[,status...]] [--type <type,...>] [--all]`
 
 Interactively assign a complexity to local tasks in the selected workflow
-statuses. The default status is `new`; pass one or more comma-separated or
-space-separated statuses to process another group. Statuses are iterated in
-workflow order, and tasks within each status are sorted by rank.
+statuses and types. The default status is `new`; pass one or more
+comma-separated or space-separated statuses to process another group. Statuses
+are iterated in workflow order, and tasks within each status are sorted by rank.
+
+By default, tasks of type `feature`, `bug`, and `other` are eligible; `release`
+tasks are excluded. Use `--type <type,...>` to select types explicitly. Valid
+types are `feature`, `bug`, `other`, and `release`; repeated `--type` options
+combine. Explicitly selecting `release` includes release tasks.
 
 By default, tasks that already have a complexity are skipped. `--all` also
 includes those tasks for re-rating. On a terminal, use the arrow keys and Enter
@@ -98,6 +103,8 @@ locally; run `panda push` to publish the changes.
 panda estimate
 panda estimate toDo
 panda estimate new,toDo
+panda estimate --type feature,bug
+panda estimate --type bug --type other
 panda estimate new --all
 ```
 

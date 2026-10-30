@@ -16,8 +16,13 @@ import (
 type estimateOptions struct {
 	statuses        []string
 	statusFilter    map[string]bool
+	types           []string
+	typeFilter      map[string]bool
 	includeExisting bool
 }
+
+var estimateTypeOrder = []string{"feature", "bug", "other", "release"}
+var defaultEstimateTypes = []string{"feature", "bug", "other"}
 
 type estimateTask struct {
 	dir      string
@@ -36,9 +41,9 @@ func estimateTasks(ws *workspace.Workspace, args []string, in io.Reader, out io.
 	}
 	if len(candidates) == 0 {
 		if len(allTasks) == 0 {
-			fmt.Fprintf(out, "No tasks found in %s %s.\n", statusNoun(len(options.statuses)), strings.Join(options.statuses, ", "))
+			fmt.Fprintf(out, "No tasks found in %s %s for types %s.\n", statusNoun(len(options.statuses)), strings.Join(options.statuses, ", "), strings.Join(options.types, ", "))
 		} else {
-			fmt.Fprintf(out, "No tasks in %s %s need a complexity.\n", statusNoun(len(options.statuses)), strings.Join(options.statuses, ", "))
+			fmt.Fprintf(out, "No matching tasks in %s %s need a complexity (types: %s).\n", statusNoun(len(options.statuses)), strings.Join(options.statuses, ", "), strings.Join(options.types, ", "))
 		}
 		return nil
 	}
@@ -102,7 +107,7 @@ func estimateTasks(ws *workspace.Workspace, args []string, in io.Reader, out io.
 	if quit {
 		fmt.Fprint(out, "Stopped early. ")
 	}
-	fmt.Fprintf(out, "Estimate complete: %d updated, %d skipped, %d tasks still without complexity in %s.\n", updated, skipped, remaining, strings.Join(options.statuses, ", "))
+	fmt.Fprintf(out, "Estimate complete: %d updated, %d skipped, %d tasks still without complexity in %s (types: %s).\n", updated, skipped, remaining, strings.Join(options.statuses, ", "), strings.Join(options.types, ", "))
 	if updated > 0 {
 		fmt.Fprintln(out, "Run `panda push` to publish these local changes.")
 	}
@@ -110,11 +115,28 @@ func estimateTasks(ws *workspace.Workspace, args []string, in io.Reader, out io.
 }
 
 func parseEstimateOptions(args []string) (estimateOptions, error) {
-	options := estimateOptions{statusFilter: make(map[string]bool)}
+	options := estimateOptions{statusFilter: make(map[string]bool), typeFilter: make(map[string]bool)}
 	var statusArgs []string
-	for _, arg := range args {
+	var typeArgs []string
+	typeSpecified := false
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
 		if arg == "--all" {
 			options.includeExisting = true
+			continue
+		}
+		if arg == "--type" {
+			if index+1 >= len(args) || strings.HasPrefix(args[index+1], "--") {
+				return options, estimateUsageError()
+			}
+			index++
+			typeArgs = append(typeArgs, args[index])
+			typeSpecified = true
+			continue
+		}
+		if strings.HasPrefix(arg, "--type=") {
+			typeArgs = append(typeArgs, strings.TrimPrefix(arg, "--type="))
+			typeSpecified = true
 			continue
 		}
 		if strings.HasPrefix(arg, "--") {
@@ -146,6 +168,33 @@ func parseEstimateOptions(args []string) (estimateOptions, error) {
 	if len(options.statusFilter) == 0 {
 		return options, errors.New("panda estimate requires one or more statuses")
 	}
+	if !typeSpecified {
+		typeArgs = defaultEstimateTypes
+	}
+	knownTypes := make(map[string]bool, len(estimateTypeOrder))
+	for _, taskType := range estimateTypeOrder {
+		knownTypes[taskType] = true
+	}
+	for _, arg := range typeArgs {
+		for _, part := range strings.Split(arg, ",") {
+			taskType := strings.TrimSpace(part)
+			if taskType == "" {
+				continue
+			}
+			if !knownTypes[taskType] {
+				return options, fmt.Errorf("unknown task type %q; valid types are %s", taskType, strings.Join(estimateTypeOrder, ", "))
+			}
+			options.typeFilter[taskType] = true
+		}
+	}
+	if len(options.typeFilter) == 0 {
+		return options, errors.New("--type requires one or more comma-separated task types")
+	}
+	for _, taskType := range estimateTypeOrder {
+		if options.typeFilter[taskType] {
+			options.types = append(options.types, taskType)
+		}
+	}
 	for _, status := range task.StatusOrder {
 		if options.statusFilter[status] {
 			options.statuses = append(options.statuses, status)
@@ -155,7 +204,7 @@ func parseEstimateOptions(args []string) (estimateOptions, error) {
 }
 
 func estimateUsageError() error {
-	return errors.New("usage: panda estimate [status[,status...]] [--all]")
+	return errors.New("usage: panda estimate [status[,status...]] [--type <type,...>] [--all]")
 }
 
 func findEstimateTasks(ws *workspace.Workspace, options estimateOptions) ([]estimateTask, []estimateTask, error) {
@@ -173,7 +222,7 @@ func findEstimateTasks(ws *workspace.Workspace, options estimateOptions) ([]esti
 		if status == "" {
 			status = "new"
 		}
-		if options.statusFilter[status] {
+		if options.statusFilter[status] && options.typeFilter[stringField(metadata, "type")] {
 			byStatus[status] = append(byStatus[status], estimateTask{dir: dir, status: status, metadata: metadata})
 		}
 	}

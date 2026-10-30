@@ -204,16 +204,19 @@ var manualPages = map[string]manualPage{
 	},
 	"estimate": {
 		name:     "panda estimate - assign complexity to local tasks",
-		synopsis: []string{"panda estimate [status[,status...]] [--all]"},
+		synopsis: []string{"panda estimate [status[,status...]] [--type <type,...>] [--all]"},
 		description: []string{
-			"Interactively assign complexity to local tasks in the selected statuses. The default status is new, and by default tasks that already have a complexity are skipped.",
+			"Interactively assign complexity to local tasks in the selected statuses and types. The default status is new. By default, feature, bug, and other tasks are eligible; release tasks are excluded. Tasks that already have a complexity are also skipped unless --all is supplied.",
 			"On terminals, choose a task's complexity with the arrow-key selector. Press Escape to return to the task actions, d to view its Markdown description, s to skip it, or q to stop. Complexity choices include story points and estimated hours.",
 			"Changes are saved locally to task metadata and remain local until panda push. In non-terminal use, enter a complexity value, d to view the description, q to stop, or leave the value empty to skip.",
 		},
 		arguments: []manualOption{{"status[,status...]", "Optional comma-separated or space-separated workflow statuses. Known values: new, toDo, inProgress, inReview, completed, staging, released, discarded. Defaults to new."}},
-		options:   []manualOption{{"--all", "Include tasks that already have a complexity so they can be re-rated."}},
-		examples:  []string{"panda estimate", "panda estimate toDo", "panda estimate new,toDo", "panda estimate new --all", "panda push"},
-		seeAlso:   []string{"panda-list(1)", "panda-edit(1)", "panda-push(1)"},
+		options: []manualOption{
+			{"--type <type,...>", "Select task types with a comma-separated list: feature, bug, other, or release. Repeat the option to add types. Defaults to feature, bug, and other; include release explicitly to estimate release tasks."},
+			{"--all", "Include tasks that already have a complexity so they can be re-rated."},
+		},
+		examples: []string{"panda estimate", "panda estimate toDo", "panda estimate new,toDo", "panda estimate --type feature,bug", "panda estimate new --all", "panda push"},
+		seeAlso:  []string{"panda-list(1)", "panda-edit(1)", "panda-push(1)"},
 	},
 	"pull": {
 		name:        "panda pull - synchronize project data from Solutions",
