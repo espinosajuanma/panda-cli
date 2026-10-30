@@ -61,6 +61,8 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) error {
 		switch command {
 		case "list":
 			return listTasks(ws, args, out)
+		case "estimate":
+			return estimateTasks(ws, args, in, out)
 		case "pull":
 			if len(args) != 0 {
 				return errors.New("usage: panda pull")

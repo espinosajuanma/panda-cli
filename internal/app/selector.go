@@ -16,6 +16,9 @@ type selectorOption struct {
 	label string
 }
 
+var errSelectionCanceled = errors.New("selection canceled")
+var errSelectionEscaped = errors.New("selection canceled with escape")
+
 func descriptionEditorRequested(key rune) bool {
 	return key == 'e' || key == 'E'
 }
@@ -27,6 +30,10 @@ func isInteractiveTerminal(in io.Reader, out io.Writer) bool {
 }
 
 func selectSingleOption(in io.Reader, out io.Writer, prompt string, options []selectorOption, selected string) (string, error) {
+	return selectSingleOptionWithEscapeCancel(in, out, prompt, options, selected, false)
+}
+
+func selectSingleOptionWithEscapeCancel(in io.Reader, out io.Writer, prompt string, options []selectorOption, selected string, escapeCancels bool) (string, error) {
 	inFile, outFile, ok := selectorFiles(in, out)
 	if !ok {
 		return "", errors.New("interactive selector requires a terminal")
@@ -38,7 +45,7 @@ func selectSingleOption(in io.Reader, out io.Writer, prompt string, options []se
 			break
 		}
 	}
-	return runSelector(inFile, outFile, prompt, options, initial, nil, false)
+	return runSelector(inFile, outFile, prompt, options, initial, nil, false, escapeCancels)
 }
 
 func selectMultipleOptions(in io.Reader, out io.Writer, prompt string, options []selectorOption, selected map[string]bool) (map[string]bool, error) {
@@ -53,7 +60,7 @@ func selectMultipleOptions(in io.Reader, out io.Writer, prompt string, options [
 	for key, value := range selected {
 		selectedIndexes[key] = value
 	}
-	_, err := runSelector(inFile, outFile, prompt, choices, 0, selectedIndexes, true)
+	_, err := runSelector(inFile, outFile, prompt, choices, 0, selectedIndexes, true, false)
 	return selectedIndexes, err
 }
 
@@ -66,7 +73,7 @@ func selectorFiles(in io.Reader, out io.Writer) (*os.File, *os.File, bool) {
 	return inFile, outFile, true
 }
 
-func runSelector(in, out *os.File, prompt string, options []selectorOption, initial int, selected map[string]bool, multiple bool) (string, error) {
+func runSelector(in, out *os.File, prompt string, options []selectorOption, initial int, selected map[string]bool, multiple, escapeCancels bool) (string, error) {
 	state, err := term.MakeRaw(int(in.Fd()))
 	if err != nil {
 		return "", err
@@ -121,16 +128,46 @@ func runSelector(in, out *os.File, prompt string, options []selectorOption, init
 				cursor = 0
 			}
 		case selectorEscape:
+			if escapeCancels {
+				finishSelector(out, printedLines, "Canceled")
+				return "", errSelectionEscaped
+			}
 			filter = ""
 			cursor = 0
 		case selectorCancel:
 			finishSelector(out, printedLines, "Canceled")
-			return "", errors.New("selection canceled")
+			return "", errSelectionCanceled
 		default:
 			if unicode.IsPrint(key) && key != ' ' {
 				filter += string(key)
 				cursor = 0
 			}
+		}
+	}
+}
+
+func readEstimateAction(in io.Reader, out io.Writer) (rune, error) {
+	inFile, _, ok := selectorFiles(in, out)
+	if !ok {
+		return 0, errors.New("interactive task prompt requires a terminal")
+	}
+	fmt.Fprintf(out, "%s %s ", colorText(out, "1;32", "?"), colorText(out, "1", "Enter choose complexity · d description · s skip · q quit"))
+	state, err := term.MakeRaw(int(inFile.Fd()))
+	if err != nil {
+		fmt.Fprint(out, "\r\n")
+		return 0, err
+	}
+	defer term.Restore(int(inFile.Fd()), state)
+	for {
+		key, readErr := readSelectorKey(inFile)
+		if readErr != nil {
+			fmt.Fprint(out, "\r\n")
+			return 0, readErr
+		}
+		switch key {
+		case rune(selectorEnter), rune(selectorCancel), 'd', 'D', 's', 'S', 'q', 'Q':
+			fmt.Fprint(out, "\r\n")
+			return key, nil
 		}
 	}
 }
@@ -160,17 +197,21 @@ func readSelectorKey(in *os.File) (rune, error) {
 	case 0x03:
 		return rune(selectorCancel), nil
 	case 0x1b:
-		var sequence [2]byte
-		if _, err := io.ReadFull(in, sequence[:1]); err != nil {
+		second, available, err := readSelectorEscapeByte(in)
+		if err != nil {
+			return 0, err
+		}
+		if !available || second != '[' {
 			return rune(selectorEscape), nil
 		}
-		if sequence[0] != '[' {
+		third, available, err := readSelectorEscapeByte(in)
+		if err != nil {
+			return 0, err
+		}
+		if !available {
 			return rune(selectorEscape), nil
 		}
-		if _, err := io.ReadFull(in, sequence[1:]); err != nil {
-			return rune(selectorEscape), nil
-		}
-		switch sequence[1] {
+		switch third {
 		case 'A':
 			return rune(selectorUp), nil
 		case 'B':

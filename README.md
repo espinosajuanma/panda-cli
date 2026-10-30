@@ -56,6 +56,7 @@ them with `panda push`.
 | --- | --- |
 | `panda pull` / `panda push` | Synchronize local changes with Solutions |
 | `panda list` | List local tasks by workflow status |
+| `panda estimate` | Quickly assign complexity to tasks missing it |
 | `panda create` / `panda edit` | Create or edit tasks locally |
 | `panda diff` | Review pending changes and conflicts |
 | `panda view <task>` | Display task details, description, and notes |

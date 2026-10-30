@@ -19,6 +19,7 @@ var mainCommands = []mainCommand{
 	{"labels [list|create|edit|delete]", "", "Manage project labels locally.", true},
 	{"packages [list|create|edit|delete]", "", "Manage project packages (epics) locally.", true},
 	{"list", "[status filters] [other filters]", "List tasks with package, labels, and effort totals.", true},
+	{"estimate", "[status[,status...]] [--all]", "Quickly assign complexity to tasks in selected statuses.", true},
 	{"pull", "", "Fetch project tasks, catalogs, and members into the workspace.", true},
 	{"diff", "[task] [--verbose|-v] [--summary|-s]", "Review pending local changes.", true},
 	{"push", "[taskNumber|draft-N ...]", "Publish all local edits or only selected tasks; project catalogs are synchronized too.", true},

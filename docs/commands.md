@@ -75,6 +75,32 @@ limits output to one task.
 
 ## Tasks
 
+### `panda estimate [status[,status...]] [--all]`
+
+Interactively assign a complexity to local tasks in the selected workflow
+statuses. The default status is `new`; pass one or more comma-separated or
+space-separated statuses to process another group. Statuses are iterated in
+workflow order, and tasks within each status are sorted by rank.
+
+By default, tasks that already have a complexity are skipped. `--all` also
+includes those tasks for re-rating. On a terminal, use the arrow keys and Enter
+to choose a complexity; every option shows its story points and estimated hours.
+Press Escape while choosing to return to the task actions. Press `d` to view a
+task's description, `s` to skip it, or `q` to stop early.
+In non-terminal mode, enter `xs`, `s`, `m`, `l`, `xl`, or `xxl`; enter `d` to
+view the description, `q` to stop, or leave the choice blank to skip.
+
+Complexity choices map as follows: `xs` is 1 SP/4 hours, `s` is 2/8, `m` is
+3/12, `l` is 5/20, `xl` is 8/32, and `xxl` is 13/52. Each selection is saved
+locally; run `panda push` to publish the changes.
+
+```sh
+panda estimate
+panda estimate toDo
+panda estimate new,toDo
+panda estimate new --all
+```
+
 ### `panda list [status filters] [other filters]`
 
 Lists local tasks grouped in workflow order and sorted by their fetched rank.

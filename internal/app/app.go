@@ -304,7 +304,7 @@ func editMetadataFields(metadata map[string]any, includeTitle bool, in io.Reader
 	}{
 		{field: "type", values: []string{"feature", "bug", "other", "release"}},
 		{field: "priority", values: []string{"hotfix", "high", "medium", "low"}},
-		{field: "complexity", values: []string{"xs", "s", "m", "l", "xl", "xxl"}},
+		{field: "complexity", values: task.ComplexityOrder},
 	} {
 		current := stringField(metadata, option.field)
 		fieldTitle := strings.ToUpper(option.field[:1]) + option.field[1:]
@@ -314,7 +314,11 @@ func editMetadataFields(metadata map[string]any, includeTitle bool, in io.Reader
 				choices = append(choices, selectorOption{value: "", label: "None"})
 			}
 			for _, value := range option.values {
-				choices = append(choices, selectorOption{value: value, label: value})
+				label := value
+				if option.field == "complexity" {
+					label = task.ComplexityLabel(value)
+				}
+				choices = append(choices, selectorOption{value: value, label: label})
 			}
 			selected, err := selectSingleOption(in, out, fieldTitle, choices, current)
 			if err != nil {

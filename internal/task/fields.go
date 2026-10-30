@@ -1,5 +1,10 @@
 package task
 
+import (
+	"fmt"
+	"strings"
+)
+
 type Field string
 
 const (
@@ -36,4 +41,15 @@ var ComplexityEffort = map[string]Effort{
 	"l":   {StoryPoints: 5, Hours: 20},
 	"xl":  {StoryPoints: 8, Hours: 32},
 	"xxl": {StoryPoints: 13, Hours: 52},
+}
+
+var ComplexityOrder = []string{"xs", "s", "m", "l", "xl", "xxl"}
+
+func ComplexityLabel(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	effort, ok := ComplexityEffort[value]
+	if !ok {
+		return value
+	}
+	return fmt.Sprintf("%s — %d SP / %d hours", value, effort.StoryPoints, effort.Hours)
 }

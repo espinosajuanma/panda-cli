@@ -44,6 +44,27 @@ func TestReadSelectorKeyRecognizesNavigationAndSelectionKeys(t *testing.T) {
 	}
 }
 
+func TestReadSelectorKeyRecognizesBareEscape(t *testing.T) {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	if _, err := writer.Write([]byte("\x1b")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := readSelectorKey(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got != rune(selectorEscape) {
+		t.Fatalf("readSelectorKey() = %d, want Escape (%d)", got, selectorEscape)
+	}
+}
+
 func TestRenderSelectorReturnsToColumnZeroOnEveryLine(t *testing.T) {
 	reader, writer, err := os.Pipe()
 	if err != nil {

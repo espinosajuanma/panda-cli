@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/espinosajuanma/panda-cli/internal/task"
 	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
@@ -127,7 +128,7 @@ func applyTaskFieldOptions(ws *workspace.Workspace, metadata map[string]any, opt
 		case "priority":
 			allowed = []string{"hotfix", "high", "medium", "low"}
 		case "complexity":
-			allowed = []string{"xs", "s", "m", "l", "xl", "xxl"}
+			allowed = task.ComplexityOrder
 		}
 		if field != "title" && !contains(allowed, value) {
 			return nil, nil, fmt.Errorf("invalid %s %q; choose one of %s or none", field, value, strings.Join(allowed, ", "))
