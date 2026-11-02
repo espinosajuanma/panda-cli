@@ -215,8 +215,7 @@ func TestCreateTaskNoninteractiveWithDescriptionDoesNotPromptOrPublish(t *testin
 	}))
 	defer server.Close()
 
-	configHome := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", configHome)
+	setTestConfigHome(t)
 	t.Setenv("EDITOR", filepath.Join(t.TempDir(), "editor-must-not-run"))
 	project := &config.Project{ID: "project-local", Name: "Automation"}
 	if err := (&config.Config{APIURL: server.URL, Project: project}).Save(); err != nil {
@@ -323,7 +322,7 @@ func TestTaskFieldOptionsSupportRepeatableAssigneesAndLabelOperations(t *testing
 }
 
 func TestLinkUsesSharedTaskViewAndVerifiedTaskMetadataID(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	setTestConfigHome(t)
 	project := &config.Project{ID: "project-1", Name: "Linked"}
 	if err := (&config.Config{Project: project}).Save(); err != nil {
 		t.Fatal(err)
@@ -413,7 +412,7 @@ func TestTaskDescriptionRejectsInvalidUTF8(t *testing.T) {
 }
 
 func TestProjectViewConfigCommandsAreRemoved(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	setTestConfigHome(t)
 	if err := Run([]string{"config", "set", "project-view", "custom-view"}, strings.NewReader(""), io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "usage: panda config") {
 		t.Fatalf("removed project-view setter error = %v", err)
 	}

@@ -12,7 +12,7 @@ import (
 )
 
 func TestConfigCommandSetsAndGetsAPIURL(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	setTestConfigHome(t)
 	t.Setenv("PANDA_API_URL", "")
 	cfg := &config.Config{APIURL: config.DefaultAPIURL}
 	var output strings.Builder
@@ -29,7 +29,7 @@ func TestConfigCommandSetsAndGetsAPIURL(t *testing.T) {
 }
 
 func TestLogoutClearsSavedSession(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	setTestConfigHome(t)
 	t.Setenv("PANDA_API_URL", "")
 	cfg := &config.Config{APIURL: config.DefaultAPIURL, Token: "token", Email: "user@example.com"}
 	if err := cfg.Save(); err != nil {
@@ -49,7 +49,7 @@ func TestLogoutClearsSavedSession(t *testing.T) {
 }
 
 func TestRunContextPassesCancellationToLoginRequest(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	setTestConfigHome(t)
 	t.Setenv("PANDA_API_URL", "https://example.invalid/api")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

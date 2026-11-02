@@ -11,8 +11,7 @@ import (
 )
 
 func TestPathPrintsActiveWorkspacePathWithoutCreatingIt(t *testing.T) {
-	configHome := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", configHome)
+	setTestConfigHome(t)
 	if err := (&config.Config{
 		APIURL:  config.DefaultAPIURL,
 		Project: &config.Project{ID: "project-1", Name: "Stokes Wagner"},

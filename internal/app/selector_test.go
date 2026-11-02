@@ -53,11 +53,11 @@ func TestReadSelectorKeyRecognizesBareEscape(t *testing.T) {
 	if _, err := writer.Write([]byte("\x1b")); err != nil {
 		t.Fatal(err)
 	}
-	got, err := readSelectorKey(reader)
-	if err != nil {
+	if err := writer.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := writer.Close(); err != nil {
+	got, err := readSelectorKey(reader)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if got != rune(selectorEscape) {

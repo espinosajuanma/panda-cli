@@ -3,30 +3,34 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
 
 func TestSaveUsesPrivateConfigFile(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
+	setTestConfigHome(t)
 	cfg := &Config{APIURL: DefaultAPIURL, Token: "private-token", Project: &Project{ID: "p1", Name: "Alpha"}}
 	if err := cfg.Save(); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(base, "panda-dashboard", "config.json")
+	dir, err := Directory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "config.json")
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("config permissions = %o, want 600", info.Mode().Perm())
 	}
 	dirInfo, err := os.Stat(filepath.Dir(path))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dirInfo.Mode().Perm() != 0o700 {
+	if runtime.GOOS != "windows" && dirInfo.Mode().Perm() != 0o700 {
 		t.Fatalf("config directory permissions = %o, want 700", dirInfo.Mode().Perm())
 	}
 	loaded, err := Load()
@@ -39,9 +43,11 @@ func TestSaveUsesPrivateConfigFile(t *testing.T) {
 }
 
 func TestLoadIgnoresLegacyProjectViewID(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-	dir := filepath.Join(base, "panda-dashboard")
+	setTestConfigHome(t)
+	dir, err := Directory()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +75,7 @@ func TestLoadIgnoresLegacyProjectViewID(t *testing.T) {
 }
 
 func TestLoadUsesValidatedAPIURLEnvironmentOverride(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	setTestConfigHome(t)
 	t.Setenv("PANDA_API_URL", "https://solutions.example/runtime/api/")
 	cfg, err := Load()
 	if err != nil {
@@ -82,4 +88,12 @@ func TestLoadUsesValidatedAPIURLEnvironmentOverride(t *testing.T) {
 	if _, err := Load(); err == nil {
 		t.Fatal("invalid API URL override was accepted")
 	}
+}
+
+func setTestConfigHome(t *testing.T) {
+	t.Helper()
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	t.Setenv("HOME", base)
+	t.Setenv("AppData", base)
 }

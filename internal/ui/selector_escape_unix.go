@@ -24,6 +24,9 @@ func readSelectorEscapeByte(in *os.File) (byte, bool, error) {
 		}
 		var one [1]byte
 		if _, err := io.ReadFull(in, one[:]); err != nil {
+			if errors.Is(err, io.EOF) {
+				return 0, false, nil
+			}
 			return 0, false, err
 		}
 		return one[0], true, nil

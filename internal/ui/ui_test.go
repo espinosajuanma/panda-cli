@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -67,6 +68,9 @@ func TestConfigureLessPagerAddsRawAndNoInitOptions(t *testing.T) {
 }
 
 func TestOpenEditorParsesQuotedCommandPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("editor fixture requires a POSIX shell")
+	}
 	dir := t.TempDir()
 	commandPath := filepath.Join(dir, "editor command")
 	marker := filepath.Join(dir, "marker file")

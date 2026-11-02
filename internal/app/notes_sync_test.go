@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,9 @@ import (
 )
 
 func TestEditNoteOpensOnlyCurrentUsersSyncedNote(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("editor fixture requires a POSIX shell")
+	}
 	const timestamp = int64(1793188800000)
 	remote := map[string]any{"id": "task-note-command", "number": float64(13769), "title": "Edit my note", "type": "feature", "priority": "medium", "status": "new", "description": "", "project": map[string]any{"id": "project-1"}, "labels": []any{}, "assignees": []any{}, "reviewers": []any{}, "notes": []any{map[string]any{"note": "<p>Original note body</p>", "timestamp": float64(timestamp), "addedBy": map[string]any{"id": "user-1", "label": "Juan"}}}}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

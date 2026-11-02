@@ -109,7 +109,10 @@ func TestCompletionNoLongerProvidesLabelSuggestions(t *testing.T) {
 }
 
 func TestBashCompletionScriptIsValid(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	setTestConfigHome(t)
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not installed")
+	}
 	var output bytes.Buffer
 	if err := Run([]string{"completion", "bash"}, strings.NewReader(""), &output, &output); err != nil {
 		t.Fatal(err)
