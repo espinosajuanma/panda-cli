@@ -27,10 +27,11 @@ unset. Ensure that directory is on `PATH`.
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on pushes and pull requests across Linux, macOS,
-and Windows. It checks formatting, vet, tests, and builds; Linux also runs the
-race detector, static analysis, and vulnerability scanning. CI validates changes
-but does not publish binaries or create releases.
+`.github/workflows/ci.yml` runs the fast Linux format, vet, test, and build checks
+on pushes to `main`. Pull requests, `v*` tags, and manual dispatches also run the
+macOS/Windows matrix, race detector, Staticcheck, and vulnerability scan.
+Superseded runs for the same ref are cancelled. CI validates changes but does
+not publish binaries or create releases.
 
 ## Install from GitHub
 
