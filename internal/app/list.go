@@ -24,6 +24,8 @@ type listOptions struct {
 	noDescription   bool
 	noPackage       bool
 	noLabels        bool
+	assignees       []string
+	reviewers       []string
 	json            bool
 }
 
@@ -41,18 +43,24 @@ type listGroup struct {
 }
 
 type listReport struct {
-	groups       []listGroup
-	total        effortEstimate
-	labelNames   map[string]string
-	packageNames map[string]string
+	groups        []listGroup
+	total         effortEstimate
+	labelNames    map[string]string
+	packageNames  map[string]string
+	showAssignees bool
+	showReviewers bool
 }
 
 func listTasks(ws *workspace.Workspace, args []string, out io.Writer) error {
+	return listTasksForUser(ws, args, "", out)
+}
+
+func listTasksForUser(ws *workspace.Workspace, args []string, userEmail string, out io.Writer) error {
 	options, err := parseListOptions(args)
 	if err != nil {
 		return err
 	}
-	report, err := collectListReport(ws, options)
+	report, err := collectListReportForUser(ws, options, userEmail)
 	if err != nil {
 		return err
 	}
@@ -64,7 +72,28 @@ func listTasks(ws *workspace.Workspace, args []string, out io.Writer) error {
 	})
 }
 
-func collectListReport(ws *workspace.Workspace, options listOptions) (listReport, error) {
+func collectListReportForUser(ws *workspace.Workspace, options listOptions, userEmail string) (listReport, error) {
+	var assigneeFilter, reviewerFilter relationFilter
+	if len(options.assignees) > 0 || len(options.reviewers) > 0 {
+		var members []map[string]any
+		available := false
+		if relationSelectorsNeedMembers(options.assignees) || relationSelectorsNeedMembers(options.reviewers) {
+			var err error
+			members, available, err = projectMembersIfAvailable(ws)
+			if err != nil {
+				return listReport{}, err
+			}
+		}
+		var err error
+		assigneeFilter, err = resolveRelationFilter(members, available, options.assignees, userEmail, "assignee")
+		if err != nil {
+			return listReport{}, err
+		}
+		reviewerFilter, err = resolveRelationFilter(members, available, options.reviewers, userEmail, "reviewer")
+		if err != nil {
+			return listReport{}, err
+		}
+	}
 	labelsCatalog, err := readCatalog(ws, labelCatalog)
 	if err != nil {
 		return listReport{}, err
@@ -74,9 +103,11 @@ func collectListReport(ws *workspace.Workspace, options listOptions) (listReport
 		return listReport{}, err
 	}
 	report := listReport{
-		groups:       make([]listGroup, 0),
-		labelNames:   catalogNameIndex(labelCatalog, labelsCatalog),
-		packageNames: catalogNameIndex(packageCatalog, packagesCatalog),
+		groups:        make([]listGroup, 0),
+		labelNames:    catalogNameIndex(labelCatalog, labelsCatalog),
+		packageNames:  catalogNameIndex(packageCatalog, packagesCatalog),
+		showAssignees: len(options.assignees) > 0,
+		showReviewers: len(options.reviewers) > 0,
 	}
 	dirs, err := ws.TaskDirectories()
 	if err != nil {
@@ -111,6 +142,9 @@ func collectListReport(ws *workspace.Workspace, options listOptions) (listReport
 			continue
 		}
 		if options.noLabels && hasLabelAssignments(metadata["labels"]) {
+			continue
+		}
+		if !assigneeFilter.matches(metadata["assignees"]) || !reviewerFilter.matches(metadata["reviewers"]) {
 			continue
 		}
 		grouped[status] = append(grouped[status], listTaskEntry{dir: dir, metadata: metadata})
@@ -148,7 +182,7 @@ func renderListReport(report listReport, out, colorTarget io.Writer) error {
 		for _, entry := range group.entries {
 			metadata = append(metadata, entry.metadata)
 		}
-		_, err := printTaskGroup(out, colorTarget, group.status, metadata, report.labelNames, report.packageNames)
+		_, err := printTaskGroup(out, colorTarget, group.status, metadata, report.labelNames, report.packageNames, report.showAssignees, report.showReviewers)
 		if err != nil {
 			return err
 		}
@@ -184,8 +218,28 @@ func parseListOptions(args []string) (listOptions, error) {
 			options.noPackage = true
 		case arg == "--no-labels":
 			options.noLabels = true
+		case arg == "--assignee" || arg == "--reviewer":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return options, listUsageError()
+			}
+			i++
+			if arg == "--assignee" {
+				if err := appendRelationSelectors(&options.assignees, args[i], "--assignee"); err != nil {
+					return options, err
+				}
+			} else if err := appendRelationSelectors(&options.reviewers, args[i], "--reviewer"); err != nil {
+				return options, err
+			}
 		case arg == "--json":
 			options.json = true
+		case strings.HasPrefix(arg, "--assignee="):
+			if err := appendRelationSelectors(&options.assignees, strings.TrimPrefix(arg, "--assignee="), "--assignee"); err != nil {
+				return options, err
+			}
+		case strings.HasPrefix(arg, "--reviewer="):
+			if err := appendRelationSelectors(&options.reviewers, strings.TrimPrefix(arg, "--reviewer="), "--reviewer"); err != nil {
+				return options, err
+			}
 		case arg == "--status":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
 				return options, listUsageError()
@@ -206,7 +260,7 @@ func parseListOptions(args []string) (listOptions, error) {
 }
 
 func listUsageError() error {
-	return errors.New("usage: panda list [--current] [--staging] [--released] [--discarded] [--all] [--status <status,...>] [--no-complexity] [--no-description] [--no-package] [--no-labels] [--json]")
+	return errors.New("usage: panda list [--current] [--staging] [--released] [--discarded] [--all] [--status <status,...>] [--no-complexity] [--no-description] [--no-package] [--no-labels] [--assignee <member,...>] [--reviewer <member,...>] [--json]")
 }
 
 func addQuickStatusFilter(options *listOptions, statuses []string) {
@@ -297,7 +351,7 @@ func compareTaskNumbers(left, right any) int {
 	return strings.Compare(fmt.Sprint(left), fmt.Sprint(right))
 }
 
-func printTaskGroup(out, colorTarget io.Writer, status string, tasks []map[string]any, labelNames, packageNames map[string]string) (effortEstimate, error) {
+func printTaskGroup(out, colorTarget io.Writer, status string, tasks []map[string]any, labelNames, packageNames map[string]string, showAssignees, showReviewers bool) (effortEstimate, error) {
 	style := "1;32"
 	if status == "released" {
 		style = "1;36"
@@ -305,7 +359,15 @@ func printTaskGroup(out, colorTarget io.Writer, status string, tasks []map[strin
 	fmt.Fprintln(out, colorText(colorTarget, style, displayStatus(status)))
 	var table bytes.Buffer
 	writer := tabwriter.NewWriter(&table, 0, 4, 2, ' ', 0)
-	if _, err := fmt.Fprintln(writer, "NUMBER\tPRIORITY\tTYPE\tCOMPLEXITY\tSP\tHOURS\tPACKAGE\tLABELS\tTITLE"); err != nil {
+	headers := []string{"NUMBER", "PRIORITY", "TYPE", "COMPLEXITY", "SP", "HOURS", "PACKAGE", "LABELS"}
+	if showAssignees {
+		headers = append(headers, "ASSIGNEES")
+	}
+	if showReviewers {
+		headers = append(headers, "REVIEWERS")
+	}
+	headers = append(headers, "TITLE")
+	if _, err := fmt.Fprintln(writer, strings.Join(headers, "\t")); err != nil {
 		return effortEstimate{}, err
 	}
 	var total effortEstimate
@@ -333,9 +395,23 @@ func printTaskGroup(out, colorTarget io.Writer, status string, tasks []map[strin
 		if labels == "" {
 			labels = "-"
 		}
-		if _, err := fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			tableCell(number), tableCell(currentTask["priority"]), tableCell(currentTask["type"]), complexity,
-			storyPoints, hours, pkg, labels, tableCell(currentTask["title"])); err != nil {
+		row := []string{tableCell(number), tableCell(currentTask["priority"]), tableCell(currentTask["type"]), complexity, storyPoints, hours, pkg, labels}
+		if showAssignees {
+			assignees := assigneesDisplay(currentTask["assignees"])
+			if assignees == "" {
+				assignees = "-"
+			}
+			row = append(row, tableCell(assignees))
+		}
+		if showReviewers {
+			reviewers := assigneesDisplay(currentTask["reviewers"])
+			if reviewers == "" {
+				reviewers = "-"
+			}
+			row = append(row, tableCell(reviewers))
+		}
+		row = append(row, tableCell(currentTask["title"]))
+		if _, err := fmt.Fprintln(writer, strings.Join(row, "\t")); err != nil {
 			return effortEstimate{}, err
 		}
 	}

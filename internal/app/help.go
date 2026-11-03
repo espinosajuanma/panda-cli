@@ -194,10 +194,11 @@ var manualPages = map[string]manualPage{
 	},
 	"list": {
 		name:     "panda list - list local tasks by status",
-		synopsis: []string{"panda list [status filters] [other options] [--json]"},
+		synopsis: []string{"panda list [status filters] [assignee/reviewer filters] [other options] [--json]"},
 		description: []string{
 			"List tasks in the active project's local workspace, grouped by workflow status and sorted by rank. The default view includes new, toDo, inProgress, inReview, and completed tasks.",
 			"Status selectors are combined as a union. --all includes every status, including statuses not otherwise recognized by Panda. The existing --status selector accepts one or more comma-separated known statuses.",
+			"--assignee and --reviewer accept repeatable or comma-separated member names, emails, IDs, me, or none. Values within one filter are combined as a union; assignee and reviewer filters are both required when both are supplied. me uses the saved login email. Member names are resolved from the latest panda pull when available.",
 			"Complexity maps to story points and estimated hours. Package and label names are shown with each task. Each group has a subtotal, followed by a total for all tasks visible after status and content filters are applied.",
 			"Long terminal output uses $PAGER (default less -FRX) and remains visible after leaving the pager; piped output is printed directly. --json emits a versioned JSON document without paging or terminal formatting.",
 		},
@@ -212,6 +213,8 @@ var manualPages = map[string]manualPage{
 			{"--no-description", "Show only tasks with a missing or blank local description."},
 			{"--no-package", "Show only tasks that are not assigned to a package."},
 			{"--no-labels", "Show only tasks that have no labels assigned."},
+			{"--assignee <member,...>", "Filter by any selected project member; repeat or comma-separate names, emails, or IDs. Use me for the logged-in member or none for unassigned tasks."},
+			{"--reviewer <member,...>", "Filter by any selected reviewer; repeat or comma-separate names, emails, or IDs. Use me for the logged-in member or none for tasks without reviewers."},
 			{"--json", "Emit versioned JSON with task metadata, display relationships, effort estimates, and totals."},
 		},
 		examples: []string{
@@ -220,6 +223,8 @@ var manualPages = map[string]manualPage{
 			"panda list --staging",
 			"panda list --status 'new,toDo' --no-complexity",
 			"panda list --no-package --no-labels",
+			"panda list --assignee me --reviewer none",
+			"panda list --assignee 'Ada Lovelace,Grace Hopper'",
 			"panda list --current --json",
 		},
 		seeAlso: []string{"panda-pull(1)", "panda-view(1)"},

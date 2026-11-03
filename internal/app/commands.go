@@ -21,7 +21,7 @@ var mainCommands = []mainCommand{
 	{"completion <bash|zsh|fish>", "", "Print shell completion setup code.", false},
 	{"labels [list|create|edit|delete]", "", "Manage project labels locally.", true},
 	{"packages [list|create|edit|delete]", "", "Manage project packages (epics) locally.", true},
-	{"list", "[status filters] [other filters] [--json]", "List tasks with package, labels, and effort totals.", true},
+	{"list", "[status filters] [assignee/reviewer filters] [other filters] [--json]", "List tasks with package, labels, and effort totals.", true},
 	{"estimate", "[status[,status...]] [--type <type,...>] [--all]", "Quickly assign complexity to tasks in selected statuses and types.", true},
 	{"pull", "", "Fetch project tasks, catalogs, and members into the workspace.", true},
 	{"diff", "[task] [--verbose|-v] [--summary|-s] [--json]", "Review pending local changes.", true},

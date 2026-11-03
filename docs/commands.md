@@ -143,7 +143,7 @@ panda estimate --type bug --type other
 panda estimate new --all
 ```
 
-### `panda list [status filters] [other filters] [--json]`
+### `panda list [status filters] [assignee/reviewer filters] [other filters] [--json]`
 
 Lists local tasks grouped in workflow order and sorted by their fetched rank.
 The default statuses are `new`, `toDo`, `inProgress`, `inReview`, and
@@ -163,6 +163,18 @@ Content filters:
 - `--no-description`: tasks with a missing or blank local description.
 - `--no-package`: tasks without a package.
 - `--no-labels`: tasks without labels.
+
+Relationship filters:
+
+- `--assignee <member,...>`: select tasks assigned to any listed member. Repeat
+  the option or pass comma-separated names, emails, or IDs.
+- `--reviewer <member,...>`: select tasks reviewed by any listed member, with the
+  same repeatable/comma-separated behavior.
+- `me` selects the member matching the saved login email and requires synced
+  project members. `none` selects tasks with no assignees/reviewers and must be
+  used alone for that filter.
+- Multiple values within one filter use OR; when both `--assignee` and
+  `--reviewer` are supplied, the task must match both filters.
 - `--json`: emit a versioned JSON document containing the filtered groups, task
   metadata, display names for relationships, per-task effort estimates, and
   group/project totals. JSON output is written directly without paging or color.
@@ -179,6 +191,9 @@ panda list --current
 panda list --staging
 panda list --status 'new,toDo' --no-complexity
 panda list --no-description --no-package --no-labels
+panda list --assignee me --reviewer none
+panda list --assignee 'Ada Lovelace,Grace Hopper'
+panda list --assignee ada@example.com --reviewer grace@example.com
 panda list --current --json
 ```
 

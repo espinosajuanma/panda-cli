@@ -9,6 +9,7 @@ import (
 var mainCommandDetails = map[string][]string{
 	"list": {
 		"Status filters: --current, --staging, --released, --discarded, --all, --status <status,...>.",
+		"Relationship filters: repeatable --assignee <member,...> and --reviewer <member,...>; values within each filter match any member, and supplied filters combine with AND. Use me or none.",
 		"Other filters: --no-complexity, --no-description, --no-package, --no-labels.",
 		"Output: --json emits a versioned JSON document without paging or terminal formatting.",
 	},

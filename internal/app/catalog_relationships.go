@@ -16,18 +16,29 @@ import (
 var assignableTeamRoles = []string{"teamLead", "developer", "qa"}
 
 func projectMembers(ws *workspace.Workspace) ([]map[string]any, error) {
-	data, err := os.ReadFile(filepath.Join(ws.Root, ".panda", "members.json"))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, errors.New("project members are not synced; run `panda pull` first")
-	}
+	members, available, err := projectMembersIfAvailable(ws)
 	if err != nil {
 		return nil, err
 	}
-	var members []map[string]any
-	if err := json.Unmarshal(data, &members); err != nil {
-		return nil, fmt.Errorf("parse project members: %w", err)
+	if !available {
+		return nil, errors.New("project members are not synced; run `panda pull` first")
 	}
 	return members, nil
+}
+
+func projectMembersIfAvailable(ws *workspace.Workspace) ([]map[string]any, bool, error) {
+	data, err := os.ReadFile(filepath.Join(ws.Root, ".panda", "members.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	var members []map[string]any
+	if err := json.Unmarshal(data, &members); err != nil {
+		return nil, false, fmt.Errorf("parse project members: %w", err)
+	}
+	return members, true, nil
 }
 
 func memberUser(member map[string]any) map[string]any {

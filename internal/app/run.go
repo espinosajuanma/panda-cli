@@ -84,7 +84,7 @@ func RunContext(ctx context.Context, args []string, in io.Reader, out, errOut io
 		}
 		switch command {
 		case "list":
-			return listTasks(ws, args, out)
+			return listTasksForUser(ws, args, cfg.Email, out)
 		case "estimate":
 			return estimateTasks(ws, args, in, out)
 		case "pull":
