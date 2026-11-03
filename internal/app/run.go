@@ -67,6 +67,12 @@ func RunContext(ctx context.Context, args []string, in io.Reader, out, errOut io
 			return errors.New("usage: panda path")
 		}
 		return printWorkspacePath(cfg, out)
+	case "browse":
+		ws, err := readOnlyProjectWorkspace(cfg)
+		if err != nil {
+			return err
+		}
+		return browseTasks(ws, args, cfg.Email, cfg.APIURL, in, out)
 	default:
 		if !commandNeedsWorkspace(command) {
 			if err := printHelp(errOut); err != nil {

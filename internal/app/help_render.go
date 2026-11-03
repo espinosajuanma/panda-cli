@@ -22,6 +22,9 @@ var mainCommandDetails = map[string][]string{
 	"doctor": {
 		"Checks are local-only and read-only. Warnings are reported but failures determine the exit status.",
 	},
+	"browse": {
+		"Interactive and read-only; accepts the same task filters as list, except --json.",
+	},
 }
 
 func printHelp(out io.Writer) error {

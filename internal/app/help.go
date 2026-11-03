@@ -237,6 +237,14 @@ var manualPages = map[string]manualPage{
 		},
 		seeAlso: []string{"panda-pull(1)", "panda-view(1)"},
 	},
+	"browse": {
+		name:        "panda browse - interactively inspect local tasks",
+		synopsis:    []string{"panda browse [list filters]"},
+		description: []string{"Open a terminal task selector using the same status, content, assignee, and reviewer filters as panda list. Select a task to view its metadata, description, notes, files, pending diff, or verified link. Browse is read-only and requires an interactive terminal; use panda list for non-interactive output."},
+		options:     []manualOption{{"list filters", "Accept the status, content, --assignee, and --reviewer filters documented by panda list. --json is not supported."}},
+		examples:    []string{"panda browse", "panda browse --current", "panda browse --assignee me --reviewer none"},
+		seeAlso:     []string{"panda-list(1)", "panda-view(1)", "panda-diff(1)"},
+	},
 	"estimate": {
 		name:     "panda estimate - assign complexity to local tasks",
 		synopsis: []string{"panda estimate [status[,status...]] [--type <type,...>] [--all]"},

@@ -228,6 +228,25 @@ and `reviewers` values. `storyPoints` and `hours` are `null` when the task's
 complexity is unknown. Group and overall totals include task counts, story
 points, and hours.
 
+### `panda browse [list filters]`
+
+Opens an interactive selector for local tasks and a read-only action menu for
+the selected task. The task selector supports typing to narrow matches. Actions
+include full task view, description, notes, attached files, verbose pending diff,
+and a verified task link when available. Choose Back to return to the task
+selector or Quit to exit.
+
+Browse accepts the status, content, assignee, and reviewer filters documented
+for `panda list`; `--json` is not supported. It requires a terminal and never
+changes task files or synchronization state. Use `panda list` for non-interactive
+or scripted output.
+
+```sh
+panda browse
+panda browse --current
+panda browse --assignee me --reviewer none
+```
+
 ### `panda create [title] [task field options]`
 
 Creates a task locally with the next available ID: `draft-1`, `draft-2`, and so

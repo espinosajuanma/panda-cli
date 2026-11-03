@@ -13,6 +13,7 @@ edit with your preferred tools.
 - Review changes and conflicts before pushing updates to Solutions.
 - Emit structured JSON for task lists, pending diffs, and push results.
 - Diagnose local configuration and workspace state with `panda doctor`.
+- Browse and inspect local tasks interactively with `panda browse`.
 - Use interactive selectors, scriptable options, and shell completions.
 
 ## Requirements
@@ -62,6 +63,7 @@ them with `panda push`.
 | `panda config` / `panda path` | Select project, configure API URL, and inspect workspace |
 | `panda doctor` | Diagnose local configuration and workspace health |
 | `panda list` | Filter local tasks by workflow status, assignee, and reviewer; emit JSON with `--json` |
+| `panda browse` | Interactively browse and inspect local tasks |
 | `panda estimate` | Quickly assign complexity to selected task statuses and types |
 | `panda create` / `panda edit` | Create or edit tasks locally |
 | `panda diff` | Review pending changes and conflicts; `diff --json` emits structured changes |
