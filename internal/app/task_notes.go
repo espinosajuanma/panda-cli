@@ -98,16 +98,7 @@ func discard(ws *workspace.Workspace, args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	state, key, err := loadTaskState(ws, dir, metadata)
-	if err != nil {
-		return err
-	}
-	state.StagedDiscard = true
-	if err := ws.WriteState(key, state); err != nil {
-		return err
-	}
-	metadata["status"] = "discarded"
-	if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), metadata); err != nil {
+	if err := saveTaskStatus(ws, dir, metadata, "discarded"); err != nil {
 		return err
 	}
 	if len(args) > 1 {

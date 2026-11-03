@@ -15,6 +15,7 @@ const (
 	FieldPackage    Field = "package"
 	FieldLabels     Field = "labels"
 	FieldStatus     Field = "status"
+	FieldRank       Field = "rank"
 	FieldAssignees  Field = "assignees"
 	FieldReviewers  Field = "reviewers"
 )
@@ -22,7 +23,7 @@ const (
 // EditableFields are the task metadata fields that participate in three-way sync.
 var EditableFields = []string{
 	string(FieldTitle), string(FieldType), string(FieldPriority), string(FieldComplexity),
-	string(FieldPackage), string(FieldLabels), string(FieldStatus), string(FieldAssignees), string(FieldReviewers),
+	string(FieldPackage), string(FieldLabels), string(FieldStatus), string(FieldRank), string(FieldAssignees), string(FieldReviewers),
 }
 
 var StatusOrder = []string{"new", "toDo", "inProgress", "inReview", "completed", "staging", "released", "discarded"}

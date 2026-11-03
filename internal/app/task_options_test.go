@@ -46,6 +46,81 @@ func TestOptionEditPreservesUnspecifiedNullableAndAbsentMetadata(t *testing.T) {
 	}
 }
 
+func TestOptionEditChangesStatusAndStagesOrClearsDiscard(t *testing.T) {
+	ws, dir := makeSyncedTask(t, map[string]any{
+		"id": "task-status-option", "number": float64(443), "title": "Status edit",
+		"type": "feature", "priority": "medium", "status": "new", "rank": "a", "description": "",
+	})
+	if err := editTask(ws, []string{"443", "--status", "inProgress"}, strings.NewReader("unused"), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	metadata, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stringField(metadata, "status") != "inProgress" {
+		t.Fatalf("status = %q, want inProgress", stringField(metadata, "status"))
+	}
+	state, err := ws.ReadState("task-status-option")
+	if err != nil || state.StagedDiscard {
+		t.Fatalf("non-discard status staged discard: state=%#v error=%v", state, err)
+	}
+
+	if err := editTask(ws, []string{"443", "--status=discarded"}, strings.NewReader("unused"), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	state, err = ws.ReadState("task-status-option")
+	if err != nil || !state.StagedDiscard {
+		t.Fatalf("discard status was not staged: state=%#v error=%v", state, err)
+	}
+	if err := editTask(ws, []string{"443", "--status", "toDo"}, strings.NewReader("unused"), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	state, err = ws.ReadState("task-status-option")
+	if err != nil || state.StagedDiscard {
+		t.Fatalf("changing away from discarded did not clear staging: state=%#v error=%v", state, err)
+	}
+	metadata, err = workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+	if err != nil || stringField(metadata, "status") != "toDo" {
+		t.Fatalf("final status = %#v, error=%v", metadata["status"], err)
+	}
+}
+
+func TestOptionEditRejectsUnknownStatusWithoutChangingMetadata(t *testing.T) {
+	ws, dir := makeSyncedTask(t, map[string]any{
+		"id": "task-status-invalid", "number": float64(444), "title": "Status edit",
+		"type": "feature", "priority": "medium", "status": "new", "description": "",
+	})
+	if err := editTask(ws, []string{"444", "--status", "blocked"}, strings.NewReader(""), io.Discard); err == nil {
+		t.Fatal("unknown status unexpectedly succeeded")
+	}
+	metadata, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stringField(metadata, "status") != "new" {
+		t.Fatalf("invalid status changed metadata to %q", stringField(metadata, "status"))
+	}
+}
+
+func TestInteractiveEditCanChangeStatus(t *testing.T) {
+	ws, dir := makeSyncedTask(t, map[string]any{
+		"id": "task-interactive-status", "number": float64(447), "title": "Status edit",
+		"type": "feature", "priority": "medium", "status": "new", "rank": "a", "description": "",
+	})
+	input := strings.NewReader("\n\n\n\ninProgress\n\n\n\n\n")
+	if err := editTask(ws, []string{"447"}, input, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	metadata, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stringField(metadata, "status") != "inProgress" {
+		t.Fatalf("interactive status = %q, want inProgress", stringField(metadata, "status"))
+	}
+}
+
 func TestOptionEditClearsPackageWhenChangingTaskToRelease(t *testing.T) {
 	ws, dir := makeSyncedTask(t, map[string]any{
 		"id": "task-release-option", "number": float64(445), "title": "Packaged task",

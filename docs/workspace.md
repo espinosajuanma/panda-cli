@@ -51,8 +51,9 @@ Solutions task numbers, a later draft may reuse those numbers. New tasks use
 ## Tasks and synchronization
 
 Solutions tasks use the `dev.tasks` entity. Panda stores editable metadata such
-as title, type, priority, complexity, package, and labels, and tracks status,
-assignees, reviewers, and notes.
+as title, type, priority, complexity, package, labels, status, and rank, and
+tracks assignees, reviewers, and notes. Rank is synchronized like other editable
+fields; reordering swaps ranks with a neighboring task in the same status group.
 
 `pull` compares fetched data with the last-synced baseline. Independent local and
 remote changes are merged; overlapping edits are reported as conflicts. Pull

@@ -29,7 +29,7 @@ func TestInteractiveEditValidatesEnumsAndWritesMetadata(t *testing.T) {
 	if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), metadata); err != nil {
 		t.Fatal(err)
 	}
-	if err := editTask(ws, []string{"14"}, strings.NewReader("Changed title\n\nhigh\n-\nn\n\n"), io.Discard); err != nil {
+	if err := editTask(ws, []string{"14"}, strings.NewReader("Changed title\n\nhigh\n-\n\nn\n\n"), io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	updated, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))

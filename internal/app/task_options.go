@@ -54,7 +54,7 @@ func parseTaskFieldOptions(args []string) (taskFieldOptions, []string, error) {
 			return args[index], nil
 		}
 		switch name {
-		case "--title", "--type", "--priority", "--complexity", "--package":
+		case "--title", "--type", "--priority", "--complexity", "--package", "--status":
 			field := strings.TrimPrefix(name, "--")
 			if options.provided[field] {
 				return options, nil, fmt.Errorf("%s may only be supplied once", name)
@@ -108,7 +108,7 @@ func (options taskFieldOptions) hasMetadataFields() bool {
 
 func applyTaskFieldOptions(ws *workspace.Workspace, metadata map[string]any, options taskFieldOptions, in io.Reader) (map[string]any, []byte, error) {
 	updated := cloneMap(metadata)
-	for _, field := range []string{"title", "type", "priority", "complexity"} {
+	for _, field := range []string{"title", "type", "priority", "complexity", "status"} {
 		value, provided := options.fields[field]
 		if !provided {
 			continue
@@ -129,8 +129,13 @@ func applyTaskFieldOptions(ws *workspace.Workspace, metadata map[string]any, opt
 			allowed = []string{"hotfix", "high", "medium", "low"}
 		case "complexity":
 			allowed = task.ComplexityOrder
+		case "status":
+			allowed = task.StatusOrder
 		}
 		if field != "title" && !contains(allowed, value) {
+			if field == "status" {
+				return nil, nil, fmt.Errorf("invalid status %q; choose one of %s", value, strings.Join(allowed, ", "))
+			}
 			return nil, nil, fmt.Errorf("invalid %s %q; choose one of %s or none", field, value, strings.Join(allowed, ", "))
 		}
 		updated[field] = value

@@ -29,7 +29,7 @@ var mainCommands = []mainCommand{
 	{"diff", "[task] [--verbose|-v] [--summary|-s] [--json]", "Review pending local changes.", true},
 	{"push", "[taskNumber|draft-N ...] [--json]", "Publish all local edits or only selected tasks; project catalogs are synchronized too.", true},
 	{"create", "[title] [task field options]", "Create a task locally with interactive or noninteractive options.", true},
-	{"edit", "<task> [task field options|labels ...|package ...|assignees ...|json]", "Edit task fields interactively or with safe partial options.", true},
+	{"edit", "<task> [task field options|labels ...|package ...|assignees ...|rank up|down|json]", "Edit task fields or move a task within its status rank.", true},
 	{"assign", "<task> <teamLead|developer|qa|none>", "Assign eligible project members to a task by role.", true},
 	{"link", "<task>", "Print a canonical Markdown link to a verified synced task.", true},
 	{"edit-note", "<task> <note-file>", "Edit one of your synced notes.", true},

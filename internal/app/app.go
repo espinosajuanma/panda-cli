@@ -124,7 +124,7 @@ func createTaskInteractive(ws *workspace.Workspace, project *config.Project, arg
 
 func editTask(ws *workspace.Workspace, args []string, in io.Reader, out io.Writer) error {
 	if len(args) < 1 {
-		return errors.New("usage: panda edit <taskNumber|draft-N> [labels [labelName...]|package [name|none]|assignees [member...|none]|json]")
+		return errors.New("usage: panda edit <taskNumber|draft-N> [task field options|labels ...|package ...|assignees ...|rank up|down|json]")
 	}
 	dir, metadata, err := ws.FindTask(args[0])
 	if err != nil {
@@ -138,6 +138,11 @@ func editTask(ws *workspace.Workspace, args []string, in io.Reader, out io.Write
 			return editTaskPackage(ws, dir, metadata, args[2:], in, out)
 		case "assignees", "assign":
 			return editAssignees(ws, dir, metadata, args[2:], in, out)
+		case "rank":
+			if len(args) != 3 {
+				return errors.New("usage: panda edit <taskNumber|draft-N> rank <up|down>")
+			}
+			return moveTaskRank(ws, dir, metadata, args[2], out)
 		case "json":
 			if len(args) != 2 {
 				return errors.New("usage: panda edit <taskNumber|draft-N> json")
@@ -147,7 +152,7 @@ func editTask(ws *workspace.Workspace, args []string, in io.Reader, out io.Write
 			}
 			return promptDescriptionEditor(in, out, dir)
 		default:
-			return errors.New("field selectors are `labels`, `package`, `assignees`, and `json`")
+			return errors.New("field selectors are `labels`, `package`, `assignees`, `rank`, and `json`")
 		}
 	}
 	options, positional, err := parseTaskFieldOptions(args[1:])
@@ -168,18 +173,27 @@ func editTask(ws *workspace.Workspace, args []string, in io.Reader, out io.Write
 			}
 		}
 		if options.hasMetadataFields() {
+			if options.provided["status"] {
+				return saveTaskStatus(ws, dir, updated, stringField(updated, "status"))
+			}
 			if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), updated); err != nil {
 				return fmt.Errorf("save task metadata: %w", err)
 			}
 		}
 		return nil
 	}
+	originalStatus := stringField(metadata, "status")
 	if err := editMetadataInteractive(dir, metadata, in, out); err != nil {
 		return err
 	}
 	metadata, err = workspace.ReadMap(filepath.Join(dir, "metadata.json"))
 	if err != nil {
 		return err
+	}
+	if stringField(metadata, "status") != originalStatus {
+		if err := saveTaskStatus(ws, dir, metadata, stringField(metadata, "status")); err != nil {
+			return err
+		}
 	}
 	if stringField(metadata, "type") == "release" && hasPackageAssignment(metadata["package"]) {
 		delete(metadata, "package")
@@ -280,6 +294,9 @@ func promptDescriptionEditor(in io.Reader, out io.Writer, dir string) error {
 
 func editMetadataInteractive(dir string, metadata map[string]any, in io.Reader, out io.Writer) error {
 	if err := editMetadataFields(metadata, true, in, out); err != nil {
+		return err
+	}
+	if err := editTaskStatusField(metadata, in, out); err != nil {
 		return err
 	}
 	if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), metadata); err != nil {

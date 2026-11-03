@@ -303,7 +303,7 @@ description editor uses `$EDITOR`.
 
 Supplying task field options enables noninteractive mode: no prompts or editor
 are launched, and a title is required either positionally or with `--title`.
-Task options include `--type`, `--priority`, `--complexity`, `--package`,
+Task options include `--type`, `--priority`, `--complexity`, `--status`, `--package`,
 repeatable `--assignee`, repeatable `--label`/`--remove-label`, and
 `--description-file`. Use `none` to clear optional fields; `--label none` must
 be used alone to clear all labels. Release tasks cannot have a package.
@@ -318,6 +318,7 @@ byte-for-byte, including trailing newlines; empty descriptions are rejected.
 | `--type <value>` | `feature`, `bug`, `other`, or `release` |
 | `--priority <value>` | `hotfix`, `high`, `medium`, or `low` |
 | `--complexity <value\|none>` | `xs`, `s`, `m`, `l`, `xl`, `xxl`; `none` clears |
+| `--status <value>` | `new`, `toDo`, `inProgress`, `inReview`, `completed`, `staging`, `released`, or `discarded` |
 | `--package <name\|none>` | Set one local package or clear it |
 | `--assignee <member>` | Repeat to set multiple synced members; `none` clears all |
 | `--label <name\|none>` / `--add-label <name>` | Add labels; `--label none` clears all |
@@ -326,8 +327,9 @@ byte-for-byte, including trailing newlines; empty descriptions are rejected.
 
 ### `panda edit <taskNumber|draft-N> [task field options]`
 
-Interactively edits a task, or applies only fields explicitly supplied by
-options. Option-driven edits never prompt and preserve omitted fields.
+Interactively edits a task's title, type, priority, complexity, and status, or
+applies only fields explicitly supplied by options. Option-driven edits never
+prompt and preserve omitted fields.
 
 Other edit selectors:
 
@@ -336,11 +338,19 @@ Other edit selectors:
 - `panda edit <task> package [name|none]` selects or clears a package.
 - `panda edit <task> assignees [member ...|none]` selects synced eligible
   members by name, email, or ID.
+- `panda edit <task> rank up|down` swaps rank with the adjacent task in the same
+  status group. Both task changes are staged; run `panda push` to publish them.
+  Tasks must have fetched ranks, so run `panda pull` first.
 - `panda edit <task> json` opens `metadata.json` in `$EDITOR`.
 - Press `e` when prompted to open `description.md` in `$EDITOR`.
 
 Release tasks cannot be assigned to packages. Eligible assignee roles are
 `teamLead`, `developer`, and `qa`.
+
+Status values are `new`, `toDo`, `inProgress`, `inReview`, `completed`,
+`staging`, `released`, and `discarded`. On synced tasks, selecting `discarded`
+stages the same dedicated discard action as `panda discard`; selecting another
+status cancels a pending discard. On drafts, it sets the status for creation.
 
 ### `panda assign <taskNumber|draft-N> <role[,role...]|none>`
 
