@@ -60,6 +60,17 @@ checks/failures/warnings, and a `findings` array. Missing project selection,
 session, members, or an uninitialized workspace are warnings; corrupt metadata
 and missing baselines for synced tasks are failures.
 
+```json
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "summary": {"checks": 12, "failures": 0, "warnings": 0},
+  "findings": [
+    {"level": "ok", "code": "workspace.available", "path": "/home/user/.config/panda-dashboard/workspaces/Project", "message": "project workspace is available"}
+  ]
+}
+```
+
 ### `panda completion <bash|zsh|fish>`
 
 Prints shell completion code. Add it to the appropriate shell startup or
@@ -113,6 +124,19 @@ actions failed. Task-level and catalog failures appear in `errors`;
 `summary.failed` counts those failures and `summary.pushed` counts fully completed
 task pushes.
 
+```json
+{
+  "schemaVersion": 1,
+  "tasks": [{"selector": "draft-1", "id": "task-42", "number": 42, "title": "Improve search", "remoteCreated": true, "outcome": "created", "actions": ["create"]}],
+  "catalogs": {
+    "labels": {"changed": false, "created": 0, "updated": 0, "deleted": 0},
+    "packages": {"changed": false, "created": 0, "updated": 0, "deleted": 0}
+  },
+  "errors": [],
+  "summary": {"pushed": 1, "created": 1, "updated": 0, "skipped": 0, "failed": 0}
+}
+```
+
 ### `panda diff [taskNumber|draft-N] [--verbose|-v] [--summary|-s] [--json]`
 
 Shows pending task and project-catalog changes. An optional task identifier
@@ -132,6 +156,15 @@ Diff JSON uses `schemaVersion: 1`. Task changes identify fields, description and
 note edits, staged notes, and staged files. Verbose Markdown changes include
 `lines` entries with `marker` and `text`; non-verbose output omits line details.
 JSON is written directly without paging or color.
+
+```json
+{
+  "schemaVersion": 1,
+  "tasks": [{"task": {"number": 42, "title": "Improve search"}, "new": false, "discarded": false, "changes": [{"kind": "field", "field": "priority", "before": "medium", "after": "high"}]}],
+  "catalogs": {"labels": [], "packages": []},
+  "summary": {"edited": 1, "discarded": 0, "new": 0, "labels": 0, "packages": 0, "changeCount": 1}
+}
+```
 
 ## Tasks
 
@@ -227,6 +260,20 @@ metadata under `task`, plus display-oriented `package`, `labels`, `assignees`,
 and `reviewers` values. `storyPoints` and `hours` are `null` when the task's
 complexity is unknown. Group and overall totals include task counts, story
 points, and hours.
+
+```json
+{
+  "schemaVersion": 1,
+  "groups": [
+    {
+      "status": "new",
+      "tasks": [{"task": {"number": 42, "title": "Improve search"}, "storyPoints": 3, "hours": 12, "package": null, "labels": [], "assignees": ["Ada Lovelace"], "reviewers": []}],
+      "totals": {"tasks": 1, "storyPoints": 3, "hours": 12}
+    }
+  ],
+  "totals": {"tasks": 1, "storyPoints": 3, "hours": 12}
+}
+```
 
 ### `panda browse [list filters]`
 

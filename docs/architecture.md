@@ -50,6 +50,19 @@ reviewed migration is introduced.
 - Baselines advance only for successfully synchronized data, preserving the
   existing conflict-recovery behavior.
 
+## Read-only tools and machine output
+
+- `list` and `diff` inspect the selected local workspace; `browse` provides an
+  interactive read-only view over the same task/filter report. `browse` must not
+  acquire the mutation lock or initialize/migrate the workspace.
+- `doctor` is local-only and read-only. Workspace inspection helpers such as
+  state-key enumeration and lock probing must not create files or change saved
+  state.
+- `list --json`, `diff --json`, `push --json`, and `doctor --json` emit
+  versioned documents with `schemaVersion: 1`. Keep human-readable output and
+  JSON rendering on the same report data so filters, ordering, and counts agree.
+- These reports do not change the workspace data format described above.
+
 ## Change discipline
 
 When moving code, preserve command text, API payload shapes, workspace data, and

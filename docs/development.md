@@ -16,6 +16,17 @@ go test -race ./...
 `make check` verifies formatting and runs `go vet ./...`, `go test ./...`, and
 `go build ./...`. Format Go files with `make fmt`.
 
+For a local cross-platform compile smoke test, run:
+
+```sh
+GOOS=windows GOARCH=amd64 go build ./...
+GOOS=darwin GOARCH=arm64 go build ./...
+```
+
+Before shipping command or JSON-schema changes, also review `panda --help`, the
+command-specific manuals, and `docs/commands.md`. Workspace layout and persisted
+state changes require an explicit compatibility review.
+
 To install the working checkout for local use:
 
 ```sh
