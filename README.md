@@ -65,7 +65,7 @@ them with `panda push`.
 | `panda list` | Filter local tasks by workflow status, assignee, and reviewer; emit JSON with `--json` |
 | `panda browse` | Interactively browse and inspect local tasks |
 | `panda estimate` | Quickly assign complexity to selected task statuses and types |
-| `panda create` / `panda edit` | Create or edit tasks locally, change status, and reorder by rank |
+| `panda create` / `panda edit` | Create or edit tasks locally and change status |
 | `panda diff` | Review pending changes and conflicts; `diff --json` emits structured changes |
 | `panda view <task>` | Display task metadata, description, files, and notes |
 | `panda files <task>` | List task file references, stage uploads, and download files on demand |

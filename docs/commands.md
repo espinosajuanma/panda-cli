@@ -338,9 +338,6 @@ Other edit selectors:
 - `panda edit <task> package [name|none]` selects or clears a package.
 - `panda edit <task> assignees [member ...|none]` selects synced eligible
   members by name, email, or ID.
-- `panda edit <task> rank up|down` swaps rank with the adjacent task in the same
-  status group. Both task changes are staged; run `panda push` to publish them.
-  Tasks must have fetched ranks, so run `panda pull` first.
 - `panda edit <task> json` opens `metadata.json` in `$EDITOR`.
 - Press `e` when prompted to open `description.md` in `$EDITOR`.
 

@@ -124,7 +124,7 @@ func createTaskInteractive(ws *workspace.Workspace, project *config.Project, arg
 
 func editTask(ws *workspace.Workspace, args []string, in io.Reader, out io.Writer) error {
 	if len(args) < 1 {
-		return errors.New("usage: panda edit <taskNumber|draft-N> [task field options|labels ...|package ...|assignees ...|rank up|down|json]")
+		return errors.New("usage: panda edit <taskNumber|draft-N> [task field options|labels ...|package ...|assignees ...|json]")
 	}
 	dir, metadata, err := ws.FindTask(args[0])
 	if err != nil {
@@ -138,11 +138,6 @@ func editTask(ws *workspace.Workspace, args []string, in io.Reader, out io.Write
 			return editTaskPackage(ws, dir, metadata, args[2:], in, out)
 		case "assignees", "assign":
 			return editAssignees(ws, dir, metadata, args[2:], in, out)
-		case "rank":
-			if len(args) != 3 {
-				return errors.New("usage: panda edit <taskNumber|draft-N> rank <up|down>")
-			}
-			return moveTaskRank(ws, dir, metadata, args[2], out)
 		case "json":
 			if len(args) != 2 {
 				return errors.New("usage: panda edit <taskNumber|draft-N> json")
@@ -152,7 +147,7 @@ func editTask(ws *workspace.Workspace, args []string, in io.Reader, out io.Write
 			}
 			return promptDescriptionEditor(in, out, dir)
 		default:
-			return errors.New("field selectors are `labels`, `package`, `assignees`, `rank`, and `json`")
+			return errors.New("field selectors are `labels`, `package`, `assignees`, and `json`")
 		}
 	}
 	options, positional, err := parseTaskFieldOptions(args[1:])

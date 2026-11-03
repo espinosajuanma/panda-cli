@@ -302,11 +302,10 @@ var manualPages = map[string]manualPage{
 	},
 	"edit": {
 		name:     "panda edit - edit a task's fields and description",
-		synopsis: []string{"panda edit <taskNumber|draft-N>", "panda edit <taskNumber|draft-N> [task field options]", "panda edit <taskNumber|draft-N> labels [labelName|--remove=labelName ...|none]", "panda edit <taskNumber|draft-N> package [name|none]", "panda edit <taskNumber|draft-N> assignees [member ...|none]", "panda edit <taskNumber|draft-N> rank <up|down>", "panda edit <taskNumber|draft-N> json"},
+		synopsis: []string{"panda edit <taskNumber|draft-N>", "panda edit <taskNumber|draft-N> [task field options]", "panda edit <taskNumber|draft-N> labels [labelName|--remove=labelName ...|none]", "panda edit <taskNumber|draft-N> package [name|none]", "panda edit <taskNumber|draft-N> assignees [member ...|none]", "panda edit <taskNumber|draft-N> json"},
 		description: []string{
 			"Interactively edit a task's title, type, priority, complexity, and status. On terminals, use arrow keys and Enter for single-choice fields; use Space to toggle labels and assignees and Enter to save each multi-select. Assign at most one optional package.",
 			"For scripts, pass any supported field options to apply only the supplied fields. Option-driven edits do not prompt or open an editor, preserve omitted metadata, and remain local until panda push.",
-			"Use rank up or rank down to swap a task's rank with the adjacent task in the same status group. Both tasks are changed; run panda push to publish the swap. Tasks need fetched ranks, so run panda pull first.",
 			"Press e (without Enter) to open the task description in $EDITOR when prompted.",
 			"The json selector opens metadata.json for advanced metadata editing and then offers the description editor prompt.",
 		},
@@ -315,11 +314,10 @@ var manualPages = map[string]manualPage{
 			{"labels", "Open the label picker. Follow with label names to add them, --remove=labelName to remove them, or none to clear all labels."},
 			{"package", "Select one package by name or enter none to clear the assignment."},
 			{"assignees", "Open the multi-select assignee picker, or follow with one or more project member names, emails, or IDs; none clears all assignees."},
-			{"rank up|down", "Swap rank with the adjacent task in the same status group."},
 			{"json", "Open metadata.json in $EDITOR for advanced metadata editing."},
 		},
 		options:  taskFieldOptionsManual(),
-		examples: []string{"panda edit 12345", "panda edit 12345 --priority high", "panda edit 12345 --status inProgress", "panda edit 12345 rank up", "panda edit 12345 --label urgent --remove-label bug", "panda edit 12345 --description-file description.md", "panda edit 12345 labels urgent --remove=bug", "panda edit 12345 json"},
+		examples: []string{"panda edit 12345", "panda edit 12345 --priority high", "panda edit 12345 --status inProgress", "panda edit 12345 --label urgent --remove-label bug", "panda edit 12345 --description-file description.md", "panda edit 12345 labels urgent --remove=bug", "panda edit 12345 json"},
 		seeAlso:  []string{"panda-edit-note(1)", "panda-view(1)", "panda-diff(1)"},
 	},
 	"assign": {
