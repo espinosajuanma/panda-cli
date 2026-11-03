@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"sort"
-	"strings"
 
 	catdomain "github.com/espinosajuanma/panda-cli/internal/catalog"
 	"github.com/espinosajuanma/panda-cli/internal/config"
@@ -13,8 +12,8 @@ import (
 	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
-func projectCatalogDiff(ws *workspace.Workspace) ([]string, int, int, error) {
-	var lines []string
+func projectCatalogDiff(ws *workspace.Workspace) ([]diffCatalogChange, int, int, error) {
+	var changes []diffCatalogChange
 	labelChanges, packageChanges := 0, 0
 	for _, kind := range []catalogKind{labelCatalog, packageCatalog} {
 		local, err := readCatalog(ws, kind)
@@ -38,7 +37,7 @@ func projectCatalogDiff(ws *workspace.Workspace) ([]string, int, int, error) {
 		for _, record := range local {
 			name := catalogRecordName(kind, record)
 			if stringField(record, "localId") != "" {
-				lines = append(lines, fmt.Sprintf("  new %s: %s", catalogItemName(kind), name))
+				changes = append(changes, diffCatalogChange{Kind: string(kind), Action: "new", Name: name})
 				if kind == labelCatalog {
 					labelChanges++
 				} else {
@@ -48,7 +47,7 @@ func projectCatalogDiff(ws *workspace.Workspace) ([]string, int, int, error) {
 			}
 			base := baseByID[stringField(record, "id")]
 			if base == nil {
-				lines = append(lines, fmt.Sprintf("  new %s: %s", catalogItemName(kind), name))
+				changes = append(changes, diffCatalogChange{Kind: string(kind), Action: "new", Name: name})
 				if kind == labelCatalog {
 					labelChanges++
 				} else {
@@ -63,7 +62,7 @@ func projectCatalogDiff(ws *workspace.Workspace) ([]string, int, int, error) {
 				}
 			}
 			if len(changed) > 0 {
-				lines = append(lines, fmt.Sprintf("  edited %s: %s (%s)", catalogItemName(kind), name, strings.Join(changed, ", ")))
+				changes = append(changes, diffCatalogChange{Kind: string(kind), Action: "edited", Name: name, Fields: changed})
 				if kind == labelCatalog {
 					labelChanges++
 				} else {
@@ -74,7 +73,7 @@ func projectCatalogDiff(ws *workspace.Workspace) ([]string, int, int, error) {
 		for _, record := range baseline {
 			id := stringField(record, "id")
 			if id != "" && localByID[id] == nil {
-				lines = append(lines, fmt.Sprintf("  deleted %s: %s", catalogItemName(kind), catalogRecordName(kind, record)))
+				changes = append(changes, diffCatalogChange{Kind: string(kind), Action: "deleted", Name: catalogRecordName(kind, record)})
 				if kind == labelCatalog {
 					labelChanges++
 				} else {
@@ -83,8 +82,10 @@ func projectCatalogDiff(ws *workspace.Workspace) ([]string, int, int, error) {
 			}
 		}
 	}
-	sort.Strings(lines)
-	return lines, labelChanges, packageChanges, nil
+	sort.Slice(changes, func(i, j int) bool {
+		return formatCatalogDiffLine(changes[i]) < formatCatalogDiffLine(changes[j])
+	})
+	return changes, labelChanges, packageChanges, nil
 }
 
 func pullProjectCatalogs(ctx context.Context, client *solutions.Client, ws *workspace.Workspace, project *config.Project, out io.Writer) (int, error) {

@@ -1,33 +1,32 @@
 package app
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 
-	"github.com/espinosajuanma/panda-cli/internal/content"
 	difflib "github.com/espinosajuanma/panda-cli/internal/diff"
 	"github.com/espinosajuanma/panda-cli/internal/ui"
 	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
 func diff(ws *workspace.Workspace, args []string, out io.Writer) error {
-	if hasDiffSummary(args) {
-		return renderDiff(ws, args, out, out)
+	options, err := parseDiffOptions(args)
+	if err != nil {
+		return err
+	}
+	if options.json || options.summary {
+		return renderDiffWithOptions(ws, options, out, out)
 	}
 	return writePagedOutput(out, func(rendered io.Writer) error {
-		return renderDiff(ws, args, rendered, out)
+		return renderDiffWithOptions(ws, options, rendered, out)
 	})
 }
 
 func shouldPageDiff(args []string, terminal bool, output []byte, width, height int) bool {
-	if !terminal || hasDiffSummary(args) {
+	if !terminal || hasDiffSummary(args) || hasDiffJSON(args) {
 		return false
 	}
 	return !outputFitsScreen(output, width, height)
@@ -37,192 +36,17 @@ func hasDiffSummary(args []string) bool {
 	return contains(args, "--summary") || contains(args, "-s")
 }
 
+func hasDiffJSON(args []string) bool { return contains(args, "--json") }
+
 func outputFitsScreen(output []byte, width, height int) bool {
 	return ui.OutputFitsScreen(output, width, height)
 }
 
-func renderDiff(ws *workspace.Workspace, args []string, out, colorTarget io.Writer) error {
-	options, err := parseDiffOptions(args)
-	if err != nil {
-		return err
-	}
-	selectedDir := ""
-	if options.task != "" {
-		selectedDir, _, err = ws.FindTask(options.task)
-		if err != nil {
-			return err
-		}
-	}
-	dirs, err := ws.TaskDirectories()
-	if err != nil {
-		return err
-	}
-	changes := 0
-	counts := diffSummary{}
-	for _, dir := range dirs {
-		local, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
-		if err != nil {
-			continue
-		}
-		if selectedDir != "" && dir != selectedDir {
-			continue
-		}
-		key := stateKey(dir, local)
-		state, stateErr := ws.ReadState(key)
-		newTask := stateErr != nil || state.LocalCreated
-		discardedTask := !newTask && stringField(local, "status") == "discarded" && stringField(state.Remote, "status") != "discarded"
-		taskChanged := false
-		var taskChanges bytes.Buffer
-		if newTask {
-			fmt.Fprintf(&taskChanges, "  %s\n", colorText(colorTarget, "1;32", "new task"))
-			for _, field := range []string{"type", "priority", "complexity"} {
-				fmt.Fprintf(&taskChanges, "  %s: %s\n", colorText(colorTarget, "1", field), colorText(colorTarget, "32", formatDiffValue(valueAt(local, field))))
-			}
-			changes++
-		} else {
-			for _, field := range editableFields {
-				if !same(valueAt(local, field), valueAt(state.Remote, field)) {
-					fmt.Fprintf(&taskChanges, "  %s: %s %s %s\n", colorText(colorTarget, "1", field), colorText(colorTarget, "31", formatDiffValue(valueAt(state.Remote, field))), colorText(colorTarget, "2", "->"), colorText(colorTarget, "32", formatDiffValue(valueAt(local, field))))
-					changes++
-					taskChanged = true
-				}
-			}
-		}
-		baseMarkdown := ""
-		if stateErr == nil && !state.LocalCreated {
-			baseMarkdown, err = content.HTMLToMarkdown(stringField(state.Remote, "description"))
-			if err != nil {
-				return err
-			}
-		}
-		localMarkdown, readErr := os.ReadFile(filepath.Join(dir, "description.md"))
-		if readErr == nil && string(localMarkdown) != baseMarkdown {
-			if options.verbose {
-				fmt.Fprintf(&taskChanges, "  %s\n", colorText(colorTarget, "1;36", "description.md"))
-				writeLineDiff(&taskChanges, colorTarget, baseMarkdown, string(localMarkdown))
-			} else {
-				fmt.Fprintf(&taskChanges, "  %s %s\n", colorText(colorTarget, "1", "description:"), colorText(colorTarget, "32", "updated"))
-			}
-			changes++
-			taskChanged = true
-		}
-		if stateErr == nil && !state.LocalCreated {
-			noteChanges, noteErr := localNoteChanges(dir, state.Remote)
-			if noteErr != nil {
-				return fmt.Errorf("inspect notes for %s: %w", taskLabel(local), noteErr)
-			}
-			filenames := make([]string, 0, len(noteChanges))
-			for filename := range noteChanges {
-				filenames = append(filenames, filename)
-			}
-			sort.Strings(filenames)
-			for _, filename := range filenames {
-				if options.verbose {
-					baseNotes, noteErr := getRemoteNotes(state.Remote)
-					if noteErr != nil {
-						return noteErr
-					}
-					before := ""
-					for _, note := range baseNotes {
-						if note.filename == filename {
-							before = note.markdown
-							break
-						}
-					}
-					fmt.Fprintf(&taskChanges, "  %s\n", colorText(colorTarget, "1;36", "edited note: "+filepath.ToSlash(filepath.Join("notes", filename))))
-					writeLineDiff(&taskChanges, colorTarget, before, noteChanges[filename])
-				} else {
-					fmt.Fprintf(&taskChanges, "  %s %s\n", colorText(colorTarget, "1", "note:"), colorText(colorTarget, "32", filepath.ToSlash(filepath.Join("notes", filename))+" updated"))
-				}
-				changes++
-				taskChanged = true
-			}
-		}
-		if stateErr == nil && len(state.StagedNotes) > 0 {
-			if options.verbose {
-				for _, filename := range state.StagedNotes {
-					note, noteErr := os.ReadFile(filepath.Join(dir, "notes", filename))
-					if noteErr != nil {
-						return fmt.Errorf("read staged note %q: %w", filename, noteErr)
-					}
-					notePath := filepath.ToSlash(filepath.Join("notes", filename))
-					fmt.Fprintf(&taskChanges, "  %s\n", colorText(colorTarget, "1;36", "staged note: "+notePath))
-					writeLineDiff(&taskChanges, colorTarget, "", string(note))
-				}
-			} else {
-				fmt.Fprintf(&taskChanges, "  %s\n", colorText(colorTarget, "36", fmt.Sprintf("notes: %d staged", len(state.StagedNotes))))
-			}
-			changes += len(state.StagedNotes)
-			taskChanged = true
-		}
-		if stateErr == nil && len(state.StagedFiles) > 0 {
-			if options.verbose {
-				for _, staged := range state.StagedFiles {
-					status := "staged file upload"
-					if _, statErr := os.Stat(staged.Path); statErr != nil {
-						status += " (source missing)"
-					}
-					fmt.Fprintf(&taskChanges, "  %s: %s\n", colorText(colorTarget, "1;36", status), staged.Name)
-					fmt.Fprintf(&taskChanges, "    source: %s\n", staged.Path)
-					if staged.Description != "" {
-						fmt.Fprintf(&taskChanges, "    description: %s\n", staged.Description)
-					}
-				}
-			} else {
-				fmt.Fprintf(&taskChanges, "  %s\n", colorText(colorTarget, "36", fmt.Sprintf("files: %d upload(s) staged", len(state.StagedFiles))))
-			}
-			changes += len(state.StagedFiles)
-			taskChanged = true
-		}
-		if newTask {
-			counts.new++
-		} else if taskChanged {
-			if discardedTask {
-				counts.discarded++
-			} else {
-				counts.edited++
-			}
-		}
-		if !options.summary && taskChanges.Len() > 0 {
-			heading := fmt.Sprintf("Task %s: %s", taskLabel(local), stringField(local, "title"))
-			fmt.Fprintln(out, colorText(colorTarget, "1;36", heading))
-			_, _ = taskChanges.WriteTo(out)
-			fmt.Fprintln(out)
-		}
-	}
-	catalogLines, labelChanges, packageChanges, err := projectCatalogDiff(ws)
-	if err != nil {
-		return fmt.Errorf("inspect project catalogs: %w", err)
-	}
-	catalogChanges := labelChanges + packageChanges
-	if options.task == "" {
-		changes += catalogChanges
-	}
-	if options.summary {
-		fmt.Fprintf(out, "Tasks: %d edited, %d discarded, %d new\n", counts.edited, counts.discarded, counts.new)
-		if options.task == "" && catalogChanges > 0 {
-			fmt.Fprintf(out, "Project catalogs: %d label(s), %d package(s) changed\n", labelChanges, packageChanges)
-		}
-		return nil
-	}
-	if options.task == "" && len(catalogLines) > 0 {
-		fmt.Fprintln(out, colorText(colorTarget, "1;36", "Project catalog changes"))
-		for _, line := range catalogLines {
-			fmt.Fprintln(out, line)
-		}
-		fmt.Fprintln(out)
-	}
-	if changes == 0 {
-		fmt.Fprintln(out, "No local changes.")
-	}
-	return nil
-}
-
-type diffSummary struct{ edited, discarded, new int }
 type diffOptions struct {
 	task    string
 	verbose bool
 	summary bool
+	json    bool
 }
 
 func parseDiffOptions(args []string) (diffOptions, error) {
@@ -233,14 +57,30 @@ func parseDiffOptions(args []string) (diffOptions, error) {
 			options.verbose = true
 		case "--summary", "-s":
 			options.summary = true
+		case "--json":
+			options.json = true
 		default:
 			if strings.HasPrefix(arg, "-") || options.task != "" {
-				return diffOptions{}, errors.New("usage: panda diff [taskNumber|draft-N] [--verbose|-v] [--summary|-s]")
+				return diffOptions{}, errors.New("usage: panda diff [taskNumber|draft-N] [--verbose|-v] [--summary|-s] [--json]")
 			}
 			options.task = arg
 		}
 	}
+	if options.json && options.summary {
+		return diffOptions{}, errors.New("panda diff --json includes summary counts; do not combine --json with --summary")
+	}
 	return options, nil
+}
+
+func renderDiffWithOptions(ws *workspace.Workspace, options diffOptions, out, colorTarget io.Writer) error {
+	report, err := collectDiffReport(ws, options)
+	if err != nil {
+		return err
+	}
+	if options.json {
+		return renderDiffJSON(report, out)
+	}
+	return renderDiffReport(report, options, out, colorTarget)
 }
 
 func isTerminal(out io.Writer) bool                 { return ui.IsTerminal(out) }

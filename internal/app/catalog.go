@@ -25,6 +25,9 @@ const (
 type catalogPushPlan struct {
 	kind      catalogKind
 	deleteIDs []string
+	created   int
+	updated   int
+	deleted   int
 }
 
 func catalogItemName(kind catalogKind) string {
@@ -283,6 +286,7 @@ func pushProjectCatalog(ctx context.Context, client *solutions.Client, ws *works
 				created[key] = value
 			}
 			idMap[localID] = id
+			plan.created++
 			remoteByID[id] = created
 			remoteRawByID[id] = cloneMap(createdRaw)
 			advanced = append(advanced, cloneMap(created))
@@ -346,6 +350,7 @@ func pushProjectCatalog(ctx context.Context, client *solutions.Client, ws *works
 			}
 		}
 		changed = true
+		plan.updated++
 	}
 	if err := writeCatalog(ws, kind, merged); err != nil {
 		return nil, plan, changed, err
@@ -409,6 +414,7 @@ func pushProjectCatalogDeletes(ctx context.Context, client *solutions.Client, ws
 			if err != nil {
 				return fmt.Errorf("delete %s %s: %w", catalogItemName(plan.kind), id, err)
 			}
+			plan.deleted++
 		}
 		remote, err := catalogRecords(ctx, client, project.ID, plan.kind)
 		if err != nil {

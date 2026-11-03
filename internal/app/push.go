@@ -19,18 +19,39 @@ func push(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 }
 
 func pushSelected(ctx context.Context, client *solutions.Client, ws *workspace.Workspace, project *config.Project, selectors []string, out io.Writer) error {
-	dirs, err := pushTaskDirectories(ws, selectors)
+	return pushSelectedWithOptions(ctx, client, ws, project, pushOptions{selectors: selectors}, out)
+}
+
+func pushSelectedWithOptions(ctx context.Context, client *solutions.Client, ws *workspace.Workspace, project *config.Project, options pushOptions, out io.Writer) error {
+	dirs, err := pushTaskDirectories(ws, options.selectors)
 	if err != nil {
 		return err
+	}
+	report := pushReport{
+		SchemaVersion: 1,
+		Tasks:         make([]pushTaskResult, 0, len(dirs)),
+		Errors:        make([]string, 0),
+	}
+	fatal := func(fatalErr error) error {
+		if options.json {
+			report.Errors = append(report.Errors, fatalErr.Error())
+			report.updateSummary()
+			if renderErr := renderPushJSON(report, out); renderErr != nil {
+				return renderErr
+			}
+		}
+		return fatalErr
 	}
 	labelIDs, labelPlan, labelChanged, err := pushProjectCatalog(ctx, client, ws, project, labelCatalog)
 	if err != nil {
-		return err
+		return fatal(err)
 	}
+	report.Catalogs.Labels = catalogPushResult(labelPlan, labelChanged)
 	packageIDs, packagePlan, packageChanged, err := pushProjectCatalog(ctx, client, ws, project, packageCatalog)
 	if err != nil {
-		return err
+		return fatal(err)
 	}
+	report.Catalogs.Packages = catalogPushResult(packagePlan, packageChanged)
 	catalogIDs := make(map[string]string, len(labelIDs)+len(packageIDs))
 	for localID, remoteID := range labelIDs {
 		catalogIDs[localID] = remoteID
@@ -39,7 +60,7 @@ func pushSelected(ctx context.Context, client *solutions.Client, ws *workspace.W
 		catalogIDs[localID] = remoteID
 	}
 	if err := rewriteTaskCatalogIDs(ws, catalogIDs); err != nil {
-		return err
+		return fatal(err)
 	}
 	catalogChanged := labelChanged || packageChanged
 	catalogPlans := []*catalogPushPlan{labelPlan, packagePlan}
@@ -48,79 +69,95 @@ func pushSelected(ctx context.Context, client *solutions.Client, ws *workspace.W
 	for _, dir := range dirs {
 		local, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
 		if err != nil {
-			problems = append(problems, fmt.Sprintf("%s: %v", filepath.Base(dir), err))
+			result := newPushTaskResult(nil, filepath.Base(dir))
+			recordTaskProblem(&report, &problems, &result, "failed", err.Error())
 			continue
+		}
+		result := newPushTaskResult(local, filepath.Base(dir))
+		recordFailure := func(outcome, message string) {
+			recordTaskProblem(&report, &problems, &result, outcome, message)
 		}
 		state, key, err := loadTaskState(ws, dir, local)
 		if err != nil {
-			problems = append(problems, fmt.Sprintf("%s: %v", taskLabel(local), err))
+			recordFailure("failed", err.Error())
 			continue
 		}
 		if !state.LocalCreated && stringField(local, "id") == "" && stringField(state.Remote, "id") != "" {
 			dir, local, key, err = recoverCreatedTask(ws, dir, local, key, state)
 			if err != nil {
-				problems = append(problems, fmt.Sprintf("%s: recover created task: %v", stringField(state.Remote, "id"), err))
+				recordFailure("failed", fmt.Sprintf("recover created task: %v", err))
 				continue
 			}
+			updatePushTaskIdentity(&result, local)
 		}
 		dirty, err := taskHasLocalChanges(local, state, dir)
 		if err != nil {
-			problems = append(problems, fmt.Sprintf("%s: inspect local changes: %v", taskLabel(local), err))
+			recordFailure("failed", fmt.Sprintf("inspect local changes: %v", err))
 			continue
 		}
 		if !dirty {
+			result.Outcome = "skipped"
+			report.Tasks = append(report.Tasks, result)
 			continue
 		}
 		if err := validateStagedFiles(state.StagedFiles); err != nil {
-			problems = append(problems, fmt.Sprintf("%s: %v", taskLabel(local), err))
+			recordFailure("failed", err.Error())
 			continue
 		}
+		createdTask := false
 		if state.LocalCreated {
+			result.addAction("create")
 			remote, err := createRemoteTask(ctx, client, dir, local, project, catalogIDs)
 			if err != nil {
-				problems = append(problems, fmt.Sprintf("%s: %v", filepath.Base(dir), err))
+				recordFailure("failed", err.Error())
 				continue
 			}
+			result.RemoteCreated = true
+			updatePushTaskIdentity(&result, remote)
 			newID := stringField(remote, "id")
 			if newID == "" {
-				problems = append(problems, fmt.Sprintf("%s: task was created remotely but the API response omitted its ID", filepath.Base(dir)))
+				recordFailure("failed", "task was created remotely but the API response omitted its ID")
 				continue
 			}
+			createdTask = true
 			state.Remote = cloneMap(remote)
 			state.LocalCreated = false
 			state.StagedDiscard = false
 			dir, local, key, err = recoverCreatedTask(ws, dir, local, key, state)
 			if err != nil {
-				problems = append(problems, fmt.Sprintf("%s: save created task locally: %v", newID, err))
+				recordFailure("failed", fmt.Sprintf("save created task locally: %v", err))
 				continue
 			}
-			fmt.Fprintf(out, "Created task %s.\n", taskLabel(local))
+			updatePushTaskIdentity(&result, local)
+			if !options.json {
+				fmt.Fprintf(out, "Created task %s.\n", taskLabel(local))
+			}
 		} else {
 			id := stringField(local, "id")
 			remote, err := client.GetTask(ctx, id)
 			if err != nil {
-				problems = append(problems, fmt.Sprintf("%s: fetch current remote task: %v", taskLabel(local), err))
+				recordFailure("failed", fmt.Sprintf("fetch current remote task: %v", err))
 				continue
 			}
 			if projectID := relationshipID(remote["project"]); projectID != "" && projectID != project.ID {
-				problems = append(problems, fmt.Sprintf("%s: task now belongs to project %s", taskLabel(local), projectID))
+				recordFailure("failed", fmt.Sprintf("task now belongs to project %s", projectID))
 				continue
 			}
 			conflicts := taskConflicts(local, state.Remote, remote, dir)
 			if len(conflicts) > 0 {
-				problems = append(problems, fmt.Sprintf("%s: conflict in %s; use `panda clean %s` then pull to take the remote version, or resolve the files manually", taskLabel(local), strings.Join(conflicts, ", "), taskLabel(local)))
+				recordFailure("conflict", fmt.Sprintf("conflict in %s; use `panda clean %s` then pull to take the remote version, or resolve the files manually", strings.Join(conflicts, ", "), taskLabel(local)))
 				continue
 			}
 			noteChanges, err := changedNoteFilenames(dir, state.Remote)
 			if err != nil {
-				problems = append(problems, fmt.Sprintf("%s: inspect edited notes: %v", taskLabel(local), err))
+				recordFailure("failed", fmt.Sprintf("inspect edited notes: %v", err))
 				continue
 			}
 			var myNotes []map[string]any
 			if len(noteChanges) > 0 {
 				myNotes, err = buildMyNotesPayload(ctx, client, dir, remote, state.Remote)
 				if err != nil {
-					problems = append(problems, fmt.Sprintf("%s: edit notes: %v", taskLabel(local), err))
+					recordFailure("failed", fmt.Sprintf("edit notes: %v", err))
 					continue
 				}
 			}
@@ -131,83 +168,114 @@ func pushSelected(ctx context.Context, client *solutions.Client, ws *workspace.W
 			}
 			payload, changed, err := mergeForPush(localForUpdate, remote, state.Remote, dir)
 			if err != nil {
-				problems = append(problems, fmt.Sprintf("%s: %v", taskLabel(local), err))
+				recordFailure("failed", err.Error())
 				continue
 			}
 			payload, err = remapTaskCatalogRelationships(payload, catalogIDs)
 			if err != nil {
-				problems = append(problems, fmt.Sprintf("%s: map task labels/packages: %v", taskLabel(local), err))
+				recordFailure("failed", fmt.Sprintf("map task labels/packages: %v", err))
 				continue
 			}
 			if changed {
+				result.addAction("fields")
 				remote, err = client.UpdateTask(ctx, id, payload)
 				if err != nil {
-					problems = append(problems, fmt.Sprintf("%s: update: %v", taskLabel(local), err))
+					recordFailure("failed", fmt.Sprintf("update: %v", err))
 					continue
 				}
 			}
 			if state.StagedDiscard {
+				result.addAction("discard")
 				if stringField(remote, "status") != "discarded" {
 					remote, err = client.DiscardTask(ctx, id)
 					if err != nil {
-						problems = append(problems, fmt.Sprintf("%s: discard: %v", taskLabel(local), err))
+						recordFailure("failed", fmt.Sprintf("discard: %v", err))
 						continue
 					}
 					if stringField(remote, "id") != id || stringField(remote, "status") != "discarded" {
 						remote, err = client.GetTask(ctx, id)
 						if err != nil {
-							problems = append(problems, fmt.Sprintf("%s: verify discard: %v", taskLabel(local), err))
+							recordFailure("failed", fmt.Sprintf("verify discard: %v", err))
 							continue
 						}
 					}
 					if stringField(remote, "status") != "discarded" {
-						problems = append(problems, fmt.Sprintf("%s: discard action completed but status is %q", taskLabel(local), stringField(remote, "status")))
+						recordFailure("failed", fmt.Sprintf("discard action completed but status is %q", stringField(remote, "status")))
 						continue
 					}
 				}
 				state.StagedDiscard = false
 			}
 			if len(myNotes) > 0 {
+				result.addAction("editedNotes")
 				remote, err = client.EditMyNotes(ctx, id, myNotes)
 				if err != nil {
-					problems = append(problems, fmt.Sprintf("%s: edit notes: %v", taskLabel(local), err))
+					recordFailure("failed", fmt.Sprintf("edit notes: %v", err))
 					continue
 				}
 				if remote == nil || remote["notes"] == nil {
 					remote, err = client.GetTask(ctx, id)
 					if err != nil {
-						problems = append(problems, fmt.Sprintf("%s: refresh edited notes: %v", taskLabel(local), err))
+						recordFailure("failed", fmt.Sprintf("refresh edited notes: %v", err))
 						continue
 					}
 				}
 				if err := syncRemoteNotes(dir, remote, state.StagedNotes, nil, state.Remote); err != nil {
-					problems = append(problems, fmt.Sprintf("%s: refresh edited notes: %v", taskLabel(local), err))
+					recordFailure("failed", fmt.Sprintf("refresh edited notes: %v", err))
 					continue
 				}
 			}
 			state.Remote = cloneMap(remote)
 			if err := writeRemoteToLocal(dir, remote); err != nil {
-				problems = append(problems, fmt.Sprintf("%s: update local baseline: %v", taskLabel(local), err))
+				recordFailure("failed", fmt.Sprintf("update local baseline: %v", err))
 				continue
 			}
 		}
+		if len(state.StagedNotes) > 0 {
+			result.addAction("stagedNotes")
+		}
 		state, err = pushStagedNotes(ctx, client, ws, dir, local, key, state)
 		if err != nil {
-			problems = append(problems, fmt.Sprintf("%s: %v", taskLabel(local), err))
+			recordFailure("failed", err.Error())
 			continue
+		}
+		if len(state.StagedFiles) > 0 {
+			result.addAction("files")
 		}
 		state, err = pushStagedFiles(ctx, client, ws, dir, local, key, state)
 		if err != nil {
-			problems = append(problems, fmt.Sprintf("%s: %v", taskLabel(local), err))
+			recordFailure("failed", err.Error())
 			continue
 		}
-		fmt.Fprintf(out, "%s %s.\n", colorText(out, "1;32", "Pushed"), taskLabel(local))
+		if createdTask {
+			result.Outcome = "created"
+		} else {
+			result.Outcome = "pushed"
+		}
+		updatePushTaskIdentity(&result, local)
+		report.Tasks = append(report.Tasks, result)
+		if !options.json {
+			fmt.Fprintf(out, "%s %s.\n", colorText(out, "1;32", "Pushed"), taskLabel(local))
+		}
 		pushed++
 	}
 	if len(problems) == 0 {
 		if err := pushProjectCatalogDeletes(ctx, client, ws, project, catalogPlans); err != nil {
 			problems = append(problems, err.Error())
+			report.Errors = append(report.Errors, err.Error())
 		}
+	}
+	report.Catalogs.Labels = catalogPushResult(labelPlan, labelChanged)
+	report.Catalogs.Packages = catalogPushResult(packagePlan, packageChanged)
+	if options.json {
+		report.updateSummary()
+		if err := renderPushJSON(report, out); err != nil {
+			return err
+		}
+		if len(problems) > 0 {
+			return fmt.Errorf("push had %d failure(s)", len(problems))
+		}
+		return nil
 	}
 	if len(problems) > 0 {
 		for _, problem := range problems {
@@ -219,7 +287,7 @@ func pushSelected(ctx context.Context, client *solutions.Client, ws *workspace.W
 		fmt.Fprintln(out, "Pushed project labels/packages.")
 	}
 	if pushed == 0 && !catalogChanged {
-		if len(selectors) > 0 {
+		if len(options.selectors) > 0 {
 			fmt.Fprintln(out, "No local changes to push for the selected task(s).")
 		} else {
 			fmt.Fprintln(out, "No local changes to push.")

@@ -54,7 +54,7 @@ Changes remain local until `panda push`.
 Task file references are stored in metadata, but file content is not downloaded
 during pull.
 
-### `panda push [taskNumber|draft-N ...]`
+### `panda push [taskNumber|draft-N ...] [--json]`
 
 Checks for remote changes before sending local task and catalog edits. It skips
 unchanged tasks, applies staged notes, file uploads, and discards. Baselines
@@ -66,14 +66,29 @@ All task selectors are validated before any API operation begins.
 Local drafts can be pushed without a sync-state file; synced tasks need a
 baseline, so run `panda pull` first if one is missing.
 
+`--json` emits a versioned report with per-task outcomes (`created`, `pushed`,
+`skipped`, `conflict`, or `failed`), attempted actions, catalog create/update/
+delete counts, errors, and a summary. The report is written to stdout; failures
+are still returned as a non-zero exit status.
+
 ```sh
 panda push
 panda push draft-1
 panda push draft-1 draft-3
 panda push 12345
+panda push --json
+panda push draft-1 --json
 ```
 
-### `panda diff [taskNumber|draft-N] [--verbose|-v] [--summary|-s]`
+Push JSON uses `schemaVersion: 1`. Each task result includes a selector, remote
+ID/number when available, outcome, actions (`create`, `fields`, `discard`,
+`editedNotes`, `stagedNotes`, `files`), and an optional message. `remoteCreated`
+indicates that the API created a task even if later local persistence or staged
+actions failed. Task-level and catalog failures appear in `errors`;
+`summary.failed` counts those failures and `summary.pushed` counts fully completed
+task pushes.
+
+### `panda diff [taskNumber|draft-N] [--verbose|-v] [--summary|-s] [--json]`
 
 Shows pending task and project-catalog changes. An optional task identifier
 limits output to one task.
@@ -82,8 +97,16 @@ limits output to one task.
 - `--verbose` shows changed Markdown description and note lines with `-` and `+`
   prefixes, and shows staged file upload paths.
 - `--summary` prints counts of edited, discarded, and new tasks.
+- `--json`: emit a versioned structured report of task and catalog changes,
+  including summary counts. Combine with `--verbose` to include Markdown line
+  changes. `--summary` is redundant and cannot be combined with `--json`.
 - Long terminal output uses `$PAGER`, defaulting to `less -FRX`; leaving the
   pager keeps its output visible. Piped output is printed directly.
+
+Diff JSON uses `schemaVersion: 1`. Task changes identify fields, description and
+note edits, staged notes, and staged files. Verbose Markdown changes include
+`lines` entries with `marker` and `text`; non-verbose output omits line details.
+JSON is written directly without paging or color.
 
 ## Tasks
 

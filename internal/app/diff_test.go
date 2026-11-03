@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -224,6 +225,119 @@ func TestDiffShortFlagsMatchLongFlags(t *testing.T) {
 	combined, err := parseDiffOptions([]string{"12345", "-v", "-s"})
 	if err != nil || combined.task != "12345" || !combined.verbose || !combined.summary {
 		t.Fatalf("combined short flags = %#v, error = %v", combined, err)
+	}
+	jsonOptions, err := parseDiffOptions([]string{"12345", "--json", "--verbose"})
+	if err != nil || jsonOptions.task != "12345" || !jsonOptions.json || !jsonOptions.verbose {
+		t.Fatalf("JSON diff options = %#v, error = %v", jsonOptions, err)
+	}
+	if _, err := parseDiffOptions([]string{"--json", "--summary"}); err == nil {
+		t.Fatal("JSON diff unexpectedly accepted the redundant --summary option")
+	}
+}
+
+func TestDiffJSONIncludesStructuredChangesVerboseLinesAndCatalogs(t *testing.T) {
+	timestamp := int64(1_793_188_800_000)
+	remote := map[string]any{
+		"id": "task-json-diff", "number": float64(13770), "title": "Structured diff", "type": "feature",
+		"priority": "medium", "status": "new", "description": "<p>Original body</p>",
+		"project": map[string]any{"id": "project-1"}, "labels": []any{}, "assignees": []any{}, "reviewers": []any{},
+		"notes": []any{map[string]any{"note": "<p>Original note</p>", "timestamp": float64(timestamp), "addedBy": map[string]any{"id": "user-1", "label": "Ada"}}},
+	}
+	ws, dir := makeSyncedTask(t, remote)
+	metadataPath := filepath.Join(dir, "metadata.json")
+	metadata, err := workspace.ReadMap(metadataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata["priority"] = "high"
+	if err := workspace.WriteMap(metadataPath, metadata); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "description.md"), []byte("Updated body\nAdded line"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	editedNote := noteFilename(time.UnixMilli(timestamp), "Ada", 1)
+	if err := workspace.WriteFileAtomic(filepath.Join(dir, "notes", editedNote), []byte("Updated note"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stagedNote := "20261102T120000.000Z-local.md"
+	if err := workspace.WriteFileAtomic(filepath.Join(dir, "notes", stagedNote), []byte("New staged note"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state, err := ws.ReadState("task-json-diff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.StagedNotes = []string{stagedNote}
+	state.StagedFiles = []workspace.StagedFile{{Path: filepath.Join(t.TempDir(), "missing.png"), Name: "missing.png", Description: "A staged image"}}
+	if err := ws.WriteState("task-json-diff", state); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeCatalog(ws, labelCatalog, []map[string]any{{"localId": "local-label-1", "name": "urgent"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	var output bytes.Buffer
+	if err := diff(ws, []string{"--json", "--verbose"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output.String(), "\x1b[") {
+		t.Fatalf("JSON diff contains ANSI styling: %q", output.String())
+	}
+	var report diffReport
+	if err := json.Unmarshal(output.Bytes(), &report); err != nil {
+		t.Fatalf("invalid JSON diff %q: %v", output.String(), err)
+	}
+	if report.SchemaVersion != 1 || len(report.Tasks) != 1 || report.Summary.Edited != 1 || report.Summary.Labels != 1 || report.Summary.ChangeCount != 6 {
+		t.Fatalf("unexpected JSON diff summary/report: %#v", report)
+	}
+	if len(report.Catalogs.Labels) != 1 || report.Catalogs.Labels[0].Action != "new" || report.Catalogs.Labels[0].Name != "urgent" {
+		t.Fatalf("catalog changes = %#v", report.Catalogs.Labels)
+	}
+	changes := make(map[string]diffChange)
+	for _, change := range report.Tasks[0].Changes {
+		changes[change.Kind+":"+change.Field+":"+change.Filename] = change
+	}
+	field := changes["field:priority:"]
+	if pointerValue(field.Before) != "medium" || pointerValue(field.After) != "high" {
+		t.Fatalf("priority change = %#v", field)
+	}
+	for _, key := range []string{"description::", "edited-note::" + editedNote, "staged-note::" + stagedNote, "staged-file::"} {
+		if _, ok := changes[key]; !ok {
+			t.Errorf("JSON diff lacks change %q: %#v", key, changes)
+		}
+	}
+	if len(changes["description::"].Lines) == 0 || len(changes["edited-note::"+editedNote].Lines) == 0 || len(changes["staged-note::"+stagedNote].Lines) == 0 {
+		t.Fatalf("verbose Markdown line diffs missing: %#v", changes)
+	}
+	stagedFile := changes["staged-file::"]
+	if stagedFile.Name != "missing.png" || !stagedFile.SourceMissing || stagedFile.Description != "A staged image" {
+		t.Fatalf("staged file change = %#v", stagedFile)
+	}
+}
+
+func TestDiffJSONOmitsVerboseMarkdownAndBypassesPager(t *testing.T) {
+	ws, dir := makeSyncedTask(t, map[string]any{
+		"id": "task-json-summary", "number": float64(13771), "title": "Short JSON", "type": "feature",
+		"priority": "medium", "status": "new", "description": "<p>Original</p>",
+		"project": map[string]any{"id": "project-1"}, "labels": []any{}, "assignees": []any{}, "reviewers": []any{}, "notes": []any{},
+	})
+	if err := os.WriteFile(filepath.Join(dir, "description.md"), []byte("Changed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := diff(ws, []string{"13771", "--json"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	var report diffReport
+	if err := json.Unmarshal(output.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Tasks) != 1 || len(report.Tasks[0].Changes) != 1 || len(report.Tasks[0].Changes[0].Lines) != 0 {
+		t.Fatalf("non-verbose JSON included line detail: %#v", report)
+	}
+	if shouldPageDiff([]string{"--json"}, true, bytes.Repeat([]byte("line\n"), 30), 80, 24) {
+		t.Fatal("JSON diff should not use the pager")
 	}
 }
 

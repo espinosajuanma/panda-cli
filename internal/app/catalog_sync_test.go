@@ -159,8 +159,22 @@ func TestPushCreatesCatalogItemsMapsTaskAssignmentsAndDeletesAfterTaskUpdate(t *
 		t.Fatal(err)
 	}
 	client := solutions.NewClient(server.URL, "token")
-	if err := pushSelected(context.Background(), client, ws, project, []string{stringField(metadata, "localId")}, io.Discard); err != nil {
+	var reportOutput strings.Builder
+	decodePushReport := func() pushReport {
+		t.Helper()
+		var report pushReport
+		if err := json.Unmarshal([]byte(reportOutput.String()), &report); err != nil {
+			t.Fatalf("invalid JSON push report %q: %v", reportOutput.String(), err)
+		}
+		reportOutput.Reset()
+		return report
+	}
+	if err := pushSelectedWithOptions(context.Background(), client, ws, project, pushOptions{selectors: []string{stringField(metadata, "localId")}, json: true}, &reportOutput); err != nil {
 		t.Fatal(err)
+	}
+	createdReport := decodePushReport()
+	if createdReport.Catalogs.Labels.Created != 1 || createdReport.Catalogs.Packages.Created != 1 {
+		t.Fatalf("catalog create counts = %#v", createdReport.Catalogs)
 	}
 	if len(labels) != 1 || len(packages) != 1 || stringField(remoteTask, "id") != "task-1" {
 		t.Fatalf("catalog/task creates missing: labels=%#v packages=%#v task=%#v", labels, packages, remoteTask)
@@ -171,8 +185,12 @@ func TestPushCreatesCatalogItemsMapsTaskAssignmentsAndDeletesAfterTaskUpdate(t *
 	if err := projectCatalogCommand(ws, project, packageCatalog, []string{"edit", "Migration"}, strings.NewReader("Platform migration\nNew package description\n"), &output); err != nil {
 		t.Fatal(err)
 	}
-	if err := push(context.Background(), client, ws, project, io.Discard); err != nil {
+	if err := pushSelectedWithOptions(context.Background(), client, ws, project, pushOptions{json: true}, &reportOutput); err != nil {
 		t.Fatal(err)
+	}
+	updatedReport := decodePushReport()
+	if updatedReport.Catalogs.Labels.Updated != 1 || updatedReport.Catalogs.Packages.Updated != 1 {
+		t.Fatalf("catalog update counts = %#v", updatedReport.Catalogs)
 	}
 	if stringField(labels[0], "name") != "Critical" || stringField(packages[0], "title") != "Platform migration" {
 		t.Fatalf("catalog edits were not pushed: labels=%#v packages=%#v", labels, packages)
@@ -184,8 +202,12 @@ func TestPushCreatesCatalogItemsMapsTaskAssignmentsAndDeletesAfterTaskUpdate(t *
 		t.Fatal(err)
 	}
 	events = nil
-	if err := push(context.Background(), client, ws, project, io.Discard); err != nil {
+	if err := pushSelectedWithOptions(context.Background(), client, ws, project, pushOptions{json: true}, &reportOutput); err != nil {
 		t.Fatal(err)
+	}
+	deletedReport := decodePushReport()
+	if deletedReport.Catalogs.Labels.Deleted != 1 || deletedReport.Catalogs.Packages.Deleted != 1 {
+		t.Fatalf("catalog delete counts = %#v", deletedReport.Catalogs)
 	}
 	if len(remoteTask["labels"].([]any)) != 0 || hasPackageAssignment(remoteTask["package"]) {
 		t.Fatalf("task assignments remain after catalog deletion: labels=%#v package=%#v", remoteTask["labels"], remoteTask["package"])

@@ -101,7 +101,11 @@ func RunContext(ctx context.Context, args []string, in io.Reader, out, errOut io
 			if err := requireLogin(cfg); err != nil {
 				return err
 			}
-			return pushSelected(ctx, client, ws, cfg.Project, args, out)
+			options, err := parsePushOptions(args)
+			if err != nil {
+				return err
+			}
+			return pushSelectedWithOptions(ctx, client, ws, cfg.Project, options, out)
 		case "create":
 			return createTask(ws, cfg.Project, args, in, out)
 		case "edit":

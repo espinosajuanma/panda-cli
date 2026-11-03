@@ -11,6 +11,7 @@ edit with your preferred tools.
 - Edit task metadata, descriptions, and notes as files.
 - Keep task file references locally, stage uploads for `push`, and download file content only on demand.
 - Review changes and conflicts before pushing updates to Solutions.
+- Emit structured JSON for task lists, pending diffs, and push results.
 - Use interactive selectors, scriptable options, and shell completions.
 
 ## Requirements
@@ -55,13 +56,13 @@ them with `panda push`.
 
 | Command | Description |
 | --- | --- |
-| `panda pull` / `panda push` | Synchronize local changes with Solutions |
+| `panda pull` / `panda push` | Synchronize local changes with Solutions; `push --json` reports outcomes |
 | `panda login` / `panda logout` | Manage the saved Solutions session |
 | `panda config` / `panda path` | Select project, configure API URL, and inspect workspace |
 | `panda list` | List local tasks by workflow status, or emit structured JSON with `--json` |
 | `panda estimate` | Quickly assign complexity to selected task statuses and types |
 | `panda create` / `panda edit` | Create or edit tasks locally |
-| `panda diff` | Review pending changes and conflicts |
+| `panda diff` | Review pending changes and conflicts; `diff --json` emits structured changes |
 | `panda view <task>` | Display task metadata, description, files, and notes |
 | `panda files <task>` | List task file references, stage uploads, and download files on demand |
 | `panda labels` / `panda packages` | Manage project catalogs locally |

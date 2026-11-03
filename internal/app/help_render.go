@@ -12,6 +12,12 @@ var mainCommandDetails = map[string][]string{
 		"Other filters: --no-complexity, --no-description, --no-package, --no-labels.",
 		"Output: --json emits a versioned JSON document without paging or terminal formatting.",
 	},
+	"diff": {
+		"Output: --json emits structured changes and summary counts; --verbose adds Markdown line changes.",
+	},
+	"push": {
+		"Output: --json emits per-task and catalog outcomes; task failures remain non-zero and are included in the document.",
+	},
 }
 
 func printHelp(out io.Writer) error {
