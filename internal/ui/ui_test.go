@@ -90,3 +90,39 @@ func TestOpenEditorParsesQuotedCommandPath(t *testing.T) {
 		t.Fatalf("editor argument = %q, error=%v", data, err)
 	}
 }
+
+func TestSelectorFrameTruncatesToAvailableWidthAndExpandsWithWindow(t *testing.T) {
+	file, err := os.CreateTemp(t.TempDir(), "selector-output")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	options := []selectorOption{{value: "task-1", label: "A very long task title that must fit on one terminal row"}}
+	narrow := buildSelectorFrame(file, "Tasks · type to filter", options, []int{0}, 0, strings.Repeat("filter", 12), nil, false, 32, 12)
+	if rows := selectorRowsForWidth(narrow, 32); rows != len(narrow) {
+		t.Fatalf("narrow selector frame uses %d rows, want %d: %#v", rows, len(narrow), narrow)
+	}
+	for _, line := range narrow {
+		if width := selectorDisplayWidth(line); width > 31 {
+			t.Errorf("selector line width %d exceeds available 31 columns: %q", width, line)
+		}
+	}
+	if !strings.HasSuffix(narrow[1], "ilter") {
+		t.Fatalf("narrow filter did not retain its suffix: %q", narrow[1])
+	}
+
+	wide := buildSelectorFrame(file, "Tasks · type to filter", options, []int{0}, 0, "", nil, false, 80, 24)
+	if !strings.Contains(wide[1], options[0].label) {
+		t.Fatalf("wide selector unexpectedly truncated task label: %#v", wide)
+	}
+	if selectorRowsForWidth(wide, 32) <= len(wide) {
+		t.Fatalf("selector frame from a wider window did not account for resize reflow: %#v", wide)
+	}
+}
+
+func TestSelectorRowsIgnoreANSIAndCountWrapping(t *testing.T) {
+	lines := []string{"\x1b[1;36m1234567890123456789012345\x1b[0m", "short"}
+	if got := selectorRowsForWidth(lines, 10); got != 4 {
+		t.Fatalf("wrapped selector row count = %d, want 4", got)
+	}
+}

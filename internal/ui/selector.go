@@ -6,7 +6,10 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
+	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/term"
 )
@@ -79,70 +82,137 @@ func runSelector(in, out *os.File, prompt string, options []selectorOption, init
 		return "", err
 	}
 	defer term.Restore(int(in.Fd()), state)
-	filter := ""
-	cursor := initial
-	printedLines := 0
-	for {
-		matches := filterSelectorOptions(options, filter)
-		if cursor >= len(matches) {
-			cursor = max(0, len(matches)-1)
+	type selectorState struct {
+		filter   string
+		cursor   int
+		selected map[string]bool
+		frame    []string
+		width    int
+		height   int
+		finished bool
+	}
+	current := &selectorState{cursor: initial, selected: selected}
+	current.width, current.height = selectorDimensions(out)
+	initialMatches := filterSelectorOptions(options, current.filter)
+	if current.cursor >= len(initialMatches) {
+		current.cursor = max(0, len(initialMatches)-1)
+	}
+	current.frame = renderSelectorAtSize(out, prompt, options, initialMatches, current.cursor, current.filter, current.selected, multiple, 0, current.width, current.height)
+
+	var mutex sync.Mutex
+	stopWatcher := make(chan struct{})
+	watcherDone := make(chan struct{})
+	ticker := time.NewTicker(150 * time.Millisecond)
+	go func() {
+		defer close(watcherDone)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopWatcher:
+				return
+			case <-ticker.C:
+				width, height := selectorDimensions(out)
+				mutex.Lock()
+				if current.finished {
+					mutex.Unlock()
+					return
+				}
+				if width != current.width || height != current.height {
+					clearRows := selectorRowsForWidth(current.frame, width)
+					current.width, current.height = width, height
+					current.frame = renderSelectorAtSize(out, prompt, options, filterSelectorOptions(options, current.filter), current.cursor, current.filter, current.selected, multiple, clearRows, width, height)
+				}
+				mutex.Unlock()
+			}
 		}
-		printedLines = renderSelector(out, prompt, options, matches, cursor, filter, selected, multiple, printedLines)
+	}()
+	var stopOnce sync.Once
+	stop := func() {
+		mutex.Lock()
+		current.finished = true
+		mutex.Unlock()
+		stopOnce.Do(func() { close(stopWatcher) })
+		<-watcherDone
+	}
+	defer stop()
+
+	for {
 		key, err := readSelectorKey(in)
 		if err != nil {
+			stop()
 			return "", err
 		}
+		mutex.Lock()
+		width, height := selectorDimensions(out)
+		clearRows := selectorRowsForWidth(current.frame, width)
+		matches := filterSelectorOptions(options, current.filter)
+		if current.cursor >= len(matches) {
+			current.cursor = max(0, len(matches)-1)
+		}
+		var value string
+		var selectionErr error
+		finishedSelection := false
 		switch key {
 		case selectorUp:
 			if len(matches) > 0 {
-				cursor = (cursor - 1 + len(matches)) % len(matches)
+				current.cursor = (current.cursor - 1 + len(matches)) % len(matches)
 			}
 		case selectorDown:
 			if len(matches) > 0 {
-				cursor = (cursor + 1) % len(matches)
+				current.cursor = (current.cursor + 1) % len(matches)
 			}
 		case selectorEnter:
 			if multiple {
-				finishSelector(out, printedLines, selectedSummary(options, selected))
-				return "", nil
+				value = selectedSummary(options, current.selected)
+				finishedSelection = true
 			}
-			if len(matches) > 0 {
-				choice := options[matches[cursor]]
-				finishSelector(out, printedLines, choice.label)
-				return choice.value, nil
+			if !multiple && len(matches) > 0 {
+				value = options[matches[current.cursor]].value
+				finishedSelection = true
 			}
 		case selectorSpace:
 			if multiple && len(matches) > 0 {
-				choice := options[matches[cursor]]
+				choice := options[matches[current.cursor]]
 				if choice.value == "" {
-					for key := range selected {
-						selected[key] = false
+					for key := range current.selected {
+						current.selected[key] = false
 					}
 				} else {
-					selected[choice.value] = !selected[choice.value]
+					current.selected[choice.value] = !current.selected[choice.value]
 				}
 			}
 		case selectorBackspace:
-			if len(filter) > 0 {
-				filter = filter[:len(filter)-1]
-				cursor = 0
+			if len(current.filter) > 0 {
+				runes := []rune(current.filter)
+				current.filter = string(runes[:len(runes)-1])
+				current.cursor = 0
 			}
 		case selectorEscape:
 			if escapeCancels {
-				finishSelector(out, printedLines, "Canceled")
-				return "", ErrSelectionEscaped
+				value, selectionErr, finishedSelection = "Canceled", ErrSelectionEscaped, true
+			} else {
+				current.filter = ""
+				current.cursor = 0
 			}
-			filter = ""
-			cursor = 0
 		case selectorCancel:
-			finishSelector(out, printedLines, "Canceled")
-			return "", ErrSelectionCanceled
+			value, selectionErr, finishedSelection = "Canceled", ErrSelectionCanceled, true
 		default:
 			if unicode.IsPrint(key) && key != ' ' {
-				filter += string(key)
-				cursor = 0
+				current.filter += string(key)
+				current.cursor = 0
 			}
 		}
+		if finishedSelection {
+			current.width, current.height = width, height
+			finishSelector(out, clearRows, value)
+			current.finished = true
+			mutex.Unlock()
+			stop()
+			return value, selectionErr
+		}
+		current.width, current.height = width, height
+		current.frame = renderSelectorAtSize(out, prompt, options, filterSelectorOptions(options, current.filter), current.cursor, current.filter, current.selected, multiple, clearRows, width, height)
+		mutex.Unlock()
 	}
 }
 
@@ -246,18 +316,48 @@ func filterSelectorOptions(options []selectorOption, filter string) []int {
 }
 
 func renderSelector(out *os.File, prompt string, options []selectorOption, matches []int, cursor int, filter string, selected map[string]bool, multiple bool, previousLines int) int {
-	if previousLines > 0 {
-		fmt.Fprintf(out, "\x1b[%dA\r\x1b[J", previousLines)
+	width, height := selectorDimensions(out)
+	frame := renderSelectorAtSize(out, prompt, options, matches, cursor, filter, selected, multiple, previousLines, width, height)
+	return selectorRowsForWidth(frame, width)
+}
+
+func selectorDimensions(out *os.File) (int, int) {
+	width, height, err := term.GetSize(int(out.Fd()))
+	if err != nil || width < 1 || height < 1 {
+		return 80, 24
 	}
-	fmt.Fprintf(out, "%s %s\r\n", ColorText(out, "1;32", "?"), ColorText(out, "1", prompt))
-	lineCount := 1
+	return width, height
+}
+
+func renderSelectorAtSize(out *os.File, prompt string, options []selectorOption, matches []int, cursor int, filter string, selected map[string]bool, multiple bool, previousRows, width, height int) []string {
+	if width < 1 {
+		width = 80
+	}
+	if previousRows > 0 {
+		fmt.Fprintf(out, "\x1b[%dA\r\x1b[J", previousRows)
+	}
+	frame := buildSelectorFrame(out, prompt, options, matches, cursor, filter, selected, multiple, width, height)
+	for _, line := range frame {
+		fmt.Fprintf(out, "%s\r\n", line)
+	}
+	return frame
+}
+
+func buildSelectorFrame(out *os.File, prompt string, options []selectorOption, matches []int, cursor int, filter string, selected map[string]bool, multiple bool, width, height int) []string {
+	contentWidth := max(1, width-1)
+	promptPrefix := ColorText(out, "1;32", "?") + " "
+	promptWidth := selectorDisplayWidth(promptPrefix)
+	lines := []string{promptPrefix + ColorText(out, "1", truncateSelectorText(prompt, max(0, contentWidth-promptWidth)))}
 	if filter != "" {
-		fmt.Fprintf(out, "  Filter: %s\r\n", filter)
-		lineCount++
+		filterPrefix := "  Filter: "
+		available := max(0, contentWidth-selectorDisplayWidth(filterPrefix))
+		lines = append(lines, fitSelectorLine(filterPrefix+truncateSelectorTail(filter, available), contentWidth))
 	}
 	maxRows := 10
-	if _, height, err := term.GetSize(int(out.Fd())); err == nil && height > 6 {
+	if height > 6 {
 		maxRows = min(maxRows, height-6)
+	} else if height > 0 {
+		maxRows = 1
 	}
 	start := max(0, cursor-maxRows/2)
 	if start+maxRows > len(matches) {
@@ -265,16 +365,15 @@ func renderSelector(out *os.File, prompt string, options []selectorOption, match
 	}
 	end := min(len(matches), start+maxRows)
 	if start > 0 {
-		fmt.Fprint(out, "  …\r\n")
-		lineCount++
+		lines = append(lines, truncateSelectorText("  …", contentWidth))
 	}
 	for visibleIndex := start; visibleIndex < end; visibleIndex++ {
-		optionIndex := matches[visibleIndex]
-		option := options[optionIndex]
+		option := options[matches[visibleIndex]]
 		cursorMarker := "  "
 		if visibleIndex == cursor {
 			cursorMarker = ColorText(out, "1;36", "›") + " "
 		}
+		prefix := cursorMarker
 		if multiple {
 			mark := " "
 			if option.value == "" {
@@ -287,27 +386,77 @@ func renderSelector(out *os.File, prompt string, options []selectorOption, match
 			if mark == "✓" {
 				mark = ColorText(out, "1;32", "✓")
 			}
-			fmt.Fprintf(out, "%s[%s] %s\r\n", cursorMarker, mark, option.label)
-		} else {
-			fmt.Fprintf(out, "%s%s\r\n", cursorMarker, option.label)
+			prefix += "[" + mark + "] "
 		}
-		lineCount++
+		labelWidth := max(0, contentWidth-selectorDisplayWidth(prefix))
+		lines = append(lines, fitSelectorLine(prefix+truncateSelectorText(option.label, labelWidth), contentWidth))
 	}
 	if end < len(matches) {
-		fmt.Fprint(out, "  …\r\n")
-		lineCount++
+		lines = append(lines, truncateSelectorText("  …", contentWidth))
 	}
 	if len(matches) == 0 {
-		fmt.Fprint(out, "  No matches.\r\n")
-		lineCount++
+		lines = append(lines, truncateSelectorText("  No matches.", contentWidth))
 	}
+	help := "  ↑/↓ move  type to filter  enter select"
 	if multiple {
-		fmt.Fprint(out, "  ↑/↓ move  type to filter  space toggle  enter confirm\r\n")
-	} else {
-		fmt.Fprint(out, "  ↑/↓ move  type to filter  enter select\r\n")
+		help = "  ↑/↓ move  type to filter  space toggle  enter confirm"
 	}
-	lineCount++
-	return lineCount
+	lines[0] = fitSelectorLine(lines[0], contentWidth)
+	lines = append(lines, truncateSelectorText(help, contentWidth))
+	return lines
+}
+
+func selectorDisplayWidth(value string) int {
+	visible := ansiEscapeSequence.ReplaceAllString(value, "")
+	return utf8.RuneCountInString(visible)
+}
+
+func selectorRowsForWidth(lines []string, width int) int {
+	if width < 1 {
+		width = 80
+	}
+	rows := 0
+	for _, line := range lines {
+		columns := selectorDisplayWidth(line)
+		rows += max(1, (columns+width-1)/width)
+	}
+	return rows
+}
+
+func truncateSelectorText(value string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	value = strings.Join(strings.Fields(value), " ")
+	runes := []rune(value)
+	if len(runes) <= width {
+		return value
+	}
+	if width == 1 {
+		return "…"
+	}
+	return string(runes[:width-1]) + "…"
+}
+
+func fitSelectorLine(value string, width int) string {
+	if selectorDisplayWidth(value) <= width {
+		return value
+	}
+	return truncateSelectorText(ansiEscapeSequence.ReplaceAllString(value, ""), width)
+}
+
+func truncateSelectorTail(value string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= width {
+		return value
+	}
+	if width == 1 {
+		return "…"
+	}
+	return "…" + string(runes[len(runes)-(width-1):])
 }
 
 func noSelectedOptions(selected map[string]bool) bool {
