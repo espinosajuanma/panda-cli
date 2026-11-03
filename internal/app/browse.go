@@ -64,6 +64,9 @@ func browseWithUI(ws *workspace.Workspace, args []string, userEmail, apiURL stri
 	if options.json {
 		return errors.New("panda browse is interactive and does not accept --json")
 	}
+	if options.wide {
+		return errors.New("panda browse does not accept --wide")
+	}
 	for {
 		report, err := collectListReportForUser(ws, options, userEmail)
 		if err != nil {

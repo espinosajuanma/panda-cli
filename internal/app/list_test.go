@@ -3,11 +3,13 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
@@ -235,6 +237,61 @@ func TestListShowsPackageAndLabelRelationshipsAndFilters(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "Unlabeled task") || strings.Contains(output.String(), "Tagged task") || strings.Contains(output.String(), "Unpackaged task") {
 		t.Fatalf("--no-labels did not select only tasks without labels:\n%s", output.String())
+	}
+}
+
+func TestResponsiveListDropsOptionalColumnsAndWrapsTitles(t *testing.T) {
+	task := listTask("responsive", 61, "new", "a", "m", "Implement a responsive terminal layout for wide task tables", "feature")
+	task["package"] = map[string]any{"id": "package-1", "label": "Long package name"}
+	task["labels"] = []any{map[string]any{"id": "label-1", "label": "long-label-name"}}
+	task["assignees"] = []any{map[string]any{"id": "user-1", "label": "Ada Lovelace"}}
+	task["reviewers"] = []any{map[string]any{"id": "user-2", "label": "Grace Hopper"}}
+
+	var output strings.Builder
+	if _, err := printTaskGroup(&output, &output, "new", []map[string]any{task}, nil, nil, true, true, 60); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	for _, hidden := range []string{"PACKAGE", "LABELS", "ASSIGNEES", "REVIEWERS", "HOURS"} {
+		if strings.Contains(text, hidden) {
+			t.Errorf("narrow table retained lower-priority column %q:\n%s", hidden, text)
+		}
+	}
+	for _, shown := range []string{"NUMBER", "PRIORITY", "TYPE", "COMPLEXITY", "SP", "TITLE"} {
+		if !strings.Contains(text, shown) {
+			t.Errorf("narrow table hid expected column %q:\n%s", shown, text)
+		}
+	}
+	if !strings.Contains(text, "Implement") || !strings.Contains(text, "tables") {
+		t.Fatalf("wrapped title content was lost:\n%s", text)
+	}
+	for _, line := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
+		if width := utf8.RuneCountInString(line); width > 60 {
+			t.Errorf("responsive output line has %d columns, want at most 60: %q", width, line)
+		}
+	}
+}
+
+func TestListWideOverridesTerminalWidthAndCannotCombineWithJSON(t *testing.T) {
+	if got := listTableWidth(false, true, 48); got != 48 {
+		t.Fatalf("terminal list width = %d, want 48", got)
+	}
+	if got := listTableWidth(true, true, 48); got != 0 {
+		t.Fatalf("wide list width = %d, want 0 (unconstrained)", got)
+	}
+	if got := listTableWidth(false, false, 48); got != 0 {
+		t.Fatalf("piped list width = %d, want 0 (full table)", got)
+	}
+	options, err := parseListOptions([]string{"--wide"})
+	if err != nil || !options.wide {
+		t.Fatalf("--wide parsing: options=%#v error=%v", options, err)
+	}
+	ws := workspace.New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	if err := listTasks(ws, []string{"--wide", "--json"}, io.Discard); err == nil || !strings.Contains(err.Error(), "cannot be combined") {
+		t.Fatalf("--wide --json error = %v", err)
 	}
 }
 

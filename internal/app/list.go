@@ -11,8 +11,10 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
+	"unicode/utf8"
 
 	"github.com/espinosajuanma/panda-cli/internal/task"
+	"github.com/espinosajuanma/panda-cli/internal/ui"
 	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
@@ -27,6 +29,7 @@ type listOptions struct {
 	assignees       []string
 	reviewers       []string
 	json            bool
+	wide            bool
 }
 
 type effortEstimate = task.Effort
@@ -60,6 +63,9 @@ func listTasksForUser(ws *workspace.Workspace, args []string, userEmail string, 
 	if err != nil {
 		return err
 	}
+	if options.json && options.wide {
+		return errors.New("--wide cannot be combined with --json")
+	}
 	report, err := collectListReportForUser(ws, options, userEmail)
 	if err != nil {
 		return err
@@ -68,7 +74,7 @@ func listTasksForUser(ws *workspace.Workspace, args []string, userEmail string, 
 		return renderListJSON(report, out)
 	}
 	return writePagedOutput(out, func(rendered io.Writer) error {
-		return renderListReport(report, rendered, out)
+		return renderListReport(report, rendered, out, options.wide)
 	})
 }
 
@@ -169,11 +175,17 @@ func collectListReportForUser(ws *workspace.Workspace, options listOptions, user
 	return report, nil
 }
 
-func renderListReport(report listReport, out, colorTarget io.Writer) error {
+func renderListReport(report listReport, out, colorTarget io.Writer, wide bool) error {
 	if len(report.groups) == 0 {
 		fmt.Fprintln(out, "No tasks match the filters.")
 		return nil
 	}
+	terminal := isTerminal(colorTarget)
+	terminalWidth := 0
+	if terminal && !wide {
+		terminalWidth, _, _ = ui.TerminalSize(colorTarget)
+	}
+	width := listTableWidth(wide, terminal, terminalWidth)
 	for index, group := range report.groups {
 		if index > 0 {
 			fmt.Fprintln(out, colorText(colorTarget, "2", "----------------------------------------"))
@@ -182,13 +194,23 @@ func renderListReport(report listReport, out, colorTarget io.Writer) error {
 		for _, entry := range group.entries {
 			metadata = append(metadata, entry.metadata)
 		}
-		_, err := printTaskGroup(out, colorTarget, group.status, metadata, report.labelNames, report.packageNames, report.showAssignees, report.showReviewers)
+		_, err := printTaskGroup(out, colorTarget, group.status, metadata, report.labelNames, report.packageNames, report.showAssignees, report.showReviewers, width)
 		if err != nil {
 			return err
 		}
 	}
 	fmt.Fprintf(out, "TOTAL (visible tasks): %d SP, %d hours\n", report.total.StoryPoints, report.total.Hours)
 	return nil
+}
+
+func listTableWidth(wide, terminal bool, terminalWidth int) int {
+	if wide || !terminal {
+		return 0
+	}
+	if terminalWidth < 1 {
+		return 80
+	}
+	return terminalWidth
 }
 
 func parseListOptions(args []string) (listOptions, error) {
@@ -232,6 +254,8 @@ func parseListOptions(args []string) (listOptions, error) {
 			}
 		case arg == "--json":
 			options.json = true
+		case arg == "--wide":
+			options.wide = true
 		case strings.HasPrefix(arg, "--assignee="):
 			if err := appendRelationSelectors(&options.assignees, strings.TrimPrefix(arg, "--assignee="), "--assignee"); err != nil {
 				return options, err
@@ -260,7 +284,7 @@ func parseListOptions(args []string) (listOptions, error) {
 }
 
 func listUsageError() error {
-	return errors.New("usage: panda list [--current] [--staging] [--released] [--discarded] [--all] [--status <status,...>] [--no-complexity] [--no-description] [--no-package] [--no-labels] [--assignee <member,...>] [--reviewer <member,...>] [--json]")
+	return errors.New("usage: panda list [--current] [--staging] [--released] [--discarded] [--all] [--status <status,...>] [--no-complexity] [--no-description] [--no-package] [--no-labels] [--assignee <member,...>] [--reviewer <member,...>] [--wide] [--json]")
 }
 
 func addQuickStatusFilter(options *listOptions, statuses []string) {
@@ -351,14 +375,17 @@ func compareTaskNumbers(left, right any) int {
 	return strings.Compare(fmt.Sprint(left), fmt.Sprint(right))
 }
 
-func printTaskGroup(out, colorTarget io.Writer, status string, tasks []map[string]any, labelNames, packageNames map[string]string, showAssignees, showReviewers bool) (effortEstimate, error) {
+type listTableRow struct {
+	cells []string
+	task  map[string]any
+}
+
+func printTaskGroup(out, colorTarget io.Writer, status string, tasks []map[string]any, labelNames, packageNames map[string]string, showAssignees, showReviewers bool, width int) (effortEstimate, error) {
 	style := "1;32"
 	if status == "released" {
 		style = "1;36"
 	}
 	fmt.Fprintln(out, colorText(colorTarget, style, displayStatus(status)))
-	var table bytes.Buffer
-	writer := tabwriter.NewWriter(&table, 0, 4, 2, ' ', 0)
 	headers := []string{"NUMBER", "PRIORITY", "TYPE", "COMPLEXITY", "SP", "HOURS", "PACKAGE", "LABELS"}
 	if showAssignees {
 		headers = append(headers, "ASSIGNEES")
@@ -367,10 +394,8 @@ func printTaskGroup(out, colorTarget io.Writer, status string, tasks []map[strin
 		headers = append(headers, "REVIEWERS")
 	}
 	headers = append(headers, "TITLE")
-	if _, err := fmt.Fprintln(writer, strings.Join(headers, "\t")); err != nil {
-		return effortEstimate{}, err
-	}
 	var total effortEstimate
+	rows := make([]listTableRow, 0, len(tasks))
 	for _, currentTask := range tasks {
 		number := stringField(currentTask, "number")
 		if number == "" {
@@ -411,25 +436,187 @@ func printTaskGroup(out, colorTarget io.Writer, status string, tasks []map[strin
 			row = append(row, tableCell(reviewers))
 		}
 		row = append(row, tableCell(currentTask["title"]))
-		if _, err := fmt.Fprintln(writer, strings.Join(row, "\t")); err != nil {
+		rows = append(rows, listTableRow{cells: row, task: currentTask})
+	}
+	if width > 0 {
+		if err := writeResponsiveListTable(out, colorTarget, headers, rows, width, status); err != nil {
 			return effortEstimate{}, err
+		}
+	} else if err := writeFullListTable(out, colorTarget, headers, rows, status); err != nil {
+		return effortEstimate{}, err
+	}
+	fmt.Fprintf(out, "Subtotal: %d SP, %d hours\n", total.StoryPoints, total.Hours)
+	return total, nil
+}
+
+func writeFullListTable(out, colorTarget io.Writer, headers []string, rows []listTableRow, status string) error {
+	var table bytes.Buffer
+	writer := tabwriter.NewWriter(&table, 0, 4, 2, ' ', 0)
+	if _, err := fmt.Fprintln(writer, strings.Join(headers, "\t")); err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if _, err := fmt.Fprintln(writer, strings.Join(row.cells, "\t")); err != nil {
+			return err
 		}
 	}
 	if err := writer.Flush(); err != nil {
-		return effortEstimate{}, err
+		return err
 	}
 	lines := strings.Split(strings.TrimSuffix(table.String(), "\n"), "\n")
 	for i, line := range lines {
 		if i > 0 {
-			currentTask := tasks[i-1]
+			currentTask := rows[i-1].task
 			if stringField(currentTask, "type") == "release" || status == "released" {
 				line = colorText(colorTarget, "36", line)
 			}
 		}
 		fmt.Fprintln(out, line)
 	}
-	fmt.Fprintf(out, "Subtotal: %d SP, %d hours\n", total.StoryPoints, total.Hours)
-	return total, nil
+	return nil
+}
+
+func writeResponsiveListTable(out, colorTarget io.Writer, headers []string, rows []listTableRow, width int, status string) error {
+	columns, widths := responsiveListColumns(headers, rows, width)
+	if len(columns) == 0 {
+		return errors.New("could not choose columns for task list")
+	}
+	titleIndex := len(headers) - 1
+	for _, row := range append([]listTableRow{{cells: headers}}, rows...) {
+		lines := []string{""}
+		if row.task == nil {
+			lines[0] = renderResponsiveListLine(row.cells, columns, widths, titleIndex, truncateListCell(row.cells[titleIndex], widths[len(widths)-1]))
+		} else {
+			title := row.cells[titleIndex]
+			titleWidth := widths[len(widths)-1]
+			lines = wrapTaskViewValue(title, titleWidth)
+			if len(lines) == 0 {
+				lines = []string{""}
+			}
+			lines[0] = renderResponsiveListLine(row.cells, columns, widths, titleIndex, lines[0])
+			indent := responsiveListTitleIndent(widths)
+			for index := 1; index < len(lines); index++ {
+				lines[index] = strings.Repeat(" ", indent) + lines[index]
+			}
+		}
+		for _, line := range lines {
+			if row.task != nil && (stringField(row.task, "type") == "release" || status == "released") {
+				line = colorText(colorTarget, "36", line)
+			}
+			if _, err := fmt.Fprintln(out, line); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func responsiveListColumns(headers []string, rows []listTableRow, width int) ([]int, []int) {
+	if len(headers) == 0 {
+		return nil, nil
+	}
+	columnWidths := make([]int, len(headers))
+	for column, header := range headers {
+		columnWidths[column] = utf8.RuneCountInString(header)
+		for _, row := range rows {
+			if column < len(row.cells) {
+				if valueWidth := utf8.RuneCountInString(row.cells[column]); valueWidth > columnWidths[column] {
+					columnWidths[column] = valueWidth
+				}
+			}
+		}
+	}
+
+	columns := make([]int, len(headers))
+	for index := range columns {
+		columns[index] = index
+	}
+	titleIndex := len(headers) - 1
+	const padding = 2
+	const minimumTitleWidth = 12
+	dropOrder := []string{"REVIEWERS", "ASSIGNEES", "LABELS", "PACKAGE", "HOURS", "SP", "TYPE", "COMPLEXITY", "PRIORITY"}
+	for _, drop := range dropOrder {
+		if responsiveListRequiredWidth(columns, columnWidths, titleIndex, minimumTitleWidth, padding) <= width {
+			break
+		}
+		for position, column := range columns {
+			if headers[column] == drop {
+				columns = append(columns[:position], columns[position+1:]...)
+				break
+			}
+		}
+	}
+	nonTitleWidth := 0
+	for _, column := range columns {
+		if column != titleIndex {
+			nonTitleWidth += columnWidths[column]
+		}
+	}
+	titleWidth := width - nonTitleWidth - padding*(len(columns)-1)
+	if titleWidth < 1 {
+		titleWidth = 1
+	}
+	widths := make([]int, len(columns))
+	for position, column := range columns {
+		if column == titleIndex {
+			widths[position] = titleWidth
+		} else {
+			widths[position] = columnWidths[column]
+		}
+	}
+	return columns, widths
+}
+
+func responsiveListRequiredWidth(columns, columnWidths []int, titleIndex, minimumTitleWidth, padding int) int {
+	total := padding * (len(columns) - 1)
+	for _, column := range columns {
+		if column == titleIndex {
+			total += minimumTitleWidth
+		} else {
+			total += columnWidths[column]
+		}
+	}
+	return total
+}
+
+func renderResponsiveListLine(cells []string, columns, widths []int, titleIndex int, title string) string {
+	var line strings.Builder
+	for position, column := range columns {
+		value := cells[column]
+		if column == titleIndex {
+			value = title
+		}
+		line.WriteString(value)
+		if position < len(columns)-1 {
+			line.WriteString(strings.Repeat(" ", max(0, widths[position]-utf8.RuneCountInString(value))+2))
+		}
+	}
+	return line.String()
+}
+
+func responsiveListTitleIndent(widths []int) int {
+	if len(widths) < 2 {
+		return 0
+	}
+	indent := 2 * (len(widths) - 1)
+	for _, width := range widths[:len(widths)-1] {
+		indent += width
+	}
+	return indent
+}
+
+func truncateListCell(value string, width int) string {
+	if width < 1 {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= width {
+		return value
+	}
+	if width == 1 {
+		return "…"
+	}
+	return string(runes[:width-1]) + "…"
 }
 
 func displayStatus(status string) string {

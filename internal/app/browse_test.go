@@ -178,6 +178,9 @@ func TestBrowseRejectsNonInteractiveAndJSONUse(t *testing.T) {
 	if err := browseWithUI(ws, []string{"--json"}, "", config.DefaultAPIURL, &scriptedBrowserUI{}, io.Discard); err == nil || !strings.Contains(err.Error(), "does not accept --json") {
 		t.Fatalf("browse JSON error = %v", err)
 	}
+	if err := browseWithUI(ws, []string{"--wide"}, "", config.DefaultAPIURL, &scriptedBrowserUI{}, io.Discard); err == nil || !strings.Contains(err.Error(), "does not accept --wide") {
+		t.Fatalf("browse --wide error = %v", err)
+	}
 }
 
 func TestReadOnlyProjectWorkspaceDoesNotInitializeMissingWorkspace(t *testing.T) {

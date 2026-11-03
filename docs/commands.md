@@ -201,12 +201,16 @@ panda estimate --type bug --type other
 panda estimate new --all
 ```
 
-### `panda list [status filters] [assignee/reviewer filters] [other filters] [--json]`
+### `panda list [status filters] [assignee/reviewer filters] [other filters] [--wide] [--json]`
 
 Lists local tasks grouped in workflow order and sorted by their fetched rank.
 The default statuses are `new`, `toDo`, `inProgress`, `inReview`, and
 `completed`; `staging`, `released`, and `discarded` are hidden by default.
 Run `panda pull` to refresh local task data and rank values.
+
+On terminals, Panda hides lower-priority columns as needed to fit the available
+width and wraps long titles. `--wide` forces the full table. Piped output always
+uses the full table.
 
 Status filters can be combined:
 
@@ -233,6 +237,8 @@ Relationship filters:
   used alone for that filter.
 - Multiple values within one filter use OR; when both `--assignee` and
   `--reviewer` are supplied, the task must match both filters.
+- `--wide`: show every table column, even when the table is wider than the
+  terminal. Cannot be combined with `--json`.
 - `--json`: emit a versioned JSON document containing the filtered groups, task
   metadata, display names for relationships, per-task effort estimates, and
   group/project totals. JSON output is written directly without paging or color.
@@ -252,6 +258,7 @@ panda list --no-description --no-package --no-labels
 panda list --assignee me --reviewer none
 panda list --assignee 'Ada Lovelace,Grace Hopper'
 panda list --assignee ada@example.com --reviewer grace@example.com
+panda list --current --wide
 panda list --current --json
 ```
 
@@ -284,9 +291,9 @@ and a verified task link when available. Choose Back to return to the task
 selector or Quit to exit.
 
 Browse accepts the status, content, assignee, and reviewer filters documented
-for `panda list`; `--json` is not supported. It requires a terminal and never
-changes task files or synchronization state. Use `panda list` for non-interactive
-or scripted output.
+for `panda list`; list's `--wide` and `--json` options are not supported. It
+requires a terminal and never changes task files or synchronization state. Use
+`panda list` for non-interactive or scripted output.
 
 ```sh
 panda browse

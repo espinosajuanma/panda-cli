@@ -203,9 +203,10 @@ var manualPages = map[string]manualPage{
 	},
 	"list": {
 		name:     "panda list - list local tasks by status",
-		synopsis: []string{"panda list [status filters] [assignee/reviewer filters] [other options] [--json]"},
+		synopsis: []string{"panda list [status filters] [assignee/reviewer filters] [other options] [--wide] [--json]"},
 		description: []string{
 			"List tasks in the active project's local workspace, grouped by workflow status and sorted by rank. The default view includes new, toDo, inProgress, inReview, and completed tasks.",
+			"On terminals, the table hides lower-priority columns as needed to fit the terminal width and wraps long titles. Use --wide to show every column. Piped output always uses the full table.",
 			"Status selectors are combined as a union. --all includes every status, including statuses not otherwise recognized by Panda. The existing --status selector accepts one or more comma-separated known statuses.",
 			"--assignee and --reviewer accept repeatable or comma-separated member names, emails, IDs, me, or none. Values within one filter are combined as a union; assignee and reviewer filters are both required when both are supplied. me uses the saved login email. Member names are resolved from the latest panda pull when available.",
 			"Complexity maps to story points and estimated hours. Package and label names are shown with each task. Each group has a subtotal, followed by a total for all tasks visible after status and content filters are applied.",
@@ -224,6 +225,7 @@ var manualPages = map[string]manualPage{
 			{"--no-labels", "Show only tasks that have no labels assigned."},
 			{"--assignee <member,...>", "Filter by any selected project member; repeat or comma-separate names, emails, or IDs. Use me for the logged-in member or none for unassigned tasks."},
 			{"--reviewer <member,...>", "Filter by any selected reviewer; repeat or comma-separate names, emails, or IDs. Use me for the logged-in member or none for tasks without reviewers."},
+			{"--wide", "Show every table column, even when the table is wider than the terminal. Cannot be combined with --json."},
 			{"--json", "Emit versioned JSON with task metadata, display relationships, effort estimates, and totals."},
 		},
 		examples: []string{
@@ -234,6 +236,7 @@ var manualPages = map[string]manualPage{
 			"panda list --no-package --no-labels",
 			"panda list --assignee me --reviewer none",
 			"panda list --assignee 'Ada Lovelace,Grace Hopper'",
+			"panda list --current --wide",
 			"panda list --current --json",
 		},
 		seeAlso: []string{"panda-pull(1)", "panda-view(1)"},
@@ -242,7 +245,7 @@ var manualPages = map[string]manualPage{
 		name:        "panda browse - interactively inspect local tasks",
 		synopsis:    []string{"panda browse [list filters]"},
 		description: []string{"Open a terminal task selector using the same status, content, assignee, and reviewer filters as panda list. Select a task to view its metadata, description, notes, files, pending diff, or verified link. Browse is read-only and requires an interactive terminal; use panda list for non-interactive output."},
-		options:     []manualOption{{"list filters", "Accept the status, content, --assignee, and --reviewer filters documented by panda list. --json is not supported."}},
+		options:     []manualOption{{"list filters", "Accept the status, content, --assignee, and --reviewer filters documented by panda list. The list-only --wide and --json options are not supported."}},
 		examples:    []string{"panda browse", "panda browse --current", "panda browse --assignee me --reviewer none"},
 		seeAlso:     []string{"panda-list(1)", "panda-view(1)", "panda-diff(1)"},
 	},

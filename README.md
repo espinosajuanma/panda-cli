@@ -62,7 +62,7 @@ them with `panda push`.
 | `panda login` / `panda logout` | Manage the saved Solutions session |
 | `panda config` / `panda path` | Select project, configure API URL, and inspect workspace |
 | `panda doctor` | Diagnose local configuration and workspace health |
-| `panda list` | Filter local tasks by workflow status, assignee, and reviewer; emit JSON with `--json` |
+| `panda list` | Filter tasks and adapt the table to terminal width; use `--wide` for all columns or `--json` for structured output |
 | `panda browse` | Interactively browse and inspect local tasks |
 | `panda estimate` | Quickly assign complexity to selected task statuses and types |
 | `panda create` / `panda edit` | Create or edit tasks locally and change status |
