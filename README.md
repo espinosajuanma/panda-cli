@@ -12,6 +12,7 @@ edit with your preferred tools.
 - Keep task file references locally, stage uploads for `push`, and download file content only on demand.
 - Review changes and conflicts before pushing updates to Solutions.
 - Emit structured JSON for task lists, pending diffs, and push results.
+- Diagnose local configuration and workspace state with `panda doctor`.
 - Use interactive selectors, scriptable options, and shell completions.
 
 ## Requirements
@@ -59,6 +60,7 @@ them with `panda push`.
 | `panda pull` / `panda push` | Synchronize local changes with Solutions; `push --json` reports outcomes |
 | `panda login` / `panda logout` | Manage the saved Solutions session |
 | `panda config` / `panda path` | Select project, configure API URL, and inspect workspace |
+| `panda doctor` | Diagnose local configuration and workspace health |
 | `panda list` | Filter local tasks by workflow status, assignee, and reviewer; emit JSON with `--json` |
 | `panda estimate` | Quickly assign complexity to selected task statuses and types |
 | `panda create` / `panda edit` | Create or edit tasks locally |

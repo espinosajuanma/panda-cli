@@ -109,6 +109,14 @@ var manualPages = map[string]manualPage{
 		examples:    []string{"panda path"},
 		seeAlso:     []string{"panda-config(1)"},
 	},
+	"doctor": {
+		name:        "panda doctor - inspect local configuration and workspace health",
+		synopsis:    []string{"panda doctor [--json]"},
+		description: []string{"Run read-only local checks on configuration, workspace permissions and lock state, task metadata, catalogs, project members, and sync baselines. No network requests or repairs are performed. Warnings do not affect the exit status; failures return non-zero. --json emits a versioned diagnostic report."},
+		options:     []manualOption{{"--json", "Emit versioned JSON with stable finding codes, severity, paths, and a summary."}},
+		examples:    []string{"panda doctor", "panda doctor --json"},
+		seeAlso:     []string{"panda-config(1)", "panda-path(1)", "panda-pull(1)"},
+	},
 	"completion": {
 		name:        "panda completion - generate shell integration",
 		synopsis:    []string{"panda completion <bash|zsh|fish>"},

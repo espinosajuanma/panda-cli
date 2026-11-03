@@ -35,6 +35,31 @@ links use the configured host and runtime path.
 
 Prints the active project's workspace path without creating it.
 
+### `panda doctor [--json]`
+
+Runs read-only local diagnostics for configuration, workspace directories and
+permissions, lock state, task metadata and baselines, catalogs, project members,
+staged files/notes, and leftover atomic-write temporary files. It makes no
+network requests and does not repair or create files.
+
+- `OK` findings indicate checks that passed.
+- `WARN` findings identify issues that may limit a workflow; warnings do not
+  cause a non-zero exit status.
+- `FAIL` findings indicate invalid or missing required local data and cause a
+  non-zero exit status.
+- `--json` emits a versioned document with stable finding codes, levels, paths,
+  messages, and summary counts.
+
+```sh
+panda doctor
+panda doctor --json
+```
+
+The JSON document has `schemaVersion: 1`, an `ok` boolean, `summary` counts for
+checks/failures/warnings, and a `findings` array. Missing project selection,
+session, members, or an uninitialized workspace are warnings; corrupt metadata
+and missing baselines for synced tasks are failures.
+
 ### `panda completion <bash|zsh|fish>`
 
 Prints shell completion code. Add it to the appropriate shell startup or

@@ -74,6 +74,7 @@ func TestNestedCommandHelpResolvesToSubcommandManual(t *testing.T) {
 		{args: []string{"view", "--help"}, page: "PANDA-VIEW(1)", synopsis: "panda view <taskNumber|draft-N> [--no-description] [--no-notes] [--json]"},
 		{args: []string{"diff", "--help"}, page: "PANDA-DIFF(1)", synopsis: "panda diff [taskNumber|draft-N] [--verbose|-v] [--summary|-s] [--json]"},
 		{args: []string{"push", "--help"}, page: "PANDA-PUSH(1)", synopsis: "panda push [taskNumber|draft-N ...] [--json]"},
+		{args: []string{"doctor", "--help"}, page: "PANDA-DOCTOR(1)", synopsis: "panda doctor [--json]"},
 		{args: []string{"labels", "edit", "--help"}, page: "PANDA-LABELS-EDIT(1)", synopsis: "panda labels edit <name|id>"},
 		{args: []string{"completion", "bash", "--help"}, page: "PANDA-COMPLETION-BASH(1)", synopsis: "panda completion bash"},
 		{args: []string{"labels", "create", "--help"}, page: "PANDA-LABELS-CREATE(1)", synopsis: "panda labels create [name] [description]"},
@@ -158,7 +159,7 @@ func TestGlobalHelpHasManSectionsAndCommandOptions(t *testing.T) {
 		"NAME\n", "SYNOPSIS\n", "DESCRIPTION\n", "COMMANDS\n", "GLOBAL OPTIONS\n", "ENVIRONMENT\n", "FILES\n",
 		"--current", "--staging", "--released", "--discarded", "--all", "--status",
 		"--no-complexity", "--no-description", "--no-package", "--no-labels", "--assignee", "--reviewer", "--json",
-		"--verbose", "-v", "--summary", "-s", "--yes", "panda labels", "panda packages",
+		"--verbose", "-v", "--summary", "-s", "--yes", "panda labels", "panda packages", "panda doctor",
 	} {
 		if !strings.Contains(plain, expected) {
 			t.Errorf("main help missing %q:\n%s", expected, text)

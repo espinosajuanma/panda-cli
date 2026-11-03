@@ -236,6 +236,33 @@ func (w *Workspace) StatePathForKey(key string) string {
 	return w.statePath(key)
 }
 
+// StateKeys lists the keys encoded in the workspace state directory without
+// creating or changing any workspace files.
+func (w *Workspace) StateKeys() ([]string, error) {
+	stateDir := filepath.Join(w.Root, ".panda", "state")
+	entries, err := os.ReadDir(stateDir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		encoded := strings.TrimSuffix(entry.Name(), ".json")
+		decoded, err := base64.RawURLEncoding.DecodeString(encoded)
+		if err != nil {
+			return nil, fmt.Errorf("decode workspace state filename %q: %w", entry.Name(), err)
+		}
+		keys = append(keys, string(decoded))
+	}
+	sort.Strings(keys)
+	return keys, nil
+}
+
 func ReadMap(path string) (map[string]any, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

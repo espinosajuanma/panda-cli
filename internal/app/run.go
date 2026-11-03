@@ -35,6 +35,9 @@ func RunContext(ctx context.Context, args []string, in io.Reader, out, errOut io
 	if len(args) > 1 && (args[len(args)-1] == "--help" || args[len(args)-1] == "-h") {
 		return printCommandHelp(commandHelpKey(args[:len(args)-1]), out)
 	}
+	if args[0] == "doctor" {
+		return doctorCommand(args[1:], out)
+	}
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("load configuration: %w", err)

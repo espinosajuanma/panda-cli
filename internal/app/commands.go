@@ -18,6 +18,7 @@ var mainCommands = []mainCommand{
 	{"config set api-url <url>", "", "Set the Solutions API base URL.", false},
 	{"config get api-url", "", "Display the Solutions API base URL.", false},
 	{"path", "", "Print the selected project's workspace path.", false},
+	{"doctor", "[--json]", "Inspect local configuration and workspace health without changing files.", false},
 	{"completion <bash|zsh|fish>", "", "Print shell completion setup code.", false},
 	{"labels [list|create|edit|delete]", "", "Manage project labels locally.", true},
 	{"packages [list|create|edit|delete]", "", "Manage project packages (epics) locally.", true},

@@ -5,6 +5,10 @@ baselines under the OS user configuration directory; no database is used.
 
 Print the active workspace path with `panda path`.
 
+Run `panda doctor` to inspect local workspace structure, permissions, task data,
+catalogs, members, and sync baselines. Doctor is read-only and does not contact
+Solutions; warnings and failures can be emitted as JSON with `--json`.
+
 ## Directory layout
 
 ```text

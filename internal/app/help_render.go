@@ -19,6 +19,9 @@ var mainCommandDetails = map[string][]string{
 	"push": {
 		"Output: --json emits per-task and catalog outcomes; task failures remain non-zero and are included in the document.",
 	},
+	"doctor": {
+		"Checks are local-only and read-only. Warnings are reported but failures determine the exit status.",
+	},
 }
 
 func printHelp(out io.Writer) error {
