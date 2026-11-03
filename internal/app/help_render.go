@@ -10,6 +10,7 @@ var mainCommandDetails = map[string][]string{
 	"list": {
 		"Status filters: --current, --staging, --released, --discarded, --all, --status <status,...>.",
 		"Other filters: --no-complexity, --no-description, --no-package, --no-labels.",
+		"Output: --json emits a versioned JSON document without paging or terminal formatting.",
 	},
 }
 

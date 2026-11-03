@@ -1,6 +1,8 @@
 package app
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -233,5 +235,73 @@ func TestListShowsPackageAndLabelRelationshipsAndFilters(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "Unlabeled task") || strings.Contains(output.String(), "Tagged task") || strings.Contains(output.String(), "Unpackaged task") {
 		t.Fatalf("--no-labels did not select only tasks without labels:\n%s", output.String())
+	}
+}
+
+func TestListJSONIncludesSortedGroupsRelationshipsEffortAndTotals(t *testing.T) {
+	ws := workspace.New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeCatalog(ws, labelCatalog, []map[string]any{
+		{"id": "label-1", "name": "security"},
+		{"id": "label-2", "name": "urgent"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeCatalog(ws, packageCatalog, []map[string]any{{"id": "package-1", "title": "Billing"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	second := listTask("json-second", 42, "new", "b", "m", "Second task", "feature")
+	second["package"] = map[string]any{"id": "package-1", "label": "Old package name"}
+	second["labels"] = []any{
+		map[string]any{"id": "label-2", "label": "Old urgent name"},
+		map[string]any{"id": "label-1", "label": "Old security name"},
+	}
+	second["assignees"] = []any{map[string]any{"id": "user-2", "label": "Grace Hopper"}, map[string]any{"id": "user-1", "label": "Ada Lovelace"}}
+	second["reviewers"] = []any{map[string]any{"id": "user-3", "label": "Katherine Johnson"}}
+	first := listTask("json-first", 41, "new", "a", "unknown", "First task", "bug")
+	otherStatus := listTask("json-hidden", 43, "discarded", "a", "xl", "Hidden task", "feature")
+	for _, fixture := range []map[string]any{second, otherStatus, first} {
+		addSyncedTask(t, ws, fixture)
+	}
+
+	var output bytes.Buffer
+	if err := listTasks(ws, []string{"--json", "--status=new"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output.String(), "\x1b[") {
+		t.Fatalf("JSON output contains ANSI styling: %q", output.String())
+	}
+	var document listJSONDocument
+	if err := json.Unmarshal(output.Bytes(), &document); err != nil {
+		t.Fatalf("invalid JSON output %q: %v", output.String(), err)
+	}
+	if document.SchemaVersion != 1 || len(document.Groups) != 1 {
+		t.Fatalf("JSON schema/groups = %d / %#v", document.SchemaVersion, document.Groups)
+	}
+	group := document.Groups[0]
+	if group.Status != "new" || len(group.Tasks) != 2 {
+		t.Fatalf("JSON group = %#v", group)
+	}
+	if got := stringField(group.Tasks[0].Task, "id"); got != "json-first" {
+		t.Fatalf("ranked first task ID = %q, want json-first", got)
+	}
+	secondTask := group.Tasks[1]
+	if stringField(secondTask.Task, "id") != "json-second" || secondTask.StoryPoints == nil || *secondTask.StoryPoints != 3 || secondTask.Hours == nil || *secondTask.Hours != 12 {
+		t.Fatalf("known-complexity JSON task = %#v", secondTask)
+	}
+	if secondTask.Package == nil || *secondTask.Package != "Billing" || !reflect.DeepEqual(secondTask.Labels, []string{"security", "urgent"}) {
+		t.Fatalf("catalog relationship names = package %v, labels %v", secondTask.Package, secondTask.Labels)
+	}
+	if !reflect.DeepEqual(secondTask.Assignees, []string{"Ada Lovelace", "Grace Hopper"}) || !reflect.DeepEqual(secondTask.Reviewers, []string{"Katherine Johnson"}) {
+		t.Fatalf("assignees/reviewers = %v / %v", secondTask.Assignees, secondTask.Reviewers)
+	}
+	if group.Tasks[0].StoryPoints != nil || group.Tasks[0].Hours != nil {
+		t.Fatalf("unknown complexity should produce null effort values: %#v", group.Tasks[0])
+	}
+	if group.Totals != (listJSONTotals{Tasks: 2, StoryPoints: 3, Hours: 12}) || document.Totals != group.Totals {
+		t.Fatalf("group/project totals = %#v / %#v", group.Totals, document.Totals)
 	}
 }

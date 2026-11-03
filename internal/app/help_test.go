@@ -155,7 +155,7 @@ func TestGlobalHelpHasManSectionsAndCommandOptions(t *testing.T) {
 	for _, expected := range []string{
 		"NAME\n", "SYNOPSIS\n", "DESCRIPTION\n", "COMMANDS\n", "GLOBAL OPTIONS\n", "ENVIRONMENT\n", "FILES\n",
 		"--current", "--staging", "--released", "--discarded", "--all", "--status",
-		"--no-complexity", "--no-description", "--no-package", "--no-labels",
+		"--no-complexity", "--no-description", "--no-package", "--no-labels", "--json",
 		"--verbose", "-v", "--summary", "-s", "--yes", "panda labels", "panda packages",
 	} {
 		if !strings.Contains(plain, expected) {

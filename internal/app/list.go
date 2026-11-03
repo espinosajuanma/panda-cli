@@ -24,40 +24,69 @@ type listOptions struct {
 	noDescription   bool
 	noPackage       bool
 	noLabels        bool
+	json            bool
 }
 
 type effortEstimate = task.Effort
 
-func listTasks(ws *workspace.Workspace, args []string, out io.Writer) error {
-	return writePagedOutput(out, func(rendered io.Writer) error {
-		return renderListTasks(ws, args, rendered, out)
-	})
+type listTaskEntry struct {
+	dir      string
+	metadata map[string]any
 }
 
-func renderListTasks(ws *workspace.Workspace, args []string, out, colorTarget io.Writer) error {
+type listGroup struct {
+	status  string
+	entries []listTaskEntry
+	totals  effortEstimate
+}
+
+type listReport struct {
+	groups       []listGroup
+	total        effortEstimate
+	labelNames   map[string]string
+	packageNames map[string]string
+}
+
+func listTasks(ws *workspace.Workspace, args []string, out io.Writer) error {
 	options, err := parseListOptions(args)
 	if err != nil {
 		return err
 	}
-	labelsCatalog, err := readCatalog(ws, labelCatalog)
+	report, err := collectListReport(ws, options)
 	if err != nil {
 		return err
+	}
+	if options.json {
+		return renderListJSON(report, out)
+	}
+	return writePagedOutput(out, func(rendered io.Writer) error {
+		return renderListReport(report, rendered, out)
+	})
+}
+
+func collectListReport(ws *workspace.Workspace, options listOptions) (listReport, error) {
+	labelsCatalog, err := readCatalog(ws, labelCatalog)
+	if err != nil {
+		return listReport{}, err
 	}
 	packagesCatalog, err := readCatalog(ws, packageCatalog)
 	if err != nil {
-		return err
+		return listReport{}, err
 	}
-	labelNames := catalogNameIndex(labelCatalog, labelsCatalog)
-	packageNames := catalogNameIndex(packageCatalog, packagesCatalog)
+	report := listReport{
+		groups:       make([]listGroup, 0),
+		labelNames:   catalogNameIndex(labelCatalog, labelsCatalog),
+		packageNames: catalogNameIndex(packageCatalog, packagesCatalog),
+	}
 	dirs, err := ws.TaskDirectories()
 	if err != nil {
-		return err
+		return listReport{}, err
 	}
-	groups := make(map[string][]map[string]any)
+	grouped := make(map[string][]listTaskEntry)
 	for _, dir := range dirs {
 		metadata, err := workspace.ReadMap(filepath.Join(dir, "metadata.json"))
 		if err != nil {
-			return fmt.Errorf("read task metadata in %s: %w", filepath.Base(dir), err)
+			return listReport{}, fmt.Errorf("read task metadata in %s: %w", filepath.Base(dir), err)
 		}
 		status := stringField(metadata, "status")
 		if status == "" {
@@ -72,7 +101,7 @@ func renderListTasks(ws *workspace.Workspace, args []string, out, colorTarget io
 		if options.noDescription {
 			description, err := os.ReadFile(filepath.Join(dir, "description.md"))
 			if err != nil && !os.IsNotExist(err) {
-				return fmt.Errorf("read task description in %s: %w", filepath.Base(dir), err)
+				return listReport{}, fmt.Errorf("read task description in %s: %w", filepath.Base(dir), err)
 			}
 			if err == nil && strings.TrimSpace(string(description)) != "" {
 				continue
@@ -84,27 +113,47 @@ func renderListTasks(ws *workspace.Workspace, args []string, out, colorTarget io
 		if options.noLabels && hasLabelAssignments(metadata["labels"]) {
 			continue
 		}
-		groups[status] = append(groups[status], metadata)
+		grouped[status] = append(grouped[status], listTaskEntry{dir: dir, metadata: metadata})
 	}
-	statuses := orderedTaskStatuses(groups)
-	if len(statuses) == 0 {
+	statuses := orderedTaskStatuses(grouped)
+	for _, status := range statuses {
+		entries := grouped[status]
+		sort.SliceStable(entries, func(i, j int) bool {
+			return taskMetadataRankLess(entries[i].metadata, entries[j].metadata)
+		})
+		group := listGroup{status: status, entries: entries}
+		for _, entry := range entries {
+			if effort, ok := task.ComplexityEffort[strings.ToLower(strings.TrimSpace(stringField(entry.metadata, "complexity")))]; ok {
+				group.totals.StoryPoints += effort.StoryPoints
+				group.totals.Hours += effort.Hours
+			}
+		}
+		report.total.StoryPoints += group.totals.StoryPoints
+		report.total.Hours += group.totals.Hours
+		report.groups = append(report.groups, group)
+	}
+	return report, nil
+}
+
+func renderListReport(report listReport, out, colorTarget io.Writer) error {
+	if len(report.groups) == 0 {
 		fmt.Fprintln(out, "No tasks match the filters.")
 		return nil
 	}
-	var total effortEstimate
-	for i, status := range statuses {
-		if i > 0 {
+	for index, group := range report.groups {
+		if index > 0 {
 			fmt.Fprintln(out, colorText(colorTarget, "2", "----------------------------------------"))
 		}
-		sortTasksByRank(groups[status])
-		groupTotal, err := printTaskGroup(out, colorTarget, status, groups[status], labelNames, packageNames)
+		metadata := make([]map[string]any, 0, len(group.entries))
+		for _, entry := range group.entries {
+			metadata = append(metadata, entry.metadata)
+		}
+		_, err := printTaskGroup(out, colorTarget, group.status, metadata, report.labelNames, report.packageNames)
 		if err != nil {
 			return err
 		}
-		total.StoryPoints += groupTotal.StoryPoints
-		total.Hours += groupTotal.Hours
 	}
-	fmt.Fprintf(out, "TOTAL (visible tasks): %d SP, %d hours\n", total.StoryPoints, total.Hours)
+	fmt.Fprintf(out, "TOTAL (visible tasks): %d SP, %d hours\n", report.total.StoryPoints, report.total.Hours)
 	return nil
 }
 
@@ -135,6 +184,8 @@ func parseListOptions(args []string) (listOptions, error) {
 			options.noPackage = true
 		case arg == "--no-labels":
 			options.noLabels = true
+		case arg == "--json":
+			options.json = true
 		case arg == "--status":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
 				return options, listUsageError()
@@ -155,7 +206,7 @@ func parseListOptions(args []string) (listOptions, error) {
 }
 
 func listUsageError() error {
-	return errors.New("usage: panda list [--current] [--staging] [--released] [--discarded] [--all] [--status <status,...>] [--no-complexity] [--no-description] [--no-package] [--no-labels]")
+	return errors.New("usage: panda list [--current] [--staging] [--released] [--discarded] [--all] [--status <status,...>] [--no-complexity] [--no-description] [--no-package] [--no-labels] [--json]")
 }
 
 func addQuickStatusFilter(options *listOptions, statuses []string) {
@@ -199,7 +250,7 @@ func addStatusFilter(options *listOptions, value string) error {
 	return nil
 }
 
-func orderedTaskStatuses(groups map[string][]map[string]any) []string {
+func orderedTaskStatuses(groups map[string][]listTaskEntry) []string {
 	statuses := make([]string, 0, len(groups))
 	seen := make(map[string]bool, len(groups))
 	for _, status := range task.StatusOrder {
@@ -216,10 +267,6 @@ func orderedTaskStatuses(groups map[string][]map[string]any) []string {
 	}
 	sort.Strings(remaining)
 	return append(statuses, remaining...)
-}
-
-func sortTasksByRank(tasks []map[string]any) {
-	sort.SliceStable(tasks, func(i, j int) bool { return taskMetadataRankLess(tasks[i], tasks[j]) })
 }
 
 func taskMetadataRankLess(left, right map[string]any) bool {

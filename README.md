@@ -58,7 +58,7 @@ them with `panda push`.
 | `panda pull` / `panda push` | Synchronize local changes with Solutions |
 | `panda login` / `panda logout` | Manage the saved Solutions session |
 | `panda config` / `panda path` | Select project, configure API URL, and inspect workspace |
-| `panda list` | List local tasks by workflow status |
+| `panda list` | List local tasks by workflow status, or emit structured JSON with `--json` |
 | `panda estimate` | Quickly assign complexity to selected task statuses and types |
 | `panda create` / `panda edit` | Create or edit tasks locally |
 | `panda diff` | Review pending changes and conflicts |

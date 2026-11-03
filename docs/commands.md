@@ -120,7 +120,7 @@ panda estimate --type bug --type other
 panda estimate new --all
 ```
 
-### `panda list [status filters] [other filters]`
+### `panda list [status filters] [other filters] [--json]`
 
 Lists local tasks grouped in workflow order and sorted by their fetched rank.
 The default statuses are `new`, `toDo`, `inProgress`, `inReview`, and
@@ -140,6 +140,9 @@ Content filters:
 - `--no-description`: tasks with a missing or blank local description.
 - `--no-package`: tasks without a package.
 - `--no-labels`: tasks without labels.
+- `--json`: emit a versioned JSON document containing the filtered groups, task
+  metadata, display names for relationships, per-task effort estimates, and
+  group/project totals. JSON output is written directly without paging or color.
 
 Complexity totals map `xs` to 1 SP/4 hours, `s` to 2/8, `m` to 3/12, `l` to
 5/20, `xl` to 8/32, and `xxl` to 13/52. Unknown values contribute zero and
@@ -153,7 +156,14 @@ panda list --current
 panda list --staging
 panda list --status 'new,toDo' --no-complexity
 panda list --no-description --no-package --no-labels
+panda list --current --json
 ```
+
+The JSON document has `schemaVersion: 1`. Each task includes its original
+metadata under `task`, plus display-oriented `package`, `labels`, `assignees`,
+and `reviewers` values. `storyPoints` and `hours` are `null` when the task's
+complexity is unknown. Group and overall totals include task counts, story
+points, and hours.
 
 ### `panda create [title] [task field options]`
 
