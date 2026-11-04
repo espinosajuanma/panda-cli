@@ -120,7 +120,7 @@ func RunContext(ctx context.Context, args []string, in io.Reader, out, errOut io
 		case "edit":
 			return editTask(ws, args, in, out)
 		case "assign":
-			return assignTask(ws, args, out)
+			return assignTask(ws, args, in, out)
 		case "link":
 			return linkTaskWithAPIURL(ws, args, cfg.APIURL, out)
 		case "edit-note":

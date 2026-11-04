@@ -52,6 +52,10 @@ func selectSingleOptionWithEscapeCancel(in io.Reader, out io.Writer, prompt stri
 }
 
 func selectMultipleOptions(in io.Reader, out io.Writer, prompt string, options []selectorOption, selected map[string]bool) (map[string]bool, error) {
+	return selectMultipleOptionsWithEscapeCancel(in, out, prompt, options, selected, false)
+}
+
+func selectMultipleOptionsWithEscapeCancel(in io.Reader, out io.Writer, prompt string, options []selectorOption, selected map[string]bool, escapeCancels bool) (map[string]bool, error) {
 	inFile, outFile, ok := selectorFiles(in, out)
 	if !ok {
 		return nil, errors.New("interactive selector requires a terminal")
@@ -63,7 +67,7 @@ func selectMultipleOptions(in io.Reader, out io.Writer, prompt string, options [
 	for key, value := range selected {
 		selectedIndexes[key] = value
 	}
-	_, err := runSelector(inFile, outFile, prompt, choices, 0, selectedIndexes, true, false)
+	_, err := runSelector(inFile, outFile, prompt, choices, 0, selectedIndexes, true, escapeCancels)
 	return selectedIndexes, err
 }
 
@@ -216,12 +220,12 @@ func runSelector(in, out *os.File, prompt string, options []selectorOption, init
 	}
 }
 
-func readEstimateAction(in io.Reader, out io.Writer) (rune, error) {
+func readTaskAction(in io.Reader, out io.Writer, prompt string) (rune, error) {
 	inFile, _, ok := selectorFiles(in, out)
 	if !ok {
 		return 0, errors.New("interactive task prompt requires a terminal")
 	}
-	fmt.Fprintf(out, "%s %s ", ColorText(out, "1;32", "?"), ColorText(out, "1", "Enter choose complexity · d description · s skip · q quit"))
+	fmt.Fprintf(out, "%s %s ", ColorText(out, "1;32", "?"), ColorText(out, "1", prompt))
 	state, err := term.MakeRaw(int(inFile.Fd()))
 	if err != nil {
 		fmt.Fprint(out, "\r\n")
@@ -240,6 +244,10 @@ func readEstimateAction(in io.Reader, out io.Writer) (rune, error) {
 			return key, nil
 		}
 	}
+}
+
+func readEstimateAction(in io.Reader, out io.Writer) (rune, error) {
+	return readTaskAction(in, out, "Enter choose complexity · d description · s skip · q quit")
 }
 
 const (
@@ -530,8 +538,16 @@ func SelectSingleOptionWithEscapeCancel(in io.Reader, out io.Writer, prompt stri
 func SelectMultipleOptions(in io.Reader, out io.Writer, prompt string, choices []Choice, selected map[string]bool) (map[string]bool, error) {
 	return selectMultipleOptions(in, out, prompt, internalChoices(choices), selected)
 }
+
+func SelectMultipleOptionsWithEscapeCancel(in io.Reader, out io.Writer, prompt string, choices []Choice, selected map[string]bool) (map[string]bool, error) {
+	return selectMultipleOptionsWithEscapeCancel(in, out, prompt, internalChoices(choices), selected, true)
+}
 func ReadEstimateAction(in io.Reader, out io.Writer) (rune, error) {
 	return readEstimateAction(in, out)
+}
+
+func ReadTaskAction(in io.Reader, out io.Writer, prompt string) (rune, error) {
+	return readTaskAction(in, out, prompt)
 }
 func ReadSingleKey(in io.Reader, out io.Writer) (rune, error) { return readSingleKey(in, out) }
 func ReadSelectorKey(in *os.File) (rune, error)               { return readSelectorKey(in) }

@@ -23,7 +23,7 @@ func taskFieldOptionsManual() []manualOption {
 		{"--complexity <value|none>", "Set xs, s, m, l, xl, or xxl; none clears the field."},
 		{"--status <value>", "Set one of new, toDo, inProgress, inReview, completed, staging, released, or discarded."},
 		{"--package <name|none>", "Set a package by local catalog name or ID, or clear it with none."},
-		{"--assignee <member>", "Set an eligible synced member by name, email, or ID. Repeat for multiple assignees; none clears all."},
+		{"--assignee <member>", "Set an eligible synced member by name, email, or ID. Names accept normalized partial matches; repeat for multiple assignees; none clears all."},
 		{"--label, --add-label <name|none>", "Add a label from the local project catalog. Repeat to add multiple labels; use none by itself to clear all labels."},
 		{"--remove-label <name>", "Remove a label from the task. Repeat to remove multiple labels."},
 		{"--description-file <path|->", "Read UTF-8 Markdown from a file, or read it from stdin when the path is -. Empty descriptions are rejected when this option is used."},
@@ -207,6 +207,7 @@ var manualPages = map[string]manualPage{
 		description: []string{
 			"List tasks in the active project's local workspace, grouped by workflow status and sorted by rank. The default view includes new, toDo, inProgress, inReview, and completed tasks.",
 			"On terminals, the table hides lower-priority columns as needed to fit the terminal width and wraps long titles. Use --wide to show every column. Piped output always uses the full table.",
+			"The footer includes story-point and hour totals per assignee, sorted by story points. Unassigned tasks have their own row; shared-task effort is counted in full for each assignee.",
 			"Status selectors are combined as a union. --all includes every status, including statuses not otherwise recognized by Panda. The existing --status selector accepts one or more comma-separated known statuses.",
 			"--assignee and --reviewer accept repeatable or comma-separated member names, emails, IDs, me, or none. Values within one filter are combined as a union; assignee and reviewer filters are both required when both are supplied. me uses the saved login email. Member names are resolved from the latest panda pull when available.",
 			"Complexity maps to story points and estimated hours. Package and label names are shown with each task. Each group has a subtotal, followed by a total for all tasks visible after status and content filters are applied.",
@@ -226,7 +227,7 @@ var manualPages = map[string]manualPage{
 			{"--assignee <member,...>", "Filter by any selected project member; repeat or comma-separate names, emails, or IDs. Use me for the logged-in member or none for unassigned tasks."},
 			{"--reviewer <member,...>", "Filter by any selected reviewer; repeat or comma-separate names, emails, or IDs. Use me for the logged-in member or none for tasks without reviewers."},
 			{"--wide", "Show every table column, even when the table is wider than the terminal. Cannot be combined with --json."},
-			{"--json", "Emit versioned JSON with task metadata, display relationships, effort estimates, and totals."},
+			{"--json", "Emit versioned JSON with task metadata, display relationships, effort estimates, project totals, and per-assignee totals."},
 		},
 		examples: []string{
 			"panda list",
@@ -316,7 +317,7 @@ var manualPages = map[string]manualPage{
 			{"taskNumber|draft-N", "Identifier of the task to edit. Legacy local-* IDs are also accepted."},
 			{"labels", "Open the label picker. Follow with label names to add them, --remove=labelName to remove them, or none to clear all labels."},
 			{"package", "Select one package by name or enter none to clear the assignment."},
-			{"assignees", "Open the multi-select assignee picker, or follow with one or more project member names, emails, or IDs; none clears all assignees."},
+			{"assignees", "Open the multi-select assignee picker, or follow with one or more project member names, emails, or IDs. Names accept normalized partial matches; none clears all assignees."},
 			{"json", "Open metadata.json in $EDITOR for advanced metadata editing."},
 		},
 		options:  taskFieldOptionsManual(),
@@ -324,14 +325,23 @@ var manualPages = map[string]manualPage{
 		seeAlso:  []string{"panda-edit-note(1)", "panda-view(1)", "panda-diff(1)"},
 	},
 	"assign": {
-		name:        "panda assign - assign project members by role",
-		synopsis:    []string{"panda assign <taskNumber|draft-N> <role[,role...]|none>"},
-		description: []string{"Assign every synced project member matching one or more eligible team roles to a task. The role list can be space- or comma-separated; eligible roles are teamLead, developer, and qa. Use none to clear all assignees. Run panda pull first to sync the project team. Changes are local until panda push."},
-		arguments: []manualOption{
-			{"taskNumber|draft-N", "Identifier of the task to assign. Legacy local-* IDs are also accepted."},
-			{"role", "One or more eligible project team roles: teamLead, developer, or qa."},
+		name:     "panda assign - assign people by name or filter tasks interactively",
+		synopsis: []string{"panda assign <taskNumber|draft-N> <person[,person...]|none>", "panda assign --status <status,...> [--priority <priority,...>] [--type <type,...>]"},
+		description: []string{
+			"With a task number, assign one or more eligible project members by name, email, or ID. Names use normalized partial matching, so juan can match Juanma Espinosa. A unique match is required; ambiguous matches list candidates. Use none to clear all assignees.",
+			"With --status, interactively process matching tasks in workflow and rank order. --status is required; --priority and --type narrow the selection. Enter opens a multi-select prefilled with current assignees; Enter saves the replacement selection, Esc returns to the task actions, d shows the description, s skips, and q quits.",
+			"Release tasks are skipped by default in filtered mode; include --type release explicitly to assign them. The filtered mode requires a terminal and project members synced by panda pull. Changes remain local until panda push. At completion it reports the effort load for all matching tasks.",
 		},
-		examples: []string{"panda assign 12345 developer", "panda assign 12345 teamLead,qa", "panda assign 12345 none", "panda push"},
+		arguments: []manualOption{
+			{"taskNumber|draft-N", "Optional task identifier for direct person assignment. Legacy local-* IDs are also accepted."},
+			{"person", "One or more eligible project members by name, email, or ID. Names match normalized partial text; none clears all assignees."},
+		},
+		options: []manualOption{
+			{"--status <status,...>", "Required for filtered interactive mode. Select one or more known statuses, comma-separated or repeated."},
+			{"--priority <priority,...>", "Optionally filter by hotfix, high, medium, or low priority."},
+			{"--type <type,...>", "Optionally filter by feature, bug, other, or release type. Release tasks are excluded unless release is explicitly selected."},
+		},
+		examples: []string{"panda assign 12345 juan", "panda assign 12345 'Ada Lovelace,Grace Hopper'", "panda assign 12345 none", "panda assign --status toDo", "panda assign --status toDo --priority high --type feature,bug", "panda assign --status released --type release", "panda push"},
 		seeAlso:  []string{"panda-pull(1)", "panda-edit(1)", "panda-push(1)"},
 	},
 	"edit-note": {

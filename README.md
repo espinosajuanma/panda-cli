@@ -62,7 +62,7 @@ them with `panda push`.
 | `panda login` / `panda logout` | Manage the saved Solutions session |
 | `panda config` / `panda path` | Select project, configure API URL, and inspect workspace |
 | `panda doctor` | Diagnose local configuration and workspace health |
-| `panda list` | Filter tasks and adapt the table to terminal width; use `--wide` for all columns or `--json` for structured output |
+| `panda list` | Filter tasks, adapt the table to terminal width, and summarize effort by assignee; use `--wide` for all columns or `--json` for structured output |
 | `panda browse` | Interactively browse and inspect local tasks |
 | `panda estimate` | Quickly assign complexity to selected task statuses and types |
 | `panda create` / `panda edit` | Create or edit tasks locally and change status |
@@ -71,7 +71,7 @@ them with `panda push`.
 | `panda files <task>` | List task file references, stage uploads, and download files on demand |
 | `panda labels` / `panda packages` | Manage project catalogs locally |
 | `panda link <task>` | Print a verified Markdown link to a synced task |
-| `panda assign` / `panda add-note` / `panda discard` | Stage assignment and task actions |
+| `panda assign` / `panda add-note` / `panda discard` | Assign people by name or interactively plan filtered tasks; stage task actions |
 | `panda edit-note` / `panda clean` | Edit synced notes or restore the saved baseline |
 | `panda completion <shell>` | Generate Bash, Zsh, or Fish completions |
 

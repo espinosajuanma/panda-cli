@@ -33,6 +33,9 @@ func readSingleKey(in io.Reader, out io.Writer) (rune, error) { return ui.ReadSi
 func readEstimateAction(in io.Reader, out io.Writer) (rune, error) {
 	return ui.ReadEstimateAction(in, out)
 }
+func readTaskAction(in io.Reader, out io.Writer, prompt string) (rune, error) {
+	return ui.ReadTaskAction(in, out, prompt)
+}
 func readSelectorKey(in *os.File) (rune, error) { return ui.ReadSelectorKey(in) }
 
 func selectSingleOption(in io.Reader, out io.Writer, prompt string, options []selectorOption, selected string) (string, error) {
@@ -45,6 +48,10 @@ func selectSingleOptionWithEscapeCancel(in io.Reader, out io.Writer, prompt stri
 
 func selectMultipleOptions(in io.Reader, out io.Writer, prompt string, options []selectorOption, selected map[string]bool) (map[string]bool, error) {
 	return ui.SelectMultipleOptions(in, out, prompt, toUIChoices(options), selected)
+}
+
+func selectMultipleOptionsWithEscapeCancel(in io.Reader, out io.Writer, prompt string, options []selectorOption, selected map[string]bool) (map[string]bool, error) {
+	return ui.SelectMultipleOptionsWithEscapeCancel(in, out, prompt, toUIChoices(options), selected)
 }
 
 func filterSelectorOptions(options []selectorOption, filter string) []int {

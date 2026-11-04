@@ -152,7 +152,7 @@ func TestPackageSelectorSupportsOneOrNone(t *testing.T) {
 	}
 }
 
-func TestRoleAssignmentAndCreateEditAssigneesSupportMultipleMembers(t *testing.T) {
+func TestPersonAssignmentAndCreateEditAssigneesSupportMultipleMembers(t *testing.T) {
 	remote := map[string]any{"id": "task-assign", "number": float64(14), "title": "Assignable", "type": "feature", "priority": "medium", "status": "new", "description": "", "assignees": []any{}}
 	ws, _ := makeSyncedTask(t, remote)
 	members := []map[string]any{
@@ -172,7 +172,10 @@ func TestRoleAssignmentAndCreateEditAssigneesSupportMultipleMembers(t *testing.T
 	if eligible := eligibleProjectMembers(syncedMembers); len(eligible) != 3 {
 		t.Fatalf("assignee eligibility included unsupported roles: %#v", eligible)
 	}
-	if err := assignTask(ws, []string{"14", "teamLead,developer"}, io.Discard); err != nil {
+	if err := assignTask(ws, []string{"14", "developer"}, strings.NewReader(""), io.Discard); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("role name was interpreted as a bulk role assignment: %v", err)
+	}
+	if err := assignTask(ws, []string{"14", "ada,grace"}, strings.NewReader(""), io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	dir, metadata, err := ws.FindTask("14")
@@ -181,9 +184,9 @@ func TestRoleAssignmentAndCreateEditAssigneesSupportMultipleMembers(t *testing.T
 	}
 	assignees, _ := metadata["assignees"].([]any)
 	if len(assignees) != 2 || relationshipID(assignees[0]) != "user-lead" || relationshipID(assignees[1]) != "user-dev" {
-		t.Fatalf("role assignment did not select all matching members: %#v", metadata["assignees"])
+		t.Fatalf("person assignment did not select all matching members: %#v", metadata["assignees"])
 	}
-	if err := editTask(ws, []string{"14", "assignees", "Ada Lovelace", "Linus Torvalds"}, strings.NewReader(""), io.Discard); err != nil {
+	if err := editTask(ws, []string{"14", "assignees", "ada", "linus"}, strings.NewReader(""), io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if err := editTask(ws, []string{"14", "assignees", "Ursula UX"}, strings.NewReader(""), io.Discard); err == nil || !strings.Contains(err.Error(), "not eligible for assignment") {
@@ -198,7 +201,7 @@ func TestRoleAssignmentAndCreateEditAssigneesSupportMultipleMembers(t *testing.T
 		t.Fatalf("edit assignees did not save explicit members: %#v", metadata["assignees"])
 	}
 	project := &config.Project{ID: "project-1", Name: "Alpha"}
-	if err := createTask(ws, project, []string{"New", "task", "--assignee", "Ada Lovelace,Grace Hopper"}, strings.NewReader(""), io.Discard); err != nil {
+	if err := createTask(ws, project, []string{"New", "task", "--assignee", "ada,grace"}, strings.NewReader(""), io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	dirs, err := ws.TaskDirectories()

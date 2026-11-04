@@ -30,7 +30,7 @@ var mainCommands = []mainCommand{
 	{"push", "[taskNumber|draft-N ...] [--json]", "Publish all local edits or only selected tasks; project catalogs are synchronized too.", true},
 	{"create", "[title] [task field options]", "Create a task locally with interactive or noninteractive options.", true},
 	{"edit", "<task> [task field options|labels ...|package ...|assignees ...|json]", "Edit task fields interactively or with safe partial options.", true},
-	{"assign", "<task> <teamLead|developer|qa|none>", "Assign eligible project members to a task by role.", true},
+	{"assign", "<task> <person[,person...]|none>|--status <status,...> [--priority ...] [--type ...]", "Assign people to a task or interactively assign filtered tasks.", true},
 	{"link", "<task>", "Print a canonical Markdown link to a verified synced task.", true},
 	{"edit-note", "<task> <note-file>", "Edit one of your synced notes.", true},
 	{"view", "<task> [--no-description] [--no-notes] [--json]", "Display a task's metadata, description, files, and notes.", true},

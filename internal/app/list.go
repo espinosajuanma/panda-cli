@@ -46,12 +46,14 @@ type listGroup struct {
 }
 
 type listReport struct {
-	groups        []listGroup
-	total         effortEstimate
-	labelNames    map[string]string
-	packageNames  map[string]string
-	showAssignees bool
-	showReviewers bool
+	groups              []listGroup
+	total               effortEstimate
+	assigneeTotals      []assigneeEffortTotal
+	sharedAssigneeTasks int
+	labelNames          map[string]string
+	packageNames        map[string]string
+	showAssignees       bool
+	showReviewers       bool
 }
 
 func listTasks(ws *workspace.Workspace, args []string, out io.Writer) error {
@@ -156,6 +158,7 @@ func collectListReportForUser(ws *workspace.Workspace, options listOptions, user
 		grouped[status] = append(grouped[status], listTaskEntry{dir: dir, metadata: metadata})
 	}
 	statuses := orderedTaskStatuses(grouped)
+	var visibleTasks []map[string]any
 	for _, status := range statuses {
 		entries := grouped[status]
 		sort.SliceStable(entries, func(i, j int) bool {
@@ -163,15 +166,17 @@ func collectListReportForUser(ws *workspace.Workspace, options listOptions, user
 		})
 		group := listGroup{status: status, entries: entries}
 		for _, entry := range entries {
-			if effort, ok := task.ComplexityEffort[strings.ToLower(strings.TrimSpace(stringField(entry.metadata, "complexity")))]; ok {
+			if effort, ok := taskEffortFromMetadata(entry.metadata); ok {
 				group.totals.StoryPoints += effort.StoryPoints
 				group.totals.Hours += effort.Hours
 			}
+			visibleTasks = append(visibleTasks, entry.metadata)
 		}
 		report.total.StoryPoints += group.totals.StoryPoints
 		report.total.Hours += group.totals.Hours
 		report.groups = append(report.groups, group)
 	}
+	report.assigneeTotals, report.sharedAssigneeTasks = summarizeAssigneeEffort(visibleTasks)
 	return report, nil
 }
 
@@ -200,7 +205,7 @@ func renderListReport(report listReport, out, colorTarget io.Writer, wide bool) 
 		}
 	}
 	fmt.Fprintf(out, "TOTAL (visible tasks): %d SP, %d hours\n", report.total.StoryPoints, report.total.Hours)
-	return nil
+	return renderAssigneeEffortSummary(out, colorTarget, "BY ASSIGNEE", report.assigneeTotals, report.sharedAssigneeTasks)
 }
 
 func listTableWidth(wide, terminal bool, terminalWidth int) int {
@@ -406,7 +411,7 @@ func printTaskGroup(out, colorTarget io.Writer, status string, tasks []map[strin
 			complexity = "-"
 		}
 		storyPoints, hours := "-", "-"
-		if estimate, ok := task.ComplexityEffort[strings.ToLower(strings.TrimSpace(complexity))]; ok {
+		if estimate, ok := taskEffortFromMetadata(currentTask); ok {
 			storyPoints = strconv.Itoa(estimate.StoryPoints)
 			hours = strconv.Itoa(estimate.Hours)
 			total.StoryPoints += estimate.StoryPoints

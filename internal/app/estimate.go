@@ -331,15 +331,19 @@ func typedComplexityChoice(current estimateTask, in io.Reader, out io.Writer) (e
 }
 
 func showTaskDescription(current estimateTask, out io.Writer) error {
-	description, err := os.ReadFile(filepath.Join(current.dir, "description.md"))
+	return showTaskDescriptionForTask(current.dir, current.metadata, out)
+}
+
+func showTaskDescriptionForTask(dir string, metadata map[string]any, out io.Writer) error {
+	description, err := os.ReadFile(filepath.Join(dir, "description.md"))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("read description for task %s: %w", taskLabel(current.metadata), err)
+		return fmt.Errorf("read description for task %s: %w", taskLabel(metadata), err)
 	}
 	if strings.TrimSpace(string(description)) == "" {
 		description = []byte("No description.")
 	}
 	return writePagedOutput(out, func(rendered io.Writer) error {
-		fmt.Fprintf(rendered, "%s\n\n", colorText(out, "1;32", "## Description — #"+taskLabel(current.metadata)))
+		fmt.Fprintf(rendered, "%s\n\n", colorText(out, "1;32", "## Description — #"+taskLabel(metadata)))
 		fmt.Fprintln(rendered, highlightMarkdown(out, string(description)))
 		return nil
 	})

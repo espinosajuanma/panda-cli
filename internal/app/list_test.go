@@ -240,6 +240,61 @@ func TestListShowsPackageAndLabelRelationshipsAndFilters(t *testing.T) {
 	}
 }
 
+func TestListSummarizesFullEffortPerAssigneeAndUnassignedTasks(t *testing.T) {
+	ws := workspace.New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	ada := listTask("effort-ada", 54, "new", "a", "s", "Ada task", "feature")
+	ada["assignees"] = []any{map[string]any{"id": "ada", "label": "Ada Lovelace"}}
+	shared := listTask("effort-shared", 55, "new", "b", "l", "Shared task", "feature")
+	shared["assignees"] = []any{map[string]any{"id": "ada", "label": "Ada Lovelace"}, map[string]any{"id": "grace", "label": "Grace Hopper"}}
+	unassigned := listTask("effort-unassigned", 56, "new", "c", "m", "Unassigned task", "feature")
+	graceUnknown := listTask("effort-unknown", 57, "new", "d", "unknown", "Unknown effort task", "feature")
+	graceUnknown["assignees"] = []any{map[string]any{"id": "grace", "label": "Grace Hopper"}}
+	hidden := listTask("effort-hidden", 58, "discarded", "a", "xxl", "Filtered task", "feature")
+	hidden["assignees"] = []any{map[string]any{"id": "hidden", "label": "Hidden Person"}}
+	for _, fixture := range []map[string]any{ada, shared, unassigned, graceUnknown, hidden} {
+		addSyncedTask(t, ws, fixture)
+	}
+
+	var output strings.Builder
+	if err := listTasks(ws, nil, &output); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	if !strings.Contains(text, "BY ASSIGNEE") || !strings.Contains(text, "Effort for shared tasks is counted in full for each assignee.") {
+		t.Fatalf("assignee effort summary or counting note missing:\n%s", text)
+	}
+	for _, expected := range []string{"Ada Lovelace", "Grace Hopper", "Unassigned"} {
+		if !strings.Contains(text, expected) {
+			t.Errorf("assignee summary missing %q:\n%s", expected, text)
+		}
+	}
+	if strings.Contains(text, "Hidden Person") {
+		t.Fatalf("assignee summary included a filtered task:\n%s", text)
+	}
+	options, err := parseListOptions(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listReport, err := collectListReportForUser(ws, options, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listReport.assigneeTotals) != 3 || listReport.sharedAssigneeTasks != 1 {
+		t.Fatalf("assignee totals/shared tasks = %#v / %d", listReport.assigneeTotals, listReport.sharedAssigneeTasks)
+	}
+	want := []assigneeEffortTotal{
+		{Assignee: "Ada Lovelace", Tasks: 2, StoryPoints: 7, Hours: 28},
+		{Assignee: "Grace Hopper", Tasks: 2, StoryPoints: 5, Hours: 20},
+		{Assignee: "Unassigned", Tasks: 1, StoryPoints: 3, Hours: 12},
+	}
+	if !reflect.DeepEqual(listReport.assigneeTotals, want) {
+		t.Fatalf("assignee totals = %#v, want %#v", listReport.assigneeTotals, want)
+	}
+}
+
 func TestResponsiveListDropsOptionalColumnsAndWrapsTitles(t *testing.T) {
 	task := listTask("responsive", 61, "new", "a", "m", "Implement a responsive terminal layout for wide task tables", "feature")
 	task["package"] = map[string]any{"id": "package-1", "label": "Long package name"}
@@ -292,6 +347,22 @@ func TestListWideOverridesTerminalWidthAndCannotCombineWithJSON(t *testing.T) {
 	}
 	if err := listTasks(ws, []string{"--wide", "--json"}, io.Discard); err == nil || !strings.Contains(err.Error(), "cannot be combined") {
 		t.Fatalf("--wide --json error = %v", err)
+	}
+}
+
+func TestAssigneeEffortSummaryFitsNarrowTerminal(t *testing.T) {
+	totals := []assigneeEffortTotal{
+		{Assignee: "Ada Lovelace", Tasks: 4, StoryPoints: 13, Hours: 52},
+		{Assignee: "Unassigned", Tasks: 1, StoryPoints: 2, Hours: 8},
+	}
+	var output strings.Builder
+	if err := renderAssigneeEffortSummaryAtWidth(&output, &output, "BY ASSIGNEE", totals, 1, 30); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(strings.TrimSuffix(output.String(), "\n"), "\n") {
+		if width := utf8.RuneCountInString(line); width > 30 {
+			t.Errorf("narrow assignee summary line has %d columns: %q", width, line)
+		}
 	}
 }
 
@@ -360,5 +431,13 @@ func TestListJSONIncludesSortedGroupsRelationshipsEffortAndTotals(t *testing.T) 
 	}
 	if group.Totals != (listJSONTotals{Tasks: 2, StoryPoints: 3, Hours: 12}) || document.Totals != group.Totals {
 		t.Fatalf("group/project totals = %#v / %#v", group.Totals, document.Totals)
+	}
+	wantAssigneeTotals := []assigneeEffortTotal{
+		{Assignee: "Ada Lovelace", Tasks: 1, StoryPoints: 3, Hours: 12},
+		{Assignee: "Grace Hopper", Tasks: 1, StoryPoints: 3, Hours: 12},
+		{Assignee: "Unassigned", Tasks: 1},
+	}
+	if !reflect.DeepEqual(document.AssigneeTotals, wantAssigneeTotals) {
+		t.Fatalf("JSON assignee totals = %#v, want %#v", document.AssigneeTotals, wantAssigneeTotals)
 	}
 }

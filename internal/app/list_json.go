@@ -6,14 +6,13 @@ import (
 	"io"
 	"sort"
 	"strings"
-
-	"github.com/espinosajuanma/panda-cli/internal/task"
 )
 
 type listJSONDocument struct {
-	SchemaVersion int             `json:"schemaVersion"`
-	Groups        []listJSONGroup `json:"groups"`
-	Totals        listJSONTotals  `json:"totals"`
+	SchemaVersion  int                   `json:"schemaVersion"`
+	Groups         []listJSONGroup       `json:"groups"`
+	Totals         listJSONTotals        `json:"totals"`
+	AssigneeTotals []assigneeEffortTotal `json:"assigneeTotals"`
 }
 
 type listJSONGroup struct {
@@ -40,8 +39,9 @@ type listJSONTotals struct {
 
 func renderListJSON(report listReport, out io.Writer) error {
 	document := listJSONDocument{
-		SchemaVersion: 1,
-		Groups:        make([]listJSONGroup, 0, len(report.groups)),
+		SchemaVersion:  1,
+		Groups:         make([]listJSONGroup, 0, len(report.groups)),
+		AssigneeTotals: append([]assigneeEffortTotal{}, report.assigneeTotals...),
 		Totals: listJSONTotals{
 			StoryPoints: report.total.StoryPoints,
 			Hours:       report.total.Hours,
@@ -63,7 +63,7 @@ func renderListJSON(report listReport, out io.Writer) error {
 				Assignees: relationshipNames(entry.metadata["assignees"], nil),
 				Reviewers: relationshipNames(entry.metadata["reviewers"], nil),
 			}
-			if effort, ok := task.ComplexityEffort[strings.ToLower(strings.TrimSpace(stringField(entry.metadata, "complexity")))]; ok {
+			if effort, ok := taskEffortFromMetadata(entry.metadata); ok {
 				storyPoints, hours := effort.StoryPoints, effort.Hours
 				item.StoryPoints, item.Hours = &storyPoints, &hours
 			}

@@ -241,11 +241,16 @@ Relationship filters:
   terminal. Cannot be combined with `--json`.
 - `--json`: emit a versioned JSON document containing the filtered groups, task
   metadata, display names for relationships, per-task effort estimates, and
-  group/project totals. JSON output is written directly without paging or color.
+  group/project totals, and per-assignee effort totals. JSON output is written
+  directly without paging or color.
 
 Complexity totals map `xs` to 1 SP/4 hours, `s` to 2/8, `m` to 3/12, `l` to
 5/20, `xl` to 8/32, and `xxl` to 13/52. Unknown values contribute zero and
 display dashes.
+
+The text summary after the task groups lists visible-task counts, story points,
+and hours per assignee. Shared-task effort is counted in full for each assigned
+person; totals may therefore exceed the project total.
 
 Long terminal output uses `$PAGER` (default `less -FRX`) and remains visible
 after leaving the pager. Piped output is printed directly.
@@ -266,7 +271,8 @@ The JSON document has `schemaVersion: 1`. Each task includes its original
 metadata under `task`, plus display-oriented `package`, `labels`, `assignees`,
 and `reviewers` values. `storyPoints` and `hours` are `null` when the task's
 complexity is unknown. Group and overall totals include task counts, story
-points, and hours.
+points, and hours. `assigneeTotals` includes visible-task counts and full
+SP/hour totals per assignee, plus an `Unassigned` entry when appropriate.
 
 ```json
 {
@@ -278,9 +284,16 @@ points, and hours.
       "totals": {"tasks": 1, "storyPoints": 3, "hours": 12}
     }
   ],
-  "totals": {"tasks": 1, "storyPoints": 3, "hours": 12}
+  "totals": {"tasks": 1, "storyPoints": 3, "hours": 12},
+  "assigneeTotals": [{"assignee": "Ada Lovelace", "tasks": 1, "storyPoints": 3, "hours": 12}]
 }
 ```
+
+The text output also prints a `BY ASSIGNEE` summary after the visible-task
+total, sorted by story points descending. Tasks with no assignee are grouped as
+`Unassigned`. If a task has multiple assignees, its full effort is counted for
+each person so the summary reflects each person's potential load; therefore,
+per-assignee totals may exceed the project total.
 
 ### `panda browse [list filters]`
 
@@ -327,7 +340,7 @@ byte-for-byte, including trailing newlines; empty descriptions are rejected.
 | `--complexity <value\|none>` | `xs`, `s`, `m`, `l`, `xl`, `xxl`; `none` clears |
 | `--status <value>` | `new`, `toDo`, `inProgress`, `inReview`, `completed`, `staging`, `released`, or `discarded` |
 | `--package <name\|none>` | Set one local package or clear it |
-| `--assignee <member>` | Repeat to set multiple synced members; `none` clears all |
+| `--assignee <member>` | Repeat to set multiple synced members by name, email, or ID; names accept normalized partial matches; `none` clears all |
 | `--label <name\|none>` / `--add-label <name>` | Add labels; `--label none` clears all |
 | `--remove-label <name>` | Remove a label; repeat as needed |
 | `--description-file <path\|->` | Read UTF-8 Markdown from a file or stdin (`-`) |
@@ -344,7 +357,7 @@ Other edit selectors:
   names; `--remove=<name>` removes a label.
 - `panda edit <task> package [name|none]` selects or clears a package.
 - `panda edit <task> assignees [member ...|none]` selects synced eligible
-  members by name, email, or ID.
+  members by name, email, or ID; names accept normalized partial matches.
 - `panda edit <task> json` opens `metadata.json` in `$EDITOR`.
 - Press `e` when prompted to open `description.md` in `$EDITOR`.
 
@@ -356,11 +369,46 @@ Status values are `new`, `toDo`, `inProgress`, `inReview`, `completed`,
 stages the same dedicated discard action as `panda discard`; selecting another
 status cancels a pending discard. On drafts, it sets the status for creation.
 
-### `panda assign <taskNumber|draft-N> <role[,role...]|none>`
+### `panda assign <taskNumber|draft-N> <person[,person...]|none>`
 
-Assigns every synced project member matching one or more eligible roles. Roles
-can be comma- or space-separated. `none` clears all assignees. Run `panda pull`
-first to sync current members.
+Assigns one or more eligible synced project members to a task by name, email, or
+ID. `none` clears all assignees. Names use normalized partial matching: for
+example, `juan` can match `Juanma Espinosa`, and accents and punctuation are
+ignored. Exact normalized names/emails/IDs take precedence over partial matches.
+If a partial name matches multiple people, Panda reports the candidates; use a
+full name, email, or ID to disambiguate. Eligible roles remain `teamLead`,
+`developer`, and `qa`. Run `panda pull` first to sync current members.
+
+### `panda assign --status <status,...> [--priority <priority,...>] [--type <type,...>]`
+
+Interactively walks matching tasks in workflow status and rank order. `--status`
+is required; `--priority` and `--type` can further narrow the task set. Values
+can be comma-separated or supplied by repeating the option. Valid priorities are
+`hotfix`, `high`, `medium`, and `low`; valid types are `feature`, `bug`, `other`,
+and `release`. Release tasks are skipped unless `--type release` is explicitly
+selected. Known statuses are `new`, `toDo`, `inProgress`, `inReview`, `completed`,
+`staging`, `released`, and `discarded`.
+
+For each task, Panda shows its current assignees and estimated story points/hours.
+Press Enter to open a multi-select prefilled with the current assignees; Enter
+saves the selected members as the complete assignee list, and `None (clear all)`
+removes everyone. Press Esc to return to the task actions, `d` to view the
+description, `s` to skip, or `q` to stop. The filtered mode requires a terminal
+and synced project members. Changes remain local until `panda push`.
+
+At the end, Panda prints an effort-load summary for all matching tasks, sorted
+by story points descending. As in `panda list`, shared tasks count their full
+effort for every assignee, and unassigned tasks appear under `Unassigned`.
+
+```sh
+panda assign 12345 juan
+panda assign 12345 "Ada Lovelace,Grace Hopper"
+panda assign 12345 none
+panda assign --status toDo
+panda assign --status toDo --priority high --type feature,bug
+panda assign --status released --type release
+panda push
+```
 
 ### `panda view <taskNumber|draft-N> [--no-description] [--no-notes] [--json]`
 

@@ -183,12 +183,9 @@ func applyTaskFieldOptions(ws *workspace.Workspace, metadata map[string]any, opt
 			selected := make(map[string]map[string]any)
 			for _, assignee := range options.assignees {
 				assignee = strings.TrimSpace(assignee)
-				match := findProjectMember(members, assignee)
-				if match == nil {
-					if findProjectMember(allMembers, assignee) != nil {
-						return nil, nil, fmt.Errorf("project member %q is not eligible for assignment; eligible roles are %s", assignee, strings.Join(assignableTeamRoles, ", "))
-					}
-					return nil, nil, fmt.Errorf("project member %q not found; run `panda pull` to refresh members", assignee)
+				match, err := resolveAssignableProjectMember(members, allMembers, assignee)
+				if err != nil {
+					return nil, nil, err
 				}
 				user := memberUser(match)
 				id := relationshipID(user)

@@ -90,12 +90,9 @@ func editAssignees(ws *workspace.Workspace, dir string, metadata map[string]any,
 		selected = make(map[string]map[string]any)
 		for _, name := range requested {
 			name = strings.TrimSpace(name)
-			match := findProjectMember(members, name)
-			if match == nil {
-				if findProjectMember(allMembers, name) != nil {
-					return fmt.Errorf("project member %q is not eligible for assignment; eligible roles are %s", name, strings.Join(assignableTeamRoles, ", "))
-				}
-				return fmt.Errorf("project member %q not found; run `panda pull` to refresh members", name)
+			match, err := resolveAssignableProjectMember(members, allMembers, name)
+			if err != nil {
+				return err
 			}
 			user := memberUser(match)
 			selected[relationshipID(user)] = map[string]any{"id": relationshipID(user), "label": memberDisplayName(match)}
@@ -138,9 +135,9 @@ func editAssignees(ws *workspace.Workspace, dir string, metadata map[string]any,
 			} else {
 				selected = make(map[string]map[string]any)
 				for _, name := range strings.Split(choice, ",") {
-					match := findProjectMember(members, strings.TrimSpace(name))
-					if match == nil {
-						return fmt.Errorf("project member %q not found", strings.TrimSpace(name))
+					match, err := resolveAssignableProjectMember(members, allMembers, strings.TrimSpace(name))
+					if err != nil {
+						return err
 					}
 					user := memberUser(match)
 					selected[relationshipID(user)] = map[string]any{"id": relationshipID(user), "label": memberDisplayName(match)}
@@ -148,27 +145,12 @@ func editAssignees(ws *workspace.Workspace, dir string, metadata map[string]any,
 			}
 		}
 	}
-	result := make([]any, 0, len(selected))
-	for _, relation := range selected {
-		result = append(result, relation)
+	selectedIDs := make(map[string]bool, len(selected))
+	for id := range selected {
+		selectedIDs[id] = true
 	}
-	sort.Slice(result, func(i, j int) bool {
-		left, _ := result[i].(map[string]any)
-		right, _ := result[j].(map[string]any)
-		return strings.ToLower(relationshipDisplayName(left)) < strings.ToLower(relationshipDisplayName(right))
-	})
-	metadata["assignees"] = result
-	return workspace.WriteMap(filepath.Join(dir, "metadata.json"), metadata)
-}
-
-func findProjectMember(members []map[string]any, selector string) map[string]any {
-	for _, member := range members {
-		user := memberUser(member)
-		if strings.EqualFold(memberDisplayName(member), selector) || strings.EqualFold(stringField(user, "email"), selector) || relationshipID(user) == selector {
-			return member
-		}
-	}
-	return nil
+	_, _, err = saveAssigneeSelection(dir, metadata, selectedIDs, selected)
+	return err
 }
 
 func assignableRole(role string) (string, bool) {
@@ -190,73 +172,63 @@ func eligibleProjectMembers(members []map[string]any) []map[string]any {
 	return eligible
 }
 
-func assignTask(ws *workspace.Workspace, args []string, out io.Writer) error {
+func assignTaskByPerson(ws *workspace.Workspace, args []string, out io.Writer) error {
 	if len(args) < 2 {
-		return errors.New("usage: panda assign <taskNumber|draft-N> <role[,role...]|none>")
+		return errors.New("usage: panda assign <taskNumber|draft-N> <person[,person...]|none>")
 	}
 	dir, metadata, err := ws.FindTask(args[0])
 	if err != nil {
 		return err
 	}
-	if len(args) == 2 && isNoneSelector(args[1]) {
-		metadata["assignees"] = []any{}
-		if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), metadata); err != nil {
+	selectors := make([]string, 0, len(args)-1)
+	for _, arg := range args[1:] {
+		for _, value := range strings.Split(arg, ",") {
+			value = strings.TrimSpace(value)
+			if value != "" {
+				selectors = append(selectors, value)
+			}
+		}
+	}
+	if len(selectors) == 0 {
+		return errors.New("panda assign requires one or more people, or none to clear assignees")
+	}
+	selected := make(map[string]bool)
+	relations := make(map[string]map[string]any)
+	clear := len(selectors) == 1 && isNoneSelector(selectors[0])
+	for _, selector := range selectors {
+		if isNoneSelector(selector) && !clear {
+			return errors.New("none must be used alone to clear assignees")
+		}
+	}
+	if !clear {
+		allMembers, err := projectMembers(ws)
+		if err != nil {
 			return err
 		}
-		fmt.Fprintf(out, "Cleared assignees for task %s.\n", taskLabel(metadata))
-		return nil
+		members := eligibleProjectMembers(allMembers)
+		for _, selector := range selectors {
+			match, err := resolveAssignableProjectMember(members, allMembers, selector)
+			if err != nil {
+				return err
+			}
+			user := memberUser(match)
+			id := relationshipID(user)
+			selected[id] = true
+			relations[id] = map[string]any{"id": id, "label": memberDisplayName(match)}
+		}
 	}
-	members, err := projectMembers(ws)
+	updated, changed, err := saveAssigneeSelection(dir, metadata, selected, relations)
 	if err != nil {
 		return err
 	}
-	roles := make(map[string]bool)
-	for _, arg := range args[1:] {
-		for _, value := range strings.Split(arg, ",") {
-			role, ok := assignableRole(strings.TrimSpace(value))
-			if !ok {
-				return fmt.Errorf("unknown role %q; valid roles are %s", strings.TrimSpace(value), strings.Join(assignableTeamRoles, ", "))
-			}
-			roles[role] = true
-		}
+	if len(selected) == 0 {
+		fmt.Fprintf(out, "Cleared assignees for task %s.\n", taskLabel(updated))
+	} else if changed {
+		fmt.Fprintf(out, "Assigned %d person(s) to task %s: %s.\n", len(selected), taskLabel(updated), displayedAssignees(updated))
+	} else {
+		fmt.Fprintf(out, "No assignment changes for task %s.\n", taskLabel(updated))
 	}
-	assigned := make(map[string]map[string]any)
-	for _, member := range members {
-		if !roles[stringField(member, "role")] {
-			continue
-		}
-		user := memberUser(member)
-		id := relationshipID(user)
-		if id != "" {
-			assigned[id] = map[string]any{"id": id, "label": memberDisplayName(member)}
-		}
-	}
-	if len(assigned) == 0 {
-		return fmt.Errorf("no project members found for role(s) %s; run `panda pull` to refresh members", strings.Join(sortedRoleNames(roles), ", "))
-	}
-	result := make([]any, 0, len(assigned))
-	for _, relation := range assigned {
-		result = append(result, relation)
-	}
-	sort.Slice(result, func(i, j int) bool {
-		return strings.ToLower(relationshipDisplayName(result[i])) < strings.ToLower(relationshipDisplayName(result[j]))
-	})
-	metadata["assignees"] = result
-	if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), metadata); err != nil {
-		return err
-	}
-	fmt.Fprintf(out, "Assigned %d member(s) to task %s.\n", len(result), taskLabel(metadata))
 	return nil
-}
-
-func sortedRoleNames(roles map[string]bool) []string {
-	var names []string
-	for _, role := range assignableTeamRoles {
-		if roles[role] {
-			names = append(names, role)
-		}
-	}
-	return names
 }
 
 func findCatalogRecordByName(records []map[string]any, kind catalogKind, name string) map[string]any {
