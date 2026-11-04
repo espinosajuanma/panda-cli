@@ -38,6 +38,7 @@ type FileLink struct {
 
 type FileAttachment struct {
 	FileID      string
+	Name        string
 	Description string
 }
 
@@ -323,7 +324,11 @@ func (c *Client) UploadFile(ctx context.Context, filename string, content io.Rea
 func (c *Client) AttachFiles(ctx context.Context, taskID string, files []FileAttachment) (map[string]any, error) {
 	attachments := make([]map[string]any, 0, len(files))
 	for _, file := range files {
-		attachment := map[string]any{"file": map[string]any{"id": file.FileID}}
+		fileReference := map[string]any{"id": file.FileID}
+		if file.Name != "" {
+			fileReference["name"] = file.Name
+		}
+		attachment := map[string]any{"file": fileReference}
 		if file.Description != "" {
 			attachment["description"] = file.Description
 		}

@@ -95,7 +95,12 @@ func TestPushUploadsAndAttachesStagedFiles(t *testing.T) {
 				return
 			}
 			items := body["files"]
-			if len(items) != 1 || relationshipID(items[0]["file"]) != "uploaded-1" || stringField(items[0], "description") != "Requirements" {
+			if len(items) != 1 {
+				t.Errorf("unexpected attach body: %#v", body)
+				return
+			}
+			file, _ := items[0]["file"].(map[string]any)
+			if relationshipID(items[0]["file"]) != "uploaded-1" || file["name"] != "brief.txt" || stringField(items[0], "description") != "Requirements" {
 				t.Errorf("unexpected attach body: %#v", body)
 			}
 			remote["files"] = []any{map[string]any{

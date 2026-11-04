@@ -71,7 +71,7 @@ func TestAttachFilesSendsNestedFileReferences(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
-		if len(body.Files) != 1 || body.Files[0].File["id"] != "file-7" || body.Files[0].Description != "spec" {
+		if len(body.Files) != 1 || body.Files[0].File["id"] != "file-7" || body.Files[0].File["name"] != "spec.txt" || body.Files[0].Description != "spec" {
 			t.Fatalf("unexpected attach payload: %#v", body)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -79,7 +79,7 @@ func TestAttachFilesSendsNestedFileReferences(t *testing.T) {
 	}))
 	defer server.Close()
 
-	updated, err := NewClient(server.URL, "token").AttachFiles(context.Background(), "task-1", []FileAttachment{{FileID: "file-7", Description: "spec"}})
+	updated, err := NewClient(server.URL, "token").AttachFiles(context.Background(), "task-1", []FileAttachment{{FileID: "file-7", Name: "spec.txt", Description: "spec"}})
 	if err != nil {
 		t.Fatal(err)
 	}

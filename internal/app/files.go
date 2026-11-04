@@ -371,18 +371,20 @@ func pushStagedFiles(ctx context.Context, client *solutions.Client, ws *workspac
 	preexistingUploadIDs := false
 	for index := range state.StagedFiles {
 		staged := state.StagedFiles[index]
+		filename := staged.Name
+		if filename == "" && staged.Path != "" {
+			filename = filepath.Base(staged.Path)
+		}
 		if staged.RemoteID != "" {
 			preexistingUploadIDs = true
-			attachments = append(attachments, solutions.FileAttachment{FileID: staged.RemoteID, Description: staged.Description})
+			attachments = append(attachments, solutions.FileAttachment{
+				FileID: staged.RemoteID, Name: filename, Description: staged.Description,
+			})
 			continue
 		}
 		file, err := os.Open(staged.Path)
 		if err != nil {
 			return state, fmt.Errorf("open staged file %q: %w", staged.Name, err)
-		}
-		filename := staged.Name
-		if filename == "" {
-			filename = filepath.Base(staged.Path)
 		}
 		link, uploadErr := client.UploadFile(ctx, filename, file)
 		closeErr := file.Close()
@@ -393,7 +395,7 @@ func pushStagedFiles(ctx context.Context, client *solutions.Client, ws *workspac
 			return state, fmt.Errorf("close staged file %q: %w", staged.Name, closeErr)
 		}
 		attachments = append(attachments, solutions.FileAttachment{
-			FileID: link.FileID, Description: staged.Description,
+			FileID: link.FileID, Name: filename, Description: staged.Description,
 		})
 		state.StagedFiles[index].RemoteID = link.FileID
 		if err := ws.WriteState(key, state); err != nil {
