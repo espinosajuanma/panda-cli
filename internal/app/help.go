@@ -329,7 +329,7 @@ var manualPages = map[string]manualPage{
 		synopsis: []string{"panda assign <taskNumber|draft-N> <person[,person...]|none>", "panda assign --status <status,...> [--priority <priority,...>] [--type <type,...>]"},
 		description: []string{
 			"With a task number, assign one or more eligible project members by name, email, or ID. Names use normalized partial matching, so juan can match Juanma Espinosa. A unique match is required; ambiguous matches list candidates. Use none to clear all assignees.",
-			"With --status, interactively process matching tasks in workflow and rank order. --status is required; --priority and --type narrow the selection. Enter opens a multi-select prefilled with current assignees; Enter saves the replacement selection, Esc returns to the task actions, d shows the description, s skips, and q quits.",
+			"With --status, interactively process matching tasks in workflow and rank order. --status is required; --priority and --type narrow the selection. Enter opens a multi-select prefilled with current assignees; Enter saves the replacement selection, Esc returns to the task actions, d shows the description, w shows workload for all matching tasks, s skips, and q quits.",
 			"Release tasks are skipped by default in filtered mode; include --type release explicitly to assign them. The filtered mode requires a terminal and project members synced by panda pull. Changes remain local until panda push. At completion it reports the effort load for all matching tasks.",
 		},
 		arguments: []manualOption{

@@ -220,7 +220,7 @@ func runSelector(in, out *os.File, prompt string, options []selectorOption, init
 	}
 }
 
-func readTaskAction(in io.Reader, out io.Writer, prompt string) (rune, error) {
+func readTaskAction(in io.Reader, out io.Writer, prompt string, accepted ...rune) (rune, error) {
 	inFile, _, ok := selectorFiles(in, out)
 	if !ok {
 		return 0, errors.New("interactive task prompt requires a terminal")
@@ -242,6 +242,12 @@ func readTaskAction(in io.Reader, out io.Writer, prompt string) (rune, error) {
 		case rune(selectorEnter), rune(selectorCancel), 'd', 'D', 's', 'S', 'q', 'Q':
 			fmt.Fprint(out, "\r\n")
 			return key, nil
+		}
+		for _, acceptedKey := range accepted {
+			if key == acceptedKey {
+				fmt.Fprint(out, "\r\n")
+				return key, nil
+			}
 		}
 	}
 }
@@ -546,8 +552,8 @@ func ReadEstimateAction(in io.Reader, out io.Writer) (rune, error) {
 	return readEstimateAction(in, out)
 }
 
-func ReadTaskAction(in io.Reader, out io.Writer, prompt string) (rune, error) {
-	return readTaskAction(in, out, prompt)
+func ReadTaskAction(in io.Reader, out io.Writer, prompt string, accepted ...rune) (rune, error) {
+	return readTaskAction(in, out, prompt, accepted...)
 }
 func ReadSingleKey(in io.Reader, out io.Writer) (rune, error) { return readSingleKey(in, out) }
 func ReadSelectorKey(in *os.File) (rune, error)               { return readSelectorKey(in) }

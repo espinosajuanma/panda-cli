@@ -393,8 +393,10 @@ For each task, Panda shows its current assignees and estimated story points/hour
 Press Enter to open a multi-select prefilled with the current assignees; Enter
 saves the selected members as the complete assignee list, and `None (clear all)`
 removes everyone. Press Esc to return to the task actions, `d` to view the
-description, `s` to skip, or `q` to stop. The filtered mode requires a terminal
-and synced project members. Changes remain local until `panda push`.
+description, `w` to show the per-assignee effort summary for all matching tasks
+using currently saved assignments, `s` to skip, or `q` to stop. The filtered mode
+requires a terminal and synced project members. Changes remain local until
+`panda push`.
 
 At the end, Panda prints an effort-load summary for all matching tasks, sorted
 by story points descending. As in `panda list`, shared tasks count their full

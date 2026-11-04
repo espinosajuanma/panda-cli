@@ -38,7 +38,7 @@ type terminalAssignmentInteraction struct {
 }
 
 func (interaction terminalAssignmentInteraction) Action() (rune, error) {
-	return readTaskAction(interaction.in, interaction.out, "Enter choose assignees · d description · s skip · q quit")
+	return readTaskAction(interaction.in, interaction.out, "Enter choose assignees · d description · w workload · s skip · q quit", 'w', 'W')
 }
 
 func (interaction terminalAssignmentInteraction) SelectAssignees(options []selectorOption, selected map[string]bool) (map[string]bool, error) {
@@ -243,6 +243,12 @@ func assignFilteredTasks(options assignOptions, candidates []assignmentTask, mem
 					return err
 				}
 				continue
+			case 'w', 'W':
+				if err := renderAssignmentEffortSummary(out, candidates); err != nil {
+					return err
+				}
+				printAssignmentTaskHeader(out, *current, index+1, len(candidates))
+				continue
 			case 's', 'S':
 				skipped++
 				fmt.Fprintf(out, "Skipped %s.\n", taskLabel(current.metadata))
@@ -259,18 +265,22 @@ func assignFilteredTasks(options assignOptions, candidates []assignmentTask, mem
 		fmt.Fprint(out, "Stopped early. ")
 	}
 	fmt.Fprintf(out, "Assignment complete: %d updated, %d skipped.\n", updated, skipped)
-	metadata := make([]map[string]any, 0, len(candidates))
-	for _, current := range candidates {
-		metadata = append(metadata, current.metadata)
-	}
-	totals, shared := summarizeAssigneeEffort(metadata)
-	if err := renderAssigneeEffortSummary(out, out, "ASSIGNEE LOAD (MATCHING TASKS)", totals, shared); err != nil {
+	if err := renderAssignmentEffortSummary(out, candidates); err != nil {
 		return err
 	}
 	if updated > 0 {
 		fmt.Fprintln(out, "Run `panda push` to publish these local changes.")
 	}
 	return nil
+}
+
+func renderAssignmentEffortSummary(out io.Writer, candidates []assignmentTask) error {
+	metadata := make([]map[string]any, 0, len(candidates))
+	for _, current := range candidates {
+		metadata = append(metadata, current.metadata)
+	}
+	totals, shared := summarizeAssigneeEffort(metadata)
+	return renderAssigneeEffortSummary(out, out, "ASSIGNEE LOAD (MATCHING TASKS)", totals, shared)
 }
 
 func printAssignmentTaskHeader(out io.Writer, current assignmentTask, index, total int) {

@@ -217,6 +217,48 @@ func TestAssignFilteredTasksReplacesAssigneesAndSummarizesEffort(t *testing.T) {
 	}
 }
 
+func TestAssignWorkloadActionShowsCurrentSummaryAndKeepsSkip(t *testing.T) {
+	ws := workspace.New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	first := listTask("assign-workload-first", 83, "toDo", "a", "s", "First task", "feature")
+	second := listTask("assign-workload-second", 84, "toDo", "b", "m", "Second task", "bug")
+	addSyncedTask(t, ws, first)
+	addSyncedTask(t, ws, second)
+	options, err := parseAssignOptions([]string{"--status", "toDo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidates, _, err := findAssignmentTasks(ws, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	interaction := &scriptedAssignmentInteraction{
+		actions:    []rune{rune(selectorEnter), 'w', 's'},
+		selections: []map[string]bool{{"user-ada": true}},
+	}
+	members := []map[string]any{{"user": map[string]any{"id": "user-ada", "label": "Ada Lovelace"}, "role": "developer"}}
+	var output strings.Builder
+	if err := assignFilteredTasks(options, candidates, members, interaction, &output); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	saved := strings.Index(text, "Saved assignees")
+	summary := strings.Index(text, "ASSIGNEE LOAD (MATCHING TASKS)")
+	skipped := strings.Index(text, "Skipped")
+	if saved < 0 || summary <= saved || skipped <= summary {
+		t.Fatalf("workload summary did not appear between save and skip actions:\n%s", text)
+	}
+	summaryBlock := text[summary:skipped]
+	if !strings.Contains(summaryBlock, "Ada Lovelace") || !strings.Contains(summaryBlock, "Unassigned") {
+		t.Fatalf("mid-session summary did not include current and remaining assignment load:\n%s", summaryBlock)
+	}
+	if strings.Count(text, "ASSIGNEE LOAD (MATCHING TASKS)") < 2 {
+		t.Fatalf("expected a mid-session and final effort summary:\n%s", text)
+	}
+}
+
 func TestFilteredAssignRequiresTerminal(t *testing.T) {
 	ws, _ := makeSyncedTask(t, listTask("assign-nonterminal", 91, "toDo", "a", "s", "Task", "feature"))
 	if err := assignTask(ws, []string{"--status", "toDo"}, strings.NewReader(""), io.Discard); err == nil || !strings.Contains(err.Error(), "requires an interactive terminal") {

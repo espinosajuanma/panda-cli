@@ -33,8 +33,8 @@ func readSingleKey(in io.Reader, out io.Writer) (rune, error) { return ui.ReadSi
 func readEstimateAction(in io.Reader, out io.Writer) (rune, error) {
 	return ui.ReadEstimateAction(in, out)
 }
-func readTaskAction(in io.Reader, out io.Writer, prompt string) (rune, error) {
-	return ui.ReadTaskAction(in, out, prompt)
+func readTaskAction(in io.Reader, out io.Writer, prompt string, accepted ...rune) (rune, error) {
+	return ui.ReadTaskAction(in, out, prompt, accepted...)
 }
 func readSelectorKey(in *os.File) (rune, error) { return ui.ReadSelectorKey(in) }
 
