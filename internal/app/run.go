@@ -127,7 +127,7 @@ func RunContext(ctx context.Context, args []string, in io.Reader, out, errOut io
 			if err := requireLogin(cfg); err != nil {
 				return err
 			}
-			return editNoteContext(ctx, ws, args, client, out)
+			return editNoteContext(ctx, ws, args, client, in, out)
 		case "view":
 			return viewTaskWithAPIURL(ws, args, cfg.APIURL, out)
 		case "files":

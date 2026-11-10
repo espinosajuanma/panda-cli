@@ -346,13 +346,14 @@ var manualPages = map[string]manualPage{
 	},
 	"edit-note": {
 		name:        "panda edit-note - edit one of your synced notes",
-		synopsis:    []string{"panda edit-note <taskNumber|draft-N> <note-file>"},
-		description: []string{"Open one of the current user's synced task notes in $EDITOR. Use the note filename shown by panda view; the .md extension is optional. Review the local edit with panda diff --verbose and publish it with panda push."},
+		synopsis:    []string{"panda edit-note <taskNumber|draft-N> <note-file> [--file <path>]"},
+		description: []string{"Edit one of the current user's synced task notes. Use the note filename shown by panda view; the .md extension is optional. By default, open the note in $EDITOR. Use --file to replace its Markdown from a file, or --file - to read from stdin. Review the local edit with panda diff --verbose and publish it with panda push."},
 		arguments: []manualOption{
 			{"taskNumber|draft-N", "Identifier of the task containing the note. Legacy local-* IDs are also accepted."},
 			{"note-file", "Synced Markdown note filename shown by panda view; .md is optional."},
 		},
-		examples: []string{"panda edit-note 12345 20261028T120000.000Z-username", "panda diff --verbose", "panda push"},
+		options:  []manualOption{{"--file <path>", "Replace the note with Markdown read from path; use - to read from stdin."}},
+		examples: []string{"panda edit-note 12345 20261028T120000.000Z-username", "panda edit-note 12345 20261028T120000.000Z-username.md --file ./revised-note.md", "panda edit-note 12345 20261028T120000.000Z-username --file - < revised-note.md", "panda diff --verbose", "panda push"},
 		seeAlso:  []string{"panda-add-note(1)", "panda-view(1)", "panda-diff(1)"},
 	},
 	"view": {
@@ -399,13 +400,14 @@ var manualPages = map[string]manualPage{
 	},
 	"add-note": {
 		name:        "panda add-note - stage a new task note",
-		synopsis:    []string{"panda add-note <taskNumber|draft-N> [text]"},
-		description: []string{"Stage a Markdown note for the next push. If text is omitted, open a temporary note in $EDITOR. Empty notes are rejected."},
+		synopsis:    []string{"panda add-note <taskNumber|draft-N> [text] [--file <path>]"},
+		description: []string{"Stage a Markdown note for the next push. Use --file to read long-form Markdown from a file, or --file - to read from stdin. If neither text nor --file is supplied, open a temporary note in $EDITOR. Empty notes are rejected."},
 		arguments: []manualOption{
 			{"taskNumber|draft-N", "Identifier of the task receiving the note. Legacy local-* IDs are also accepted."},
-			{"text", "Optional note text. If omitted, Panda opens the note editor."},
+			{"text", "Optional short note text. Use --file for multi-line or long-form Markdown."},
 		},
-		examples: []string{"panda add-note 12345", "panda add-note 12345 \"Followed up with the team\"", "panda push"},
+		options:  []manualOption{{"--file <path>", "Read Markdown from path; use - to read from stdin. Cannot be combined with positional text."}},
+		examples: []string{"panda add-note 12345", "panda add-note 12345 \"Followed up with the team\"", "panda add-note 12345 --file ./note.md", "panda add-note 12345 --file - < note.md", "panda push"},
 		seeAlso:  []string{"panda-edit-note(1)", "panda-push(1)"},
 	},
 	"discard": {

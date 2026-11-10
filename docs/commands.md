@@ -482,16 +482,34 @@ panda files download 12345 file-id --output ./screenshot.png --force
 
 ## Notes and status
 
-### `panda add-note <taskNumber|draft-N> [text]`
+### `panda add-note <taskNumber|draft-N> [text] [--file <path>]`
 
-Stages a Markdown note for the next push. If text is omitted, Panda opens a
-temporary note in `$EDITOR`. Empty notes are rejected.
+Stages a Markdown note for the next push. Use `--file <path>` to stage long-form
+Markdown without putting it in command arguments; `--file -` reads from stdin.
+`--file` cannot be combined with positional text. If neither text nor `--file`
+is supplied, Panda opens a temporary note in `$EDITOR`. Empty notes are rejected.
 
-### `panda edit-note <taskNumber|draft-N> <note-file>`
+```sh
+panda add-note 12345 --file ./note.md
+panda add-note 12345 --file - < ./note.md
+panda diff --verbose
+panda push
+```
 
-Opens one of the current user's synced notes in `$EDITOR`. Use the filename
-shown by `panda view`; the `.md` extension is optional. Review changes with
-`panda diff --verbose` and publish with `panda push`.
+### `panda edit-note <taskNumber|draft-N> <note-file> [--file <path>]`
+
+Edits one of the current user's synced notes. By default, the note opens in
+`$EDITOR`. Use the filename shown by `panda view`; the `.md` extension is
+optional. Use `--file <path>` to replace the note with Markdown from a file, or
+`--file -` to read from stdin. Review changes with `panda diff --verbose` and
+publish with `panda push`.
+
+```sh
+panda view 12345 --json
+panda edit-note 12345 20261028T120000.000Z-username --file ./revised-note.md
+panda diff --verbose
+panda push
+```
 
 ### `panda discard <taskNumber|draft-N> [note]`
 

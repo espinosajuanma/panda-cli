@@ -15,17 +15,18 @@ import (
 )
 
 func editNote(ws *workspace.Workspace, args []string, client *solutions.Client, out io.Writer) error {
-	return editNoteContext(context.Background(), ws, args, client, out)
+	return editNoteContext(context.Background(), ws, args, client, os.Stdin, out)
 }
 
-func editNoteContext(ctx context.Context, ws *workspace.Workspace, args []string, client *solutions.Client, out io.Writer) error {
-	if len(args) != 2 {
-		return errors.New("usage: panda edit-note <taskNumber|draft-N> <note-file>")
+func editNoteContext(ctx context.Context, ws *workspace.Workspace, args []string, client *solutions.Client, in io.Reader, out io.Writer) error {
+	positionals, inputFile, hasInputFile, err := parseNoteFileOption(args)
+	if err != nil || len(positionals) != 2 || (hasInputFile && inputFile == "") {
+		return errors.New("usage: panda edit-note <taskNumber|draft-N> <note-file> [--file <path>]")
 	}
 	if client.Email == "" {
 		return errors.New("your login email is not saved; run `panda login` to enable editing your notes")
 	}
-	dir, metadata, err := ws.FindTask(args[0])
+	dir, metadata, err := ws.FindTask(positionals[0])
 	if err != nil {
 		return err
 	}
@@ -37,8 +38,8 @@ func editNoteContext(ctx context.Context, ws *workspace.Workspace, args []string
 	if err != nil {
 		return err
 	}
-	filename := filepath.Base(args[1])
-	if filename != args[1] {
+	filename := filepath.Base(positionals[1])
+	if filename != positionals[1] {
 		return errors.New("note-file must be an existing Markdown filename from the task's notes directory")
 	}
 	if !strings.HasSuffix(filename, ".md") {
@@ -62,23 +63,46 @@ func editNoteContext(ctx context.Context, ws *workspace.Workspace, args []string
 	if _, err := os.Stat(path); err != nil {
 		return fmt.Errorf("open note %q: %w", filename, err)
 	}
-	if err := openEditor(path); err != nil {
-		return err
+	if hasInputFile {
+		data, err := readNoteInput(inputFile, in)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(string(data)) == "" {
+			return errors.New("note cannot be empty")
+		}
+		if err := workspace.WriteFileAtomic(path, data, 0o600); err != nil {
+			return err
+		}
+	} else {
+		if err := openEditor(path); err != nil {
+			return err
+		}
 	}
 	fmt.Fprintf(out, "Edited %s. Review with `panda diff --verbose`; run `panda push` to apply it.\n", filepath.ToSlash(filepath.Join("notes", filename)))
 	return nil
 }
 
 func addNote(ws *workspace.Workspace, args []string, in io.Reader, out io.Writer) error {
-	if len(args) < 1 {
-		return errors.New("usage: panda add-note <taskNumber|draft-N> [text]")
+	positionals, inputFile, hasInputFile, err := parseNoteFileOption(args)
+	if err != nil || len(positionals) < 1 || (hasInputFile && (inputFile == "" || len(positionals) != 1)) {
+		return errors.New("usage: panda add-note <taskNumber|draft-N> [text] [--file <path>]")
 	}
-	dir, metadata, err := ws.FindTask(args[0])
+	dir, metadata, err := ws.FindTask(positionals[0])
 	if err != nil {
 		return err
 	}
-	text := strings.TrimSpace(strings.Join(args[1:], " "))
-	if text == "" {
+	var text string
+	if hasInputFile {
+		data, err := readNoteInput(inputFile, in)
+		if err != nil {
+			return err
+		}
+		text = string(data)
+	} else {
+		text = strings.TrimSpace(strings.Join(positionals[1:], " "))
+	}
+	if !hasInputFile && text == "" {
 		text, err = editTemporaryNote(in)
 		if err != nil {
 			return err
@@ -88,6 +112,45 @@ func addNote(ws *workspace.Workspace, args []string, in io.Reader, out io.Writer
 		return errors.New("note cannot be empty")
 	}
 	return stageNote(ws, dir, metadata, text, out)
+}
+
+func parseNoteFileOption(args []string) ([]string, string, bool, error) {
+	positionals := make([]string, 0, len(args))
+	var inputFile string
+	hasInputFile := false
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--file" {
+			if hasInputFile || i+1 == len(args) {
+				return nil, "", false, errors.New("--file requires one path and may only be specified once")
+			}
+			i++
+			inputFile = args[i]
+			hasInputFile = true
+			continue
+		}
+		if strings.HasPrefix(arg, "--file=") {
+			if hasInputFile {
+				return nil, "", false, errors.New("--file may only be specified once")
+			}
+			inputFile = strings.TrimPrefix(arg, "--file=")
+			hasInputFile = true
+			continue
+		}
+		positionals = append(positionals, arg)
+	}
+	return positionals, inputFile, hasInputFile, nil
+}
+
+func readNoteInput(inputFile string, in io.Reader) ([]byte, error) {
+	if inputFile == "-" {
+		return io.ReadAll(in)
+	}
+	data, err := os.ReadFile(inputFile)
+	if err != nil {
+		return nil, fmt.Errorf("read note file %q: %w", inputFile, err)
+	}
+	return data, nil
 }
 
 func discard(ws *workspace.Workspace, args []string, out io.Writer) error {

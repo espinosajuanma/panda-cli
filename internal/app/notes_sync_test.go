@@ -60,6 +60,97 @@ func TestEditNoteOpensOnlyCurrentUsersSyncedNote(t *testing.T) {
 	}
 }
 
+func TestEditNoteReplacesSyncedNoteFromFileOrStdin(t *testing.T) {
+	for _, input := range []struct {
+		name string
+		file string
+	}{
+		{name: "file", file: "source.md"},
+		{name: "stdin", file: "-"},
+	} {
+		t.Run(input.name, func(t *testing.T) {
+			const timestamp = int64(1793188800000)
+			remote := map[string]any{"id": "task-note-file-edit", "number": float64(13770), "title": "Edit my note", "type": "feature", "priority": "medium", "status": "new", "description": "", "project": map[string]any{"id": "project-1"}, "labels": []any{}, "assignees": []any{}, "reviewers": []any{}, "notes": []any{map[string]any{"note": "<p>Original note body</p>", "timestamp": float64(timestamp), "addedBy": map[string]any{"id": "user-1", "label": "Juan"}}}}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.URL.Path != "/data/sys.users" {
+					http.NotFound(w, r)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprint(w, `{"total":1,"items":[{"id":"user-1","email":"juan@example.com","label":"Juan"}]}`)
+			}))
+			defer server.Close()
+			ws, dir := makeSyncedTask(t, remote)
+			filename := noteFilename(time.UnixMilli(timestamp), "Juan", 1)
+			path := filepath.Join(dir, "notes", filename)
+			if err := workspace.WriteFileAtomic(path, []byte("Original note body"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			revised := "# Investigation\n\n- First finding\n- Second finding\n"
+			source := filepath.Join(t.TempDir(), input.file)
+			stdin := ""
+			if input.file == "-" {
+				stdin, source = revised, "-"
+			} else if err := os.WriteFile(source, []byte(revised), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			client := solutions.NewClient(server.URL, "test-token")
+			client.Email = "juan@example.com"
+			args := []string{"13770", filename, "--file", source}
+			if err := editNoteContext(context.Background(), ws, args, client, strings.NewReader(stdin), io.Discard); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil || string(data) != revised {
+				t.Fatalf("edited note = %q, error=%v", data, err)
+			}
+		})
+	}
+}
+
+func TestAddNoteReadsMarkdownFromFileOrStdin(t *testing.T) {
+	for _, input := range []struct {
+		name  string
+		file  string
+		stdin string
+	}{
+		{name: "file", file: "source.md"},
+		{name: "stdin", file: "-"},
+	} {
+		t.Run(input.name, func(t *testing.T) {
+			const taskID = "task-note-file-add"
+			remote := map[string]any{"id": taskID, "number": float64(13771), "title": "Add a note", "type": "feature", "priority": "medium", "status": "new", "description": "", "project": map[string]any{"id": "project-1"}, "labels": []any{}, "assignees": []any{}, "reviewers": []any{}, "notes": []any{}}
+			ws, dir := makeSyncedTask(t, remote)
+			markdown := "## Findings\n\nA long note with **formatting**.\n\nLast line.\n"
+			args := []string{"13771", "--file", input.file}
+			stdin := input.stdin
+			if input.file != "-" {
+				source := filepath.Join(t.TempDir(), input.file)
+				if err := os.WriteFile(source, []byte(markdown), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				args[2] = source
+			} else {
+				stdin = markdown
+			}
+			if err := addNote(ws, args, strings.NewReader(stdin), io.Discard); err != nil {
+				t.Fatal(err)
+			}
+			state, err := ws.ReadState(taskID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(state.StagedNotes) != 1 {
+				t.Fatalf("staged notes = %#v, want one staged note", state.StagedNotes)
+			}
+			data, err := os.ReadFile(filepath.Join(dir, "notes", state.StagedNotes[0]))
+			if err != nil || string(data) != markdown {
+				t.Fatalf("staged Markdown = %q, error=%v", data, err)
+			}
+		})
+	}
+}
+
 func TestSyncRemoteNotesRemovesDeletedBaselineNotesOnly(t *testing.T) {
 	dir := t.TempDir()
 	notesDir := filepath.Join(dir, "notes")
