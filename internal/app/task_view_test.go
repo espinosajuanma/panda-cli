@@ -196,6 +196,43 @@ func TestCanonicalTaskLinkUsesConfiguredSolutionsHost(t *testing.T) {
 	}
 }
 
+func TestTaskViewShowsReleaseOnlyForReleasedTasks(t *testing.T) {
+	released := viewTestTask()
+	released["id"] = "view-released"
+	released["status"] = "released"
+	released["release"] = map[string]any{"id": "release-1", "label": "Release 2026.1"}
+	ws, _ := makeSyncedTask(t, released)
+	var output bytes.Buffer
+	if err := viewTask(ws, []string{"42"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if !hasTaskViewRow(output.String(), "Release", "Release 2026.1") {
+		t.Fatalf("released view missing release row:\n%s", output.String())
+	}
+
+	active := viewTestTask()
+	active["id"] = "view-active"
+	active["release"] = map[string]any{"id": "release-1", "label": "Release 2026.1"}
+	ws, _ = makeSyncedTask(t, active)
+	output.Reset()
+	if err := viewTask(ws, []string{"42"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if hasTaskViewRow(output.String(), "Release", "Release 2026.1") {
+		t.Fatalf("non-released view unexpectedly includes a release row:\n%s", output.String())
+	}
+}
+
+func hasTaskViewRow(text, label, value string) bool {
+	for _, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, label+" ") && strings.Contains(line, value) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestTaskViewTableWrapsLongValuesAndUsesNoneForEmptyRelationships(t *testing.T) {
 	var output bytes.Buffer
 	rows := []taskViewRow{{label: "Reviewers", value: "Ada Lovelace Grace Hopper Katherine Johnson"}}

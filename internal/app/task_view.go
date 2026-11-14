@@ -224,6 +224,11 @@ func taskViewMetadataRows(metadata map[string]any, labelNames, packageNames map[
 			display = "None"
 		}
 		rows = append(rows, taskViewRow{label: field.label, value: display})
+		if field.key == "status" && stringField(metadata, "status") == "released" {
+			if release := displayRelationship(metadata["release"]); release != "" {
+				rows = append(rows, taskViewRow{label: "Release", value: release})
+			}
+		}
 	}
 	if createdBy, ok := metadata["createdBy"]; ok {
 		if name := displayRelationship(createdBy); name != "" {

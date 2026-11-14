@@ -119,6 +119,11 @@ func browserTaskChoices(report listReport) ([]selectorOption, map[string]listTas
 		for _, entry := range group.entries {
 			selector := filepath.Base(entry.dir)
 			label := fmt.Sprintf("%s [%s] %s", taskLabel(entry.metadata), displayStatus(group.status), tableCell(entry.metadata["title"]))
+			if group.status == "released" {
+				if release := relationshipDisplayName(entry.metadata["release"]); release != "" {
+					label += " · " + tableCell(release)
+				}
+			}
 			if assignees := assigneesDisplay(entry.metadata["assignees"]); assignees != "" {
 				label += " · " + tableCell(assignees)
 			}

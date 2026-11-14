@@ -133,6 +133,29 @@ func TestBrowseDisplaysReadOnlyTaskActionsAndReturnsToSelector(t *testing.T) {
 	}
 }
 
+func TestBrowseSelectorShowsReleaseForReleasedTasks(t *testing.T) {
+	released := listTask("browse-released", 42, "released", "a", "m", "Released task", "feature")
+	released["release"] = map[string]any{"id": "release-1", "label": "Release 2026.1"}
+	ws, _ := makeSyncedTask(t, released)
+	browser := &scriptedBrowserUI{responses: []browserResponse{{err: errSelectionCanceled}}}
+	var output strings.Builder
+	if err := browseWithUI(ws, []string{"--released"}, "", config.DefaultAPIURL, browser, &output); err != nil {
+		t.Fatal(err)
+	}
+	if len(browser.calls) == 0 {
+		t.Fatal("browse did not request a task selector")
+	}
+	found := false
+	for _, option := range browser.calls[0].options {
+		if strings.Contains(option.label, "Release 2026.1") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("browse selector missing release label: %#v", browser.calls[0].options)
+	}
+}
+
 func TestBrowseAppliesListFiltersAndHandlesNoMatches(t *testing.T) {
 	ws := workspace.New(t.TempDir())
 	if err := ws.Ensure(); err != nil {

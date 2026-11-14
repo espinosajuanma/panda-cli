@@ -210,7 +210,8 @@ Run `panda pull` to refresh local task data and rank values.
 
 On terminals, Panda hides lower-priority columns as needed to fit the available
 width and wraps long titles. `--wide` forces the full table. Piped output always
-uses the full table.
+uses the full table. Released tasks include a `RELEASE` column with the release
+they belong to.
 
 Status filters can be combined:
 
@@ -298,7 +299,8 @@ per-assignee totals may exceed the project total.
 ### `panda browse [list filters]`
 
 Opens an interactive selector for local tasks and a read-only action menu for
-the selected task. The task selector supports typing to narrow matches. Actions
+the selected task. The task selector supports typing to narrow matches. Released
+tasks show the release they belong to in the selector. Actions
 include full task view, description, notes, attached files, verbose pending diff,
 and a verified task link when available. Choose Back to return to the task
 selector or Quit to exit.
@@ -418,7 +420,7 @@ Displays task metadata in an aligned table, followed by the local Markdown
 description, attached file references, and notes. The metadata includes creator,
 creation time, verified task link, and local sync status when available. The
 active project is implicit in the selected workspace and is not repeated in the
-metadata table.
+metadata table. Released tasks also show the release they belong to.
 Empty relationship fields display as `None`; staged notes and file uploads are
 marked. Long terminal output uses `$PAGER` (default `less -FRX`) and remains
 visible after leaving the pager; piped output uses the same table without color.

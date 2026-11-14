@@ -295,6 +295,45 @@ func TestListSummarizesFullEffortPerAssigneeAndUnassignedTasks(t *testing.T) {
 	}
 }
 
+func TestListShowsReleaseForReleasedTasks(t *testing.T) {
+	ws := workspace.New(t.TempDir())
+	if err := ws.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	released := listTask("released-with-release", 41, "released", "a", "m", "Released task", "feature")
+	released["release"] = map[string]any{"id": "release-1", "label": "Release 2026.1"}
+	active := listTask("active-task", 42, "new", "b", "s", "Active task", "feature")
+	for _, fixture := range []map[string]any{released, active} {
+		addSyncedTask(t, ws, fixture)
+	}
+
+	var output strings.Builder
+	if err := listTasks(ws, []string{"--released"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	header := ""
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, "NUMBER") {
+			header = line
+			break
+		}
+	}
+	if !strings.Contains(header, "RELEASE") || !strings.Contains(text, "Release 2026.1") {
+		t.Fatalf("released list missing release column/value:\n%s", text)
+	}
+
+	output.Reset()
+	if err := listTasks(ws, []string{"--status", "new"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(output.String(), "\n") {
+		if strings.Contains(line, "NUMBER") && strings.Contains(line, "RELEASE") {
+			t.Fatalf("non-released list unexpectedly includes a release column:\n%s", output.String())
+		}
+	}
+}
+
 func TestResponsiveListDropsOptionalColumnsAndWrapsTitles(t *testing.T) {
 	task := listTask("responsive", 61, "new", "a", "m", "Implement a responsive terminal layout for wide task tables", "feature")
 	task["package"] = map[string]any{"id": "package-1", "label": "Long package name"}

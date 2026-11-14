@@ -391,7 +391,12 @@ func printTaskGroup(out, colorTarget io.Writer, status string, tasks []map[strin
 		style = "1;36"
 	}
 	fmt.Fprintln(out, colorText(colorTarget, style, displayStatus(status)))
-	headers := []string{"NUMBER", "PRIORITY", "TYPE", "COMPLEXITY", "SP", "HOURS", "PACKAGE", "LABELS"}
+	showRelease := status == "released"
+	headers := []string{"NUMBER", "PRIORITY", "TYPE", "COMPLEXITY", "SP", "HOURS", "PACKAGE"}
+	if showRelease {
+		headers = append(headers, "RELEASE")
+	}
+	headers = append(headers, "LABELS")
 	if showAssignees {
 		headers = append(headers, "ASSIGNEES")
 	}
@@ -425,7 +430,15 @@ func printTaskGroup(out, colorTarget io.Writer, status string, tasks []map[strin
 		if labels == "" {
 			labels = "-"
 		}
-		row := []string{tableCell(number), tableCell(currentTask["priority"]), tableCell(currentTask["type"]), complexity, storyPoints, hours, pkg, labels}
+		row := []string{tableCell(number), tableCell(currentTask["priority"]), tableCell(currentTask["type"]), complexity, storyPoints, hours, pkg}
+		if showRelease {
+			release := relationshipDisplayName(currentTask["release"])
+			if release == "" {
+				release = "-"
+			}
+			row = append(row, tableCell(release))
+		}
+		row = append(row, labels)
 		if showAssignees {
 			assignees := assigneesDisplay(currentTask["assignees"])
 			if assignees == "" {
@@ -539,7 +552,7 @@ func responsiveListColumns(headers []string, rows []listTableRow, width int) ([]
 	titleIndex := len(headers) - 1
 	const padding = 2
 	const minimumTitleWidth = 12
-	dropOrder := []string{"REVIEWERS", "ASSIGNEES", "LABELS", "PACKAGE", "HOURS", "SP", "TYPE", "COMPLEXITY", "PRIORITY"}
+	dropOrder := []string{"REVIEWERS", "ASSIGNEES", "LABELS", "PACKAGE", "RELEASE", "HOURS", "SP", "TYPE", "COMPLEXITY", "PRIORITY"}
 	for _, drop := range dropOrder {
 		if responsiveListRequiredWidth(columns, columnWidths, titleIndex, minimumTitleWidth, padding) <= width {
 			break
