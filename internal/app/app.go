@@ -109,6 +109,9 @@ func createTaskInteractive(ws *workspace.Workspace, project *config.Project, arg
 	if err := workspace.WriteFileAtomic(filepath.Join(dir, "description.md"), nil, 0o600); err != nil {
 		return err
 	}
+	if err := writeReleaseNotesToLocal(dir, nil); err != nil {
+		return err
+	}
 	if isInteractiveTerminal(in, out) {
 		if err := promptDescriptionEditor(in, out, dir); err != nil {
 			return err
@@ -124,7 +127,7 @@ func createTaskInteractive(ws *workspace.Workspace, project *config.Project, arg
 
 func editTask(ws *workspace.Workspace, args []string, in io.Reader, out io.Writer) error {
 	if len(args) < 1 {
-		return errors.New("usage: panda edit <taskNumber|draft-N> [task field options|labels ...|package ...|assignees ...|json]")
+		return errors.New("usage: panda edit <taskNumber|draft-N> [task field options|labels ...|package ...|assignees ...|release-notes ...|json]")
 	}
 	dir, metadata, err := ws.FindTask(args[0])
 	if err != nil {
@@ -138,6 +141,8 @@ func editTask(ws *workspace.Workspace, args []string, in io.Reader, out io.Write
 			return editTaskPackage(ws, dir, metadata, args[2:], in, out)
 		case "assignees", "assign":
 			return editAssignees(ws, dir, metadata, args[2:], in, out)
+		case "release-notes":
+			return editReleaseNotesFiles(dir, args[2:], out)
 		case "json":
 			if len(args) != 2 {
 				return errors.New("usage: panda edit <taskNumber|draft-N> json")
@@ -147,7 +152,7 @@ func editTask(ws *workspace.Workspace, args []string, in io.Reader, out io.Write
 			}
 			return promptDescriptionEditor(in, out, dir)
 		default:
-			return errors.New("field selectors are `labels`, `package`, `assignees`, and `json`")
+			return errors.New("field selectors are `labels`, `package`, `assignees`, `release-notes`, and `json`")
 		}
 	}
 	options, positional, err := parseTaskFieldOptions(args[1:])

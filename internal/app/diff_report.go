@@ -147,6 +147,31 @@ func collectDiffReport(ws *workspace.Workspace, options diffOptions) (diffReport
 			taskChanged = true
 		}
 		if stateErr == nil && !state.LocalCreated {
+			releaseChanges, releaseErr := releaseNoteChanges(dir, state.Remote)
+			if releaseErr != nil {
+				return diffReport{}, fmt.Errorf("inspect release notes for %s: %w", taskLabel(local), releaseErr)
+			}
+			for _, field := range releaseNoteFields {
+				markdown, changed := releaseChanges[field.name]
+				if !changed {
+					continue
+				}
+				change := diffChange{Kind: "release-note", Field: field.name, Path: field.filename, Updated: true}
+				if options.verbose {
+					before, baselineErr := releaseNoteMarkdown(state.Remote, field.name)
+					if baselineErr != nil {
+						return diffReport{}, baselineErr
+					}
+					after := markdown
+					change.BeforeMarkdown, change.AfterMarkdown = &before, &after
+					change.Lines, change.FinalNewlineChanged = diffLinesForJSON(before, after)
+				}
+				taskChanges.Changes = append(taskChanges.Changes, change)
+				report.Summary.ChangeCount++
+				taskChanged = true
+			}
+		}
+		if stateErr == nil && !state.LocalCreated {
 			noteChanges, noteErr := localNoteChanges(dir, state.Remote)
 			if noteErr != nil {
 				return diffReport{}, fmt.Errorf("inspect notes for %s: %w", taskLabel(local), noteErr)
@@ -257,6 +282,13 @@ func renderDiffReport(report diffReport, options diffOptions, out, colorTarget i
 					writeLineDiff(&taskChanges, colorTarget, *change.BeforeMarkdown, *change.AfterMarkdown)
 				} else {
 					fmt.Fprintf(&taskChanges, "  %s %s\n", colorText(colorTarget, "1", "description:"), colorText(colorTarget, "32", "updated"))
+				}
+			case "release-note":
+				if options.verbose {
+					fmt.Fprintf(&taskChanges, "  %s\n", colorText(colorTarget, "1;36", releaseNoteDisplayName(change.Field)+": "+change.Path))
+					writeLineDiff(&taskChanges, colorTarget, *change.BeforeMarkdown, *change.AfterMarkdown)
+				} else {
+					fmt.Fprintf(&taskChanges, "  %s %s\n", colorText(colorTarget, "1", releaseNoteDisplayName(change.Field)+":"), colorText(colorTarget, "32", change.Path+" updated"))
 				}
 			case "edited-note":
 				if options.verbose {

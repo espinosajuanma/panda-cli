@@ -225,6 +225,26 @@ func pushSelectedWithOptions(ctx context.Context, client *solutions.Client, ws *
 					continue
 				}
 			}
+			releasePayload, err := releaseNotesPayload(dir, state.Remote)
+			if err != nil {
+				recordFailure("failed", fmt.Sprintf("edit release notes: %v", err))
+				continue
+			}
+			if len(releasePayload) > 0 {
+				result.addAction("releaseNotes")
+				remote, err = client.EditReleaseNotes(ctx, id, releasePayload)
+				if err != nil {
+					recordFailure("failed", fmt.Sprintf("edit release notes: %v", err))
+					continue
+				}
+				if remote == nil || remote["releaseNotes"] == nil {
+					remote, err = client.GetTask(ctx, id)
+					if err != nil {
+						recordFailure("failed", fmt.Sprintf("refresh edited release notes: %v", err))
+						continue
+					}
+				}
+			}
 			state.Remote = cloneMap(remote)
 			if err := writeRemoteToLocal(dir, remote); err != nil {
 				recordFailure("failed", fmt.Sprintf("update local baseline: %v", err))
@@ -370,7 +390,14 @@ func taskHasLocalChanges(local map[string]any, state workspace.State, dir string
 	if err != nil {
 		return false, err
 	}
-	return len(noteChanges) > 0, nil
+	if len(noteChanges) > 0 {
+		return true, nil
+	}
+	releaseChanges, err := releaseNoteChanges(dir, state.Remote)
+	if err != nil {
+		return false, err
+	}
+	return len(releaseChanges) > 0, nil
 }
 
 func createRemoteTask(ctx context.Context, client *solutions.Client, dir string, metadata map[string]any, project *config.Project, catalogIDs map[string]string) (map[string]any, error) {
@@ -395,5 +422,24 @@ func createRemoteTask(ctx context.Context, client *solutions.Client, dir string,
 	delete(newTask, "label")
 	delete(newTask, "version")
 	delete(newTask, "notes")
+	delete(newTask, "releaseNotes")
+	localReleaseNotes, err := readLocalReleaseNotes(dir)
+	if err != nil {
+		return nil, err
+	}
+	releaseNotes := make(map[string]any)
+	for _, field := range releaseNoteFields {
+		if !localReleaseNotes.exists[field.name] || strings.TrimSpace(localReleaseNotes.markdown[field.name]) == "" {
+			continue
+		}
+		fieldHTML, err := content.MarkdownToHTML(localReleaseNotes.markdown[field.name])
+		if err != nil {
+			return nil, fmt.Errorf("convert %s: %w", field.name, err)
+		}
+		releaseNotes[field.name] = fieldHTML
+	}
+	if len(releaseNotes) > 0 {
+		newTask["releaseNotes"] = releaseNotes
+	}
 	return client.CreateTask(ctx, newTask)
 }

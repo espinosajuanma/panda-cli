@@ -363,6 +363,9 @@ func addSyncedTask(t *testing.T, ws *workspace.Workspace, remote map[string]any)
 	if err := workspace.WriteFileAtomic(filepath.Join(dir, "description.md"), []byte(markdown), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := writeReleaseNotesToLocal(dir, remote); err != nil {
+		t.Fatal(err)
+	}
 	id := stringField(remote, "id")
 	if err := ws.WriteState(id, workspace.State{Remote: cloneMap(remote)}); err != nil {
 		t.Fatal(err)

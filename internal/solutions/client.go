@@ -249,6 +249,12 @@ func (c *Client) EditMyNotes(ctx context.Context, id string, myNotes []map[strin
 	return updated, err
 }
 
+func (c *Client) EditReleaseNotes(ctx context.Context, id string, notes map[string]string) (map[string]any, error) {
+	var updated map[string]any
+	err := c.request(ctx, http.MethodPut, "/data/dev.tasks/"+url.PathEscape(id)+"/editReleaseNotes", notes, &updated)
+	return updated, err
+}
+
 func (c *Client) UploadFile(ctx context.Context, filename string, content io.Reader) (*FileLink, error) {
 	pipeReader, pipeWriter := io.Pipe()
 	form := multipart.NewWriter(pipeWriter)

@@ -8,7 +8,7 @@ edit with your preferred tools.
 ## Features
 
 - Sync tasks, labels, packages, and team members with a local workspace.
-- Edit task metadata, descriptions, and notes as files.
+- Edit task metadata, descriptions, notes, and customer/internal release notes as files.
 - Keep task file references locally, stage uploads for `push`, and download file content only on demand.
 - Review changes and conflicts before pushing updates to Solutions.
 - Emit structured JSON for task lists, pending diffs, and push results.
@@ -65,9 +65,9 @@ them with `panda push`.
 | `panda list` | Filter tasks, adapt the table to terminal width, and summarize effort by assignee; use `--wide` for all columns or `--json` for structured output |
 | `panda browse` | Interactively browse and inspect local tasks |
 | `panda estimate` | Quickly assign complexity to selected task statuses and types |
-| `panda create` / `panda edit` | Create or edit tasks locally and change status |
+| `panda create` / `panda edit` | Create or edit tasks locally and change status; edit customer/internal release notes |
 | `panda diff` | Review pending changes and conflicts; `diff --json` emits structured changes |
-| `panda view <task>` | Display task metadata, description, files, and notes |
+| `panda view <task>` | Display task metadata, description, release notes, files, and notes |
 | `panda files <task>` | List task file references, stage uploads, and download files on demand |
 | `panda labels` / `panda packages` | Manage project catalogs locally |
 | `panda link <task>` | Print a verified Markdown link to a synced task |

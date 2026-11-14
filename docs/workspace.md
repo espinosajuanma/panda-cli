@@ -23,7 +23,9 @@ Solutions; warnings and failures can be emitted as JSON with `--json`.
         state/
       tasks/
         {taskNumber-or-draft-N}/
+          customer-notes.md
           description.md
+          internal-notes.md
           metadata.json
           notes/
             {timestamp}-{authorName}.md
@@ -32,10 +34,17 @@ Solutions; warnings and failures can be emitted as JSON with `--json`.
 Configuration and workspace directories use private permissions where
 supported by the operating system. Mutating commands hold an exclusive lock in
 `.panda/workspace.lock` to prevent concurrent state changes. `metadata.json` stores task fields and
-relationships, including task file IDs and names; descriptions and notes are
-Markdown files. File binaries are not stored in the workspace. Uploads are
-staged as source-path references in sync state until `panda push`; downloads
-are fetched on demand into a temporary file unless an output path is supplied.
+relationships, including task file IDs and names; descriptions, release notes,
+and notes are Markdown files. File binaries are not stored in the workspace.
+Uploads are staged as source-path references in sync state until `panda push`;
+downloads are fetched on demand into a temporary file unless an output path is
+supplied.
+
+`customer-notes.md` maps to `releaseNotes.customerNotes` and
+`internal-notes.md` maps to `releaseNotes.internalNotes`. Both are available on
+any task, are converted to HTML when pushed, and are synchronized by `pull`,
+`push`, and `clean`. Edit them directly or with
+`panda edit <task> release-notes`; review changes with `panda diff`.
 
 The `.panda/state` directory stores remote baselines, staged actions, and remote
 task IDs. A locally created task uses the next `draft-N` ID until a successful
@@ -52,7 +61,7 @@ Solutions task numbers, a later draft may reuse those numbers. New tasks use
 
 Solutions tasks use the `dev.tasks` entity. Panda stores editable metadata such
 as title, type, priority, complexity, package, and labels, and tracks status,
-assignees, reviewers, and notes.
+assignees, reviewers, notes, and customer/internal release notes.
 
 `pull` compares fetched data with the last-synced baseline. Independent local and
 remote changes are merged; overlapping edits are reported as conflicts. Pull

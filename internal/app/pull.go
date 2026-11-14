@@ -96,16 +96,8 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 			if err := os.MkdirAll(filepath.Join(dir, "notes"), 0o700); err != nil {
 				return err
 			}
-			local = workspace.MetadataFromRemote(remote)
-			if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), local); err != nil {
-				return err
-			}
-			markdown, err := content.HTMLToMarkdown(stringField(remote, "description"))
-			if err != nil {
-				return fmt.Errorf("convert task %s description: %w", id, err)
-			}
-			if err := workspace.WriteFileAtomic(filepath.Join(dir, "description.md"), []byte(markdown), 0o600); err != nil {
-				return err
+			if err := writeRemoteToLocal(dir, remote); err != nil {
+				return fmt.Errorf("write task %s: %w", id, err)
 			}
 			state := workspace.State{Remote: cloneMap(remote)}
 			if err := syncRemoteNotes(dir, remote, state.StagedNotes, nil, nil); err != nil {
@@ -123,6 +115,9 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 			return fmt.Errorf("task %s has no sync baseline; run clean then pull: %w", id, err)
 		}
 		if sameTaskVersion(remote, state.Remote) {
+			if err := ensureReleaseNotesFiles(dir, remote); err != nil {
+				return err
+			}
 			updatePullStage(progress, 75, 95, taskIndex+1, len(tasks))
 			continue
 		}
@@ -186,9 +181,21 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 		if err := syncRemoteNotes(dir, remote, state.StagedNotes, localNoteNames, state.Remote); err != nil {
 			return err
 		}
+		releaseConflicts, err := releaseNoteConflicts(dir, state.Remote, remote)
+		if err != nil {
+			return err
+		}
+		if len(releaseConflicts) > 0 {
+			conflictCount += len(releaseConflicts)
+			reports = append(reports, fmt.Sprintf("%s task %s: %s", colorText(out, "1;31", "Conflict"), taskLabel(local), strings.Join(releaseConflicts, ", ")))
+		}
+		if err := syncReleaseNotesFromPull(dir, state.Remote, remote, releaseConflicts); err != nil {
+			return err
+		}
 		baseline := state.Remote
 		state.Remote = advanceBaseline(baseline, remote, fields, descriptionConflict)
 		state.Remote = advanceNotesBaseline(baseline, state.Remote, noteConflicts)
+		state.Remote = advanceReleaseNotesBaseline(baseline, state.Remote, releaseConflicts)
 		if err := ws.WriteState(id, state); err != nil {
 			return err
 		}

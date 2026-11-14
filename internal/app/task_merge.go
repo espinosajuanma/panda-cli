@@ -68,6 +68,12 @@ func taskConflicts(local, baseline, remote map[string]any, dir string) []string 
 			conflicts = append(conflicts, filepath.ToSlash(filepath.Join("notes", filename)))
 		}
 	}
+	releaseConflicts, err := releaseNoteConflicts(dir, baseline, remote)
+	if err != nil {
+		conflicts = append(conflicts, releaseCustomerNotesFile, releaseInternalNotesFile)
+	} else {
+		conflicts = append(conflicts, releaseConflicts...)
+	}
 	return conflicts
 }
 

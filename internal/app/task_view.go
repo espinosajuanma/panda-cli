@@ -23,10 +23,11 @@ import (
 )
 
 type taskViewOptions struct {
-	task          string
-	noDescription bool
-	noNotes       bool
-	json          bool
+	task           string
+	noDescription  bool
+	noNotes        bool
+	noReleaseNotes bool
+	json           bool
 }
 
 type taskViewRow struct {
@@ -41,10 +42,16 @@ type taskViewNote struct {
 }
 
 type taskViewJSON struct {
-	Task        map[string]any      `json:"task"`
-	Description *string             `json:"description,omitempty"`
-	Notes       *[]taskViewNote     `json:"notes,omitempty"`
-	Context     taskViewJSONContext `json:"context"`
+	Task         map[string]any        `json:"task"`
+	Description  *string               `json:"description,omitempty"`
+	ReleaseNotes *taskViewReleaseNotes `json:"releaseNotes,omitempty"`
+	Notes        *[]taskViewNote       `json:"notes,omitempty"`
+	Context      taskViewJSONContext   `json:"context"`
+}
+
+type taskViewReleaseNotes struct {
+	CustomerNotes string `json:"customerNotes"`
+	InternalNotes string `json:"internalNotes"`
 }
 
 type taskViewJSONContext struct {
@@ -93,17 +100,19 @@ func parseTaskViewOptions(args []string) (taskViewOptions, error) {
 			options.noDescription = true
 		case "--no-notes":
 			options.noNotes = true
+		case "--no-release-notes":
+			options.noReleaseNotes = true
 		case "--json":
 			options.json = true
 		default:
 			if strings.HasPrefix(arg, "-") || options.task != "" {
-				return taskViewOptions{}, errors.New("usage: panda view <taskNumber|draft-N> [--no-description] [--no-notes] [--json]")
+				return taskViewOptions{}, errors.New("usage: panda view <taskNumber|draft-N> [--no-description] [--no-notes] [--no-release-notes] [--json]")
 			}
 			options.task = arg
 		}
 	}
 	if options.task == "" {
-		return taskViewOptions{}, errors.New("usage: panda view <taskNumber|draft-N> [--no-description] [--no-notes] [--json]")
+		return taskViewOptions{}, errors.New("usage: panda view <taskNumber|draft-N> [--no-description] [--no-notes] [--no-release-notes] [--json]")
 	}
 	return options, nil
 }
@@ -137,6 +146,20 @@ func renderTaskView(ws *workspace.Workspace, dir string, metadata map[string]any
 			fmt.Fprintln(out, "No description.")
 		} else {
 			fmt.Fprintln(out, highlightMarkdown(out, string(description)))
+		}
+	}
+	if !options.noReleaseNotes {
+		localNotes, err := readLocalReleaseNotes(dir)
+		if err != nil {
+			return err
+		}
+		for _, field := range releaseNoteFields {
+			markdown := localNotes.markdown[field.name]
+			if !localNotes.exists[field.name] || strings.TrimSpace(markdown) == "" {
+				continue
+			}
+			fmt.Fprintf(out, "\n%s\n", colorText(colorTarget, "1;32", "## "+releaseNoteHeading(field.name)))
+			fmt.Fprintln(out, highlightMarkdown(out, markdown))
 		}
 	}
 	fmt.Fprintln(out, colorText(colorTarget, "1;32", "\n## Files"))
@@ -386,6 +409,16 @@ func renderTaskViewJSON(dir string, metadata map[string]any, state workspace.Sta
 		}
 		markdown := string(description)
 		document.Description = &markdown
+	}
+	if !options.noReleaseNotes {
+		localNotes, err := readLocalReleaseNotes(dir)
+		if err != nil {
+			return err
+		}
+		document.ReleaseNotes = &taskViewReleaseNotes{
+			CustomerNotes: localNotes.markdown["customerNotes"],
+			InternalNotes: localNotes.markdown["internalNotes"],
+		}
 	}
 	if !options.noNotes {
 		notes, err := readTaskViewNotes(dir, state)

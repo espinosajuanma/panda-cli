@@ -77,7 +77,10 @@ func writeRemoteToLocal(dir string, remote map[string]any) error {
 	if err != nil {
 		return err
 	}
-	return workspace.WriteFileAtomic(filepath.Join(dir, "description.md"), []byte(markdown), 0o600)
+	if err := workspace.WriteFileAtomic(filepath.Join(dir, "description.md"), []byte(markdown), 0o600); err != nil {
+		return err
+	}
+	return writeReleaseNotesToLocal(dir, remote)
 }
 
 func buildMyNotesPayload(ctx context.Context, client *solutions.Client, dir string, remote, baseline map[string]any) ([]map[string]any, error) {

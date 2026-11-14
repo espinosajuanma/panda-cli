@@ -142,9 +142,9 @@ task pushes.
 Shows pending task and project-catalog changes. An optional task identifier
 limits output to one task.
 
-- Default output summarizes changed fields and descriptions.
-- `--verbose` shows changed Markdown description and note lines with `-` and `+`
-  prefixes, and shows staged file upload paths.
+- Default output summarizes changed fields, descriptions, and release notes.
+- `--verbose` shows changed Markdown description, release note, and note lines
+  with `-` and `+` prefixes, and shows staged file upload paths.
 - `--summary` prints counts of edited, discarded, and new tasks.
 - `--json`: emit a versioned structured report of task and catalog changes,
   including summary counts. Combine with `--verbose` to include Markdown line
@@ -152,10 +152,10 @@ limits output to one task.
 - Long terminal output uses `$PAGER`, defaulting to `less -FRX`; leaving the
   pager keeps its output visible. Piped output is printed directly.
 
-Diff JSON uses `schemaVersion: 1`. Task changes identify fields, description and
-note edits, staged notes, and staged files. Verbose Markdown changes include
-`lines` entries with `marker` and `text`; non-verbose output omits line details.
-JSON is written directly without paging or color.
+Diff JSON uses `schemaVersion: 1`. Task changes identify fields, description,
+release note, and note edits, staged notes, and staged files. Verbose Markdown
+changes include `lines` entries with `marker` and `text`; non-verbose output
+omits line details. JSON is written directly without paging or color.
 
 ```json
 {
@@ -360,6 +360,9 @@ Other edit selectors:
 - `panda edit <task> package [name|none]` selects or clears a package.
 - `panda edit <task> assignees [member ...|none]` selects synced eligible
   members by name, email, or ID; names accept normalized partial matches.
+- `panda edit <task> release-notes [customer|internal]` opens
+  `customer-notes.md` and `internal-notes.md` in `$EDITOR`, or only the selected
+  file. Release notes are Markdown locally and HTML in Solutions.
 - `panda edit <task> json` opens `metadata.json` in `$EDITOR`.
 - Press `e` when prompted to open `description.md` in `$EDITOR`.
 
@@ -414,10 +417,11 @@ panda assign --status released --type release
 panda push
 ```
 
-### `panda view <taskNumber|draft-N> [--no-description] [--no-notes] [--json]`
+### `panda view <taskNumber|draft-N> [--no-description] [--no-notes] [--no-release-notes] [--json]`
 
 Displays task metadata in an aligned table, followed by the local Markdown
-description, attached file references, and notes. The metadata includes creator,
+description, customer/internal release notes when present, attached file
+references, and notes. The metadata includes creator,
 creation time, verified task link, and local sync status when available. The
 active project is implicit in the selected workspace and is not repeated in the
 metadata table. Released tasks also show the release they belong to.
@@ -429,13 +433,15 @@ Options:
 
 - `--no-description`: omit the Markdown description section.
 - `--no-notes`: omit the notes section.
-- `--json`: emit structured JSON with task metadata, Markdown description, notes,
-  and sync context. JSON output is not paged. The suppression flags also omit
-  their corresponding JSON fields.
+- `--no-release-notes`: omit customer and internal release notes.
+- `--json`: emit structured JSON with task metadata, Markdown description,
+  release notes, notes, and sync context. JSON output is not paged. The
+  suppression flags also omit their corresponding JSON fields.
 
 ```sh
 panda view 12345
 panda view 12345 --no-notes
+panda view 12345 --no-release-notes
 panda view 12345 --json
 ```
 

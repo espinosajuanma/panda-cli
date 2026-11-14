@@ -340,6 +340,9 @@ func createTaskWithOptions(ws *workspace.Workspace, projectID, projectName strin
 	if err := workspace.WriteFileAtomic(filepath.Join(dir, "description.md"), description, 0o600); err != nil {
 		return err
 	}
+	if err := writeReleaseNotesToLocal(dir, nil); err != nil {
+		return err
+	}
 	if err := ws.WriteState(draftID, workspace.State{LocalCreated: true}); err != nil {
 		return err
 	}
