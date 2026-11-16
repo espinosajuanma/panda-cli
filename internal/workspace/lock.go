@@ -12,7 +12,14 @@ type Lock struct {
 
 // LockWorkspace obtains an exclusive process lock for mutations to a workspace.
 func (w *Workspace) LockWorkspace() (*Lock, error) {
-	path := filepath.Join(w.Root, ".panda", "workspace.lock")
+	dir := filepath.Join(w.Root, ".panda")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, fmt.Errorf("prepare workspace lock directory: %w", err)
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return nil, fmt.Errorf("protect workspace lock directory: %w", err)
+	}
+	path := filepath.Join(dir, "workspace.lock")
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open workspace lock: %w", err)

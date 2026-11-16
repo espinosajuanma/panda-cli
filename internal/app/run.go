@@ -10,6 +10,7 @@ import (
 
 	"github.com/espinosajuanma/panda-cli/internal/config"
 	"github.com/espinosajuanma/panda-cli/internal/solutions"
+	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
 func Run(args []string, in io.Reader, out, errOut io.Writer) error {
@@ -77,16 +78,20 @@ func RunContext(ctx context.Context, args []string, in io.Reader, out, errOut io
 		if !commandNeedsWorkspace(command) {
 			return unknownCommandError(command)
 		}
-		ws, err := projectWorkspace(cfg)
-		if err != nil {
-			return err
-		}
+		var ws *workspace.Workspace
 		if commandMutatesWorkspace(command, args) {
-			lock, err := ws.LockWorkspace()
+			lockedWorkspace, lock, err := lockProjectWorkspace(cfg)
 			if err != nil {
 				return err
 			}
 			defer lock.Close()
+			ws = lockedWorkspace
+		} else {
+			var err error
+			ws, err = projectWorkspace(cfg)
+			if err != nil {
+				return err
+			}
 		}
 		switch command {
 		case "list":

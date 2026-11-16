@@ -19,11 +19,15 @@ import (
 
 var editableFields = task.EditableFields
 
-func projectWorkspace(cfg *config.Config) (*workspace.Workspace, error) {
+func projectWorkspaceRoot(cfg *config.Config) (string, error) {
 	if cfg.Project == nil || cfg.Project.ID == "" || cfg.Project.Name == "" {
-		return nil, errors.New("no project selected; run `panda config set project <name>` first")
+		return "", errors.New("no project selected; run `panda config set project <name>` first")
 	}
-	root, err := workspace.WorkspacePath(cfg.Project.Name)
+	return workspace.WorkspacePath(cfg.Project.Name)
+}
+
+func projectWorkspace(cfg *config.Config) (*workspace.Workspace, error) {
+	root, err := projectWorkspaceRoot(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -32,6 +36,23 @@ func projectWorkspace(cfg *config.Config) (*workspace.Workspace, error) {
 		return nil, err
 	}
 	return ws, nil
+}
+
+func lockProjectWorkspace(cfg *config.Config) (*workspace.Workspace, *workspace.Lock, error) {
+	root, err := projectWorkspaceRoot(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	ws := workspace.New(root)
+	lock, err := ws.LockWorkspace()
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := ws.Ensure(); err != nil {
+		_ = lock.Close()
+		return nil, nil, err
+	}
+	return ws, lock, nil
 }
 
 func requireLogin(cfg *config.Config) error {
