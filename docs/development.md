@@ -10,15 +10,18 @@ Run the local check suite from the repository root:
 
 ```sh
 make check
+make staticcheck
 go test -race ./...
-make coverage
+make coverage-check
 ```
 
 `make coverage` writes `coverage.out` with cross-package attribution via
-`-coverpkg=./...`. `make check` verifies formatting, runs `go vet ./...`, checks package layering
+`-coverpkg=./...`; `make coverage-check` also enforces a 70% total threshold.
+`make check` verifies formatting, runs `go vet ./...`, checks package layering
 with `make arch-check`, runs `go test ./...`, and runs `go build ./...`. Format
-Go files with `make fmt`. The architecture check lives in `internal/archtest`
-and can be run directly with `go test ./internal/archtest`.
+Go files with `make fmt`. Run Staticcheck locally with `make staticcheck`; CI
+runs the same pinned version. The architecture check lives in
+`internal/archtest` and can be run directly with `go test ./internal/archtest`.
 
 For a local cross-platform compile smoke test, run:
 

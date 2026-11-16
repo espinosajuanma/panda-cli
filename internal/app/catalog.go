@@ -44,10 +44,6 @@ func catalogRecordName(kind catalogKind, record map[string]any) string {
 	return catdomain.RecordName(catdomain.Kind(kind), record)
 }
 
-func mergeCatalogRecords(kind catalogKind, local, baseline, remote []map[string]any) ([]map[string]any, []map[string]any, []string) {
-	return catdomain.MergeRecords(kind, local, baseline, remote)
-}
-
 func catalogRecordChanged(kind catalogKind, record, baseline map[string]any) bool {
 	return catdomain.RecordChanged(kind, record, baseline)
 }

@@ -25,7 +25,3 @@ func projectCatalogDiff(ws *workspace.Workspace) ([]diffCatalogChange, int, int,
 func pullProjectCatalogs(ctx context.Context, client *solutions.Client, ws *workspace.Workspace, project *config.Project, out io.Writer) (int, error) {
 	return syncpkg.PullProjectCatalogs(ctx, client, ws, project, out)
 }
-
-func dedupeCatalogRecords(records []map[string]any) []map[string]any {
-	return syncpkg.DedupeCatalogRecords(records)
-}

@@ -1,4 +1,4 @@
-package app
+package sync
 
 import (
 	"context"
@@ -12,8 +12,9 @@ import (
 	"strings"
 	"testing"
 
+	catdomain "github.com/espinosajuanma/panda-cli/internal/catalog"
 	"github.com/espinosajuanma/panda-cli/internal/config"
-	"github.com/espinosajuanma/panda-cli/internal/content"
+	"github.com/espinosajuanma/panda-cli/internal/jsonutil"
 	"github.com/espinosajuanma/panda-cli/internal/solutions"
 	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
@@ -74,7 +75,7 @@ func TestPullThenPushMergesIndependentRemoteAndLocalChanges(t *testing.T) {
 	}
 	client := solutions.NewClient(server.URL, "test-token")
 	project := &config.Project{ID: "project-1", Name: "Alpha"}
-	if err := pull(context.Background(), client, ws, project, &strings.Builder{}); err != nil {
+	if err := Pull(context.Background(), client, ws, project, &strings.Builder{}); err != nil {
 		t.Fatal(err)
 	}
 	dir := ws.TaskPath("14")
@@ -89,14 +90,14 @@ func TestPullThenPushMergesIndependentRemoteAndLocalChanges(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "description.md"), []byte("Updated **body**"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := push(context.Background(), client, ws, project, &strings.Builder{}); err != nil {
+	if err := Push(context.Background(), client, ws, project, &strings.Builder{}); err != nil {
 		t.Fatal(err)
 	}
 	if remote["title"] != "Locally edited" || remote["status"] != "inProgress" {
 		t.Fatalf("independent updates were not merged: %#v", remote)
 	}
-	if !strings.Contains(stringField(remote, "description"), "Updated ") || putCount != 1 {
-		t.Fatalf("local description was not pushed: puts=%d, description=%q", putCount, stringField(remote, "description"))
+	if !strings.Contains(jsonutil.StringField(remote, "description"), "Updated ") || putCount != 1 {
+		t.Fatalf("local description was not pushed: puts=%d, description=%q", putCount, jsonutil.StringField(remote, "description"))
 	}
 	if !reflect.DeepEqual(remote["package"], map[string]any{"id": "package-1"}) {
 		t.Fatalf("unmodified API fields were not preserved: %#v", remote["package"])
@@ -137,14 +138,14 @@ func TestPullSkipsTasksWithUnchangedVersion(t *testing.T) {
 	client := solutions.NewClient(server.URL, "token")
 	project := &config.Project{ID: "project-1", Name: "Alpha"}
 	var output strings.Builder
-	if err := pull(context.Background(), client, ws, project, &output); err != nil {
+	if err := Pull(context.Background(), client, ws, project, &output); err != nil {
 		t.Fatal(err)
 	}
 	dir := ws.TaskPath("51")
 
 	remote["title"] = "Changed without version bump"
 	output.Reset()
-	if err := pull(context.Background(), client, ws, project, &output); err != nil {
+	if err := Pull(context.Background(), client, ws, project, &output); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(output.String(), "0 updated") {
@@ -161,7 +162,7 @@ func TestPullSkipsTasksWithUnchangedVersion(t *testing.T) {
 	remote["title"] = "Changed with version bump"
 	remote["version"] = float64(2)
 	output.Reset()
-	if err := pull(context.Background(), client, ws, project, &output); err != nil {
+	if err := Pull(context.Background(), client, ws, project, &output); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(output.String(), "1 updated") {
@@ -184,35 +185,35 @@ func TestSameTaskVersionStillChecksLabelAndPackageRelationships(t *testing.T) {
 		"version": float64(4), "labels": []any{map[string]any{"id": "label-1", "label": "Old label"}},
 		"package": map[string]any{"id": "package-1", "label": "Old package"}, "files": []any{},
 	}
-	remote := cloneMap(baseline)
-	if !sameTaskVersion(remote, baseline) {
+	remote := jsonutil.CloneMap(baseline)
+	if !SameTaskVersion(remote, baseline) {
 		t.Fatal("unchanged task version and relations should be skippable")
 	}
 	remote["labels"] = []any{map[string]any{"id": "label-2", "label": "New label"}}
-	if sameTaskVersion(remote, baseline) {
+	if SameTaskVersion(remote, baseline) {
 		t.Fatal("changed labels should be pulled even without a task version bump")
 	}
-	remote = cloneMap(baseline)
+	remote = jsonutil.CloneMap(baseline)
 	remote["package"] = map[string]any{"id": "package-2", "label": "New package"}
-	if sameTaskVersion(remote, baseline) {
+	if SameTaskVersion(remote, baseline) {
 		t.Fatal("changed package should be pulled even without a task version bump")
 	}
-	remote = cloneMap(baseline)
+	remote = jsonutil.CloneMap(baseline)
 	remote["files"] = []any{map[string]any{"file": map[string]any{"id": "file-1"}}}
-	if sameTaskVersion(remote, baseline) {
+	if SameTaskVersion(remote, baseline) {
 		t.Fatal("changed files should be pulled even without a task version bump")
 	}
 }
 
 func TestPullProgressBarFormattingAndNonTerminalOutput(t *testing.T) {
-	if got, want := formatPullProgress(0), "Pulling project data: [--------------------] 0%"; got != want {
+	if got, want := FormatPullProgress(0), "Pulling project data: [--------------------] 0%"; got != want {
 		t.Fatalf("initial progress bar = %q, want %q", got, want)
 	}
-	if got, want := formatPullProgress(50), "Pulling project data: [##########----------] 50%"; got != want {
+	if got, want := FormatPullProgress(50), "Pulling project data: [##########----------] 50%"; got != want {
 		t.Fatalf("progress bar = %q, want %q", got, want)
 	}
 	var output strings.Builder
-	progress := newPullProgress(&output)
+	progress := NewPullProgress(&output)
 	progress.Update(0)
 	progress.Update(50)
 	progress.Finish()
@@ -223,7 +224,7 @@ func TestPullProgressBarFormattingAndNonTerminalOutput(t *testing.T) {
 
 func TestProjectCatalogAndMemberSyncDeduplicatesByIdentity(t *testing.T) {
 	label := map[string]any{"id": "label-1", "name": "Security"}
-	labels := dedupeCatalogRecords([]map[string]any{
+	labels := DedupeCatalogRecords([]map[string]any{
 		label,
 		{"id": "label-1", "name": "Duplicate"},
 		{"id": "label-2", "name": "Support"},
@@ -231,13 +232,13 @@ func TestProjectCatalogAndMemberSyncDeduplicatesByIdentity(t *testing.T) {
 	if len(labels) != 2 {
 		t.Fatalf("catalog records were not deduplicated by ID: %#v", labels)
 	}
-	merged, _, _ := mergeCatalogRecords(labelCatalog, []map[string]any{label}, nil, labels)
+	merged, _, _ := catdomain.MergeRecords(catdomain.Labels, []map[string]any{label}, nil, labels)
 	if len(merged) != 2 {
 		t.Fatalf("catalog merge duplicated an existing project record: %#v", merged)
 	}
 
 	member := map[string]any{"user": map[string]any{"id": "user-1", "label": "Ada"}, "role": "developer"}
-	members := dedupeProjectMembers([]map[string]any{
+	members := DedupeProjectMembers([]map[string]any{
 		member,
 		{"user": map[string]any{"id": "user-1", "label": "Ada"}, "role": "developer"},
 		{"user": map[string]any{"id": "user-1", "label": "Ada"}, "role": "qa"},
@@ -245,54 +246,4 @@ func TestProjectCatalogAndMemberSyncDeduplicatesByIdentity(t *testing.T) {
 	if len(members) != 2 {
 		t.Fatalf("project members were not deduplicated by user ID and role: %#v", members)
 	}
-}
-
-func listTask(id string, number float64, status, rank string, complexity any, title, taskType string) map[string]any {
-	return map[string]any{
-		"id": id, "number": number, "title": title, "type": taskType,
-		"priority": "medium", "complexity": complexity, "status": status, "rank": rank,
-		"description": "", "project": map[string]any{"id": "project-1"},
-		"labels": []any{}, "assignees": []any{}, "reviewers": []any{}, "notes": []any{},
-	}
-}
-
-func makeSyncedTask(t *testing.T, remote map[string]any) (*workspace.Workspace, string) {
-	t.Helper()
-	ws := workspace.New(t.TempDir())
-	if err := ws.Ensure(); err != nil {
-		t.Fatal(err)
-	}
-	dir := addSyncedTask(t, ws, remote)
-	return ws, dir
-}
-
-func addSyncedTask(t *testing.T, ws *workspace.Workspace, remote map[string]any) string {
-	t.Helper()
-	dir := ws.TaskPath(workspace.DirectoryName(remote))
-	if err := os.MkdirAll(filepath.Join(dir, "notes"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := workspace.WriteMap(filepath.Join(dir, "metadata.json"), workspace.MetadataFromRemote(remote)); err != nil {
-		t.Fatal(err)
-	}
-	markdown, err := content.HTMLToMarkdown(stringField(remote, "description"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := workspace.WriteFileAtomic(filepath.Join(dir, "description.md"), []byte(markdown), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := writeReleaseNotesToLocal(dir, remote); err != nil {
-		t.Fatal(err)
-	}
-	id := stringField(remote, "id")
-	if err := ws.WriteState(id, workspace.State{Remote: cloneMap(remote)}); err != nil {
-		t.Fatal(err)
-	}
-	return dir
-}
-
-func marshalForTest(value any) string {
-	data, _ := json.Marshal(value)
-	return string(data)
 }

@@ -61,6 +61,8 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
       - run: go test -race -coverpkg=./... -coverprofile=coverage.out ./...
+      - shell: bash
+        run: go tool cover -func=coverage.out | awk '/^total:/ {gsub(/%/, "", $3); if ($3+0 < 70) {print "coverage below 70%"; exit 1}}'
       - uses: actions/upload-artifact@v7
         with:
           name: go-coverage
@@ -69,7 +71,6 @@ jobs:
 
   static-analysis:
     needs: linux
-    if: github.event_name == 'pull_request' || github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:

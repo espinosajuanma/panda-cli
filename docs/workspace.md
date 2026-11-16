@@ -32,7 +32,10 @@ Solutions; warnings and failures can be emitted as JSON with `--json`.
 ```
 
 Configuration and workspace directories use private permissions where
-supported by the operating system. Mutating commands hold an exclusive lock in
+supported by the operating system. `config.json` stores the Solutions session
+token in plain text with owner-only permissions; treat the configuration
+directory as a secret and run `panda logout` on shared machines. Mutating
+commands hold an exclusive lock in
 `.panda/workspace.lock` to prevent concurrent state changes. `metadata.json` stores task fields and
 relationships, including task file IDs and names; descriptions, release notes,
 and notes are Markdown files. File binaries are not stored in the workspace.
