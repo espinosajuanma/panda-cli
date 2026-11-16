@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Go 1.26.10 or newer (as specified in `go.mod`).
+- Go 1.26.11 or newer (as specified in `go.mod`).
 
 ## Local development
 

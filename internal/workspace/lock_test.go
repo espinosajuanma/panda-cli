@@ -3,6 +3,7 @@ package workspace
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -18,7 +19,7 @@ func TestLockWorkspaceCreatesPandaDirectoryWithoutInitializingTasks(t *testing.T
 	if err != nil {
 		t.Fatalf("lock directory missing: %v", err)
 	}
-	if info.Mode().Perm() != 0o700 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o700 {
 		t.Fatalf("lock directory mode = %o, want 700", info.Mode().Perm())
 	}
 	if _, err := os.Stat(ws.TasksRoot()); !os.IsNotExist(err) {

@@ -18,7 +18,7 @@ edit with your preferred tools.
 
 ## Requirements
 
-- Go 1.26.10 or newer.
+- Go 1.26.11 or newer.
 - A Solutions account and access to a project.
 
 ## Installation
