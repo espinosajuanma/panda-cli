@@ -206,7 +206,8 @@ panda estimate new --all
 Lists local tasks grouped in workflow order and sorted by their fetched rank.
 The default statuses are `new`, `toDo`, `inProgress`, `inReview`, and
 `completed`; `staging`, `released`, and `discarded` are hidden by default.
-Run `panda pull` to refresh local task data and rank values.
+Run `panda pull` to refresh local task data and rank values. `list` requires an
+existing workspace and does not initialize or migrate workspace files.
 
 On terminals, Panda hides lower-priority columns as needed to fit the available
 width and wraps long titles. `--wide` forces the full table. Piped output always
