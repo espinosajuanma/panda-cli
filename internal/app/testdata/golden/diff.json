@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "tasks": [
+    {
+      "task": {
+        "assignees": [],
+        "id": "golden-task",
+        "labels": [],
+        "number": 7,
+        "priority": "high",
+        "project": {
+          "id": "project-1"
+        },
+        "reviewers": [],
+        "status": "toDo",
+        "title": "Golden task",
+        "type": "feature"
+      },
+      "new": false,
+      "discarded": false,
+      "changes": [
+        {
+          "kind": "field",
+          "field": "priority",
+          "before": "medium",
+          "after": "high"
+        },
+        {
+          "kind": "description",
+          "path": "description.md",
+          "updated": true
+        }
+      ]
+    }
+  ],
+  "catalogs": {
+    "labels": [],
+    "packages": []
+  },
+  "summary": {
+    "edited": 1,
+    "discarded": 0,
+    "new": 0,
+    "labels": 0,
+    "packages": 0,
+    "changeCount": 2
+  }
+}

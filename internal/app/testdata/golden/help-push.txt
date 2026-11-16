@@ -1,0 +1,34 @@
+PANDA-PUSH(1)                   Panda CLI Manual                   PANDA-PUSH(1)
+
+NAME
+    panda push - apply local changes to Solutions
+
+SYNOPSIS
+    panda push [taskNumber|draft-N ...] [--json]
+
+DESCRIPTION
+    Check for remote conflicts, then send local task edits and staged actions to
+    Solutions. Without selectors, push processes every task; with selectors, it
+    processes only those tasks. Pending project catalogs are still synchronized.
+    Local drafts can be pushed without a sync-state file; synced tasks require a
+    baseline. --json emits per-task/catalog outcomes to stdout and still returns
+    non-zero for failures. Requires a selected project and a successful login.
+
+ARGUMENTS
+    taskNumber|draft-N          Optional task selectors; repeat to push only those
+                                tasks. Legacy local-* IDs are also accepted.
+
+OPTIONS
+    --json                      Emit a versioned JSON report. Per-task failures are
+                                included in the report; the command still exits
+                                non-zero.
+
+EXAMPLES
+    panda diff --verbose
+    panda push
+    panda push draft-1
+    panda push draft-1 draft-3 --json
+
+SEE ALSO
+    panda-diff(1), panda-pull(1)
+

@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "groups": [
+    {
+      "status": "toDo",
+      "tasks": [
+        {
+          "task": {
+            "assignees": [],
+            "complexity": "m",
+            "id": "golden-todo",
+            "labels": [],
+            "number": 12,
+            "priority": "medium",
+            "project": {
+              "id": "project-1"
+            },
+            "rank": "b",
+            "reviewers": [],
+            "status": "toDo",
+            "title": "Golden todo",
+            "type": "feature"
+          },
+          "storyPoints": 3,
+          "hours": 12,
+          "package": null,
+          "labels": [],
+          "assignees": [],
+          "reviewers": []
+        }
+      ],
+      "totals": {
+        "tasks": 1,
+        "storyPoints": 3,
+        "hours": 12
+      }
+    },
+    {
+      "status": "inProgress",
+      "tasks": [
+        {
+          "task": {
+            "assignees": [],
+            "complexity": "s",
+            "id": "golden-progress",
+            "labels": [],
+            "number": 11,
+            "priority": "medium",
+            "project": {
+              "id": "project-1"
+            },
+            "rank": "a",
+            "reviewers": [],
+            "status": "inProgress",
+            "title": "Golden progress",
+            "type": "bug"
+          },
+          "storyPoints": 2,
+          "hours": 8,
+          "package": null,
+          "labels": [],
+          "assignees": [],
+          "reviewers": []
+        }
+      ],
+      "totals": {
+        "tasks": 1,
+        "storyPoints": 2,
+        "hours": 8
+      }
+    }
+  ],
+  "totals": {
+    "tasks": 2,
+    "storyPoints": 5,
+    "hours": 20
+  },
+  "assigneeTotals": [
+    {
+      "assignee": "Unassigned",
+      "tasks": 2,
+      "storyPoints": 5,
+      "hours": 20
+    }
+  ]
+}

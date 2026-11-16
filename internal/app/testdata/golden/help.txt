@@ -1,0 +1,135 @@
+PANDA(1)                        Panda CLI Manual                        PANDA(1)
+
+NAME
+    panda - synchronize Solutions tasks with a local task workspace
+
+SYNOPSIS
+    panda [global options] <command> [arguments]
+
+DESCRIPTION
+    Panda pulls Solutions tasks into Markdown and JSON files, lets you edit them
+    locally, and publishes selected changes with push.
+    Use command-specific help for detailed syntax and options: panda <command>
+    --help or panda help <command>.
+
+COMMANDS
+    panda login [email]
+        Authenticate with Solutions and save a session.
+
+    panda logout
+        Clear the saved Solutions login session.
+
+    panda config set project <name>
+        Validate and select the active project.
+
+    panda config get project
+        Display the active project.
+
+    panda config set api-url <url>
+        Set the Solutions API base URL.
+
+    panda config get api-url
+        Display the Solutions API base URL.
+
+    panda path
+        Print the selected project's workspace path.
+
+    panda doctor [--json]
+        Inspect local configuration and workspace health without changing files.
+        Checks are local-only and read-only. Warnings are reported but failures
+        determine the exit status.
+
+    panda completion <bash|zsh|fish>
+        Print shell completion setup code.
+
+    panda labels [list|create|edit|delete]
+        Manage project labels locally.
+
+    panda packages [list|create|edit|delete]
+        Manage project packages (epics) locally.
+
+    panda list [status filters] [assignee/reviewer filters] [other filters] [--wide]
+    [--json]
+        List tasks with package, labels, and effort totals.
+        Status filters: --current, --staging, --released, --discarded, --all,
+        --status <status,...>.
+        Relationship filters: repeatable --assignee <member,...> and --reviewer
+        <member,...>; values within each filter match any member, and supplied
+        filters combine with AND. Use me or none.
+        Other filters: --no-complexity, --no-description, --no-package, --no-labels.
+        Output: --json emits a versioned JSON document without paging or terminal
+        formatting.
+
+    panda browse [list filters]
+        Browse local tasks interactively without changing the workspace.
+        Interactive and read-only; accepts the same task filters as list, except
+        --json.
+
+    panda estimate [status[,status...]] [--type <type,...>] [--all]
+        Quickly assign complexity to tasks in selected statuses and types.
+
+    panda pull
+        Fetch project tasks, catalogs, and members into the workspace.
+
+    panda diff [task] [--verbose|-v] [--summary|-s] [--json]
+        Review pending local changes.
+        Output: --json emits structured changes and summary counts; --verbose adds
+        Markdown line changes.
+
+    panda push [taskNumber|draft-N ...] [--json]
+        Publish all local edits or only selected tasks; project catalogs are
+        synchronized too.
+        Output: --json emits per-task and catalog outcomes; task failures remain
+        non-zero and are included in the document.
+
+    panda create [title] [task field options]
+        Create a task locally with interactive or noninteractive options.
+
+    panda edit <task> [task field options|labels ...|package ...|assignees
+    ...|release-notes ...|json]
+        Edit task fields, description, and release notes.
+
+    panda assign <task> <person[,person...]|none>|--status <status,...> [--priority
+    ...] [--type ...]
+        Assign people to a task or interactively assign filtered tasks.
+
+    panda link <task>
+        Print a canonical Markdown link to a verified synced task.
+
+    panda edit-note <task> <note-file> [--file <path>]
+        Edit one of your synced notes.
+
+    panda view <task> [--no-description] [--no-notes] [--no-release-notes] [--json]
+        Display a task's metadata, description, release notes, files, and notes.
+
+    panda files [<task>|upload|download]
+        List task file references, stage uploads, or download a file on demand.
+
+    panda add-note <task> [text] [--file <path>]
+        Stage a new task note.
+
+    panda discard <task> [note]
+        Stage a task discard and optional note.
+
+    panda clean [task] [--yes]
+        Discard local edits for one task or the project.
+
+    panda help [command ...]
+        Display this index or a command manual.
+
+GLOBAL OPTIONS
+    -h, --help                  Display the main manual. Append --help to a command
+                                for its manual page.
+
+ENVIRONMENT
+    EDITOR                      Select the editor used by edit, edit-note, and
+                                add-note.
+    PAGER                       Select the pager used for long output; less is
+                                configured to leave its output visible after exit.
+    PANDA_API_URL               Override the configured Solutions API base URL.
+
+FILES
+    Configuration and task files are stored under the operating system's user config
+    directory in panda-dashboard/. Run panda path to print the active workspace
+    path.
+
