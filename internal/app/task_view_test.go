@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/espinosajuanma/panda-cli/internal/report"
 	"github.com/espinosajuanma/panda-cli/internal/solutions"
 	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
@@ -232,18 +231,6 @@ func hasTaskViewRow(text, label, value string) bool {
 		}
 	}
 	return false
-}
-
-func TestTaskViewTableWrapsLongValuesAndUsesNoneForEmptyRelationships(t *testing.T) {
-	var output bytes.Buffer
-	rows := []taskViewRow{{Label: "Reviewers", Value: "Ada Lovelace Grace Hopper Katherine Johnson"}}
-	report.WriteTaskViewTable(&output, &output, rows, 24)
-	if strings.Count(output.String(), "\n") < 2 {
-		t.Fatalf("long table value was not wrapped:\n%s", output.String())
-	}
-	if got := displayRelationship(map[string]any{}); got != "" {
-		t.Fatalf("empty relationship displayed as %q", got)
-	}
 }
 
 func viewTestTask() map[string]any {

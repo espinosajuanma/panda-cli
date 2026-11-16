@@ -1,4 +1,4 @@
-.PHONY: fmt fmt-check vet arch-check test test-race build check
+.PHONY: fmt fmt-check vet arch-check test test-race coverage build check
 
 fmt:
 	gofmt -w ./cmd ./internal
@@ -17,6 +17,9 @@ test:
 
 test-race:
 	go test -race ./...
+
+coverage:
+	go test -coverpkg=./... -coverprofile=coverage.out ./...
 
 build:
 	go build ./...
