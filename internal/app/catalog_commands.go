@@ -25,6 +25,9 @@ func projectCatalogCommand(ws *workspace.Workspace, project *config.Project, kin
 	case "delete", "remove":
 		return deleteCatalogRecordLocal(ws, kind, args[1:], out)
 	default:
+		if err := suggestionError(string(kind)+" subcommand", args[0], []string{"list", "create", "edit", "delete"}); err != nil {
+			return err
+		}
 		return fmt.Errorf("usage: panda %s [list | create [name|title] [description] | edit <name|title> | delete <name|title>]", kind)
 	}
 }

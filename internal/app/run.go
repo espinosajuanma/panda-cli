@@ -75,10 +75,7 @@ func RunContext(ctx context.Context, args []string, in io.Reader, out, errOut io
 		return browseTasks(ws, args, cfg.Email, cfg.APIURL, in, out)
 	default:
 		if !commandNeedsWorkspace(command) {
-			if err := printHelp(errOut); err != nil {
-				return err
-			}
-			return fmt.Errorf("unknown command %q", command)
+			return unknownCommandError(command)
 		}
 		ws, err := projectWorkspace(cfg)
 		if err != nil {

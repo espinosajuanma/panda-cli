@@ -35,6 +35,9 @@ func filesCommandContext(ctx context.Context, ws *workspace.Workspace, args []st
 	case "download":
 		return downloadTaskFileContext(ctx, ws, args[1:], client, out)
 	default:
+		if err := suggestionError("files subcommand", args[0], []string{"upload", "download"}); err != nil {
+			return err
+		}
 		if len(args) != 1 {
 			return errors.New("usage: panda files <taskNumber|draft-N>")
 		}

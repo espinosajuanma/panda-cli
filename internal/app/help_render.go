@@ -67,7 +67,14 @@ func printCommandHelp(command string, out io.Writer) error {
 	command = strings.Join(strings.Fields(command), " ")
 	page, ok := manualPages[command]
 	if !ok {
-		return fmt.Errorf("no help available for %q", command)
+		candidates := make([]string, 0, len(manualPages))
+		for name := range manualPages {
+			candidates = append(candidates, name)
+		}
+		if match := closestMatch(command, candidates); match != "" {
+			return fmt.Errorf("no help available for %q; did you mean %q?", command, match)
+		}
+		return fmt.Errorf("no help available for %q; run `panda --help` for available commands", command)
 	}
 	return writeHelpOutput(out, func(out, colorTarget io.Writer) {
 		pageTitle := "PANDA-" + strings.ToUpper(strings.ReplaceAll(command, " ", "-"))

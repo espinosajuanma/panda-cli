@@ -40,6 +40,9 @@ func completionCommand(args []string, out io.Writer) error {
 			fmt.Fprintln(out, renderCompletion(fishCompletion))
 			return nil
 		}
+		if err := suggestionError("completion shell", args[0], []string{"bash", "zsh", "fish"}); err != nil {
+			return err
+		}
 	}
 	return errors.New("usage: panda completion <bash|zsh|fish>")
 }
@@ -162,6 +165,20 @@ func configCommand(ctx context.Context, cfg *config.Config, client *solutions.Cl
 		}
 		fmt.Fprintf(out, "Selected project %s (%s).\n", project.Name, project.ID)
 		return nil
+	}
+	if len(args) > 0 {
+		switch args[0] {
+		case "get", "set":
+			if len(args) > 1 {
+				if err := suggestionError("config key", args[1], []string{"project", "api-url"}); err != nil {
+					return err
+				}
+			}
+		default:
+			if err := suggestionError("config command", args[0], []string{"get", "set"}); err != nil {
+				return err
+			}
+		}
 	}
 	return errors.New("usage: panda config get project|api-url | panda config set project <name> | panda config set api-url <url>")
 }

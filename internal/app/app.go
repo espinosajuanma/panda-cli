@@ -152,6 +152,9 @@ func editTask(ws *workspace.Workspace, args []string, in io.Reader, out io.Write
 			}
 			return promptDescriptionEditor(in, out, dir)
 		default:
+			if err := suggestionError("edit selector", args[1], []string{"labels", "package", "assignees", "release-notes", "json"}); err != nil {
+				return err
+			}
 			return errors.New("field selectors are `labels`, `package`, `assignees`, `release-notes`, and `json`")
 		}
 	}
