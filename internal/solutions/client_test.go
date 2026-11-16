@@ -7,7 +7,15 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestHTTPClientFallbackHasTimeout(t *testing.T) {
+	client := (&Client{}).httpClient()
+	if client.Timeout != 45*time.Second {
+		t.Fatalf("fallback client timeout = %v, want 45s", client.Timeout)
+	}
+}
 
 func TestLoginSendsCredentials(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

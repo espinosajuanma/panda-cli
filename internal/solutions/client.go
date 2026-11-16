@@ -383,7 +383,7 @@ func (c *Client) httpClient() *http.Client {
 	if c.HTTP != nil {
 		return c.HTTP
 	}
-	return http.DefaultClient
+	return fallbackHTTPClient
 }
 
 func (c *Client) responseError(method, path, status string, data []byte) error {
@@ -481,6 +481,8 @@ func (c *Client) request(ctx context.Context, method, path string, body, output 
 }
 
 const maxRequestAttempts = 3
+
+var fallbackHTTPClient = &http.Client{Timeout: 45 * time.Second}
 
 func (c *Client) do(request *http.Request, retry bool) (*http.Response, error) {
 	client := c.httpClient()
