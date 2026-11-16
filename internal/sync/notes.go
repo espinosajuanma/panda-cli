@@ -148,11 +148,14 @@ func PushStagedNotes(ctx context.Context, client *solutions.Client, ws *workspac
 	id := jsonutil.StringField(local, "id")
 	for len(state.StagedNotes) > 0 {
 		filename := state.StagedNotes[0]
-		markdown, err := os.ReadFile(filepath.Join(dir, "notes", filename))
+		markdown, exists, err := workspace.ReadNoteFile(dir, filename)
 		if err != nil {
 			return state, err
 		}
-		html, err := content.MarkdownToHTML(string(markdown))
+		if !exists {
+			return state, fmt.Errorf("read staged note %q: %w", filename, os.ErrNotExist)
+		}
+		html, err := content.MarkdownToHTML(markdown)
 		if err != nil {
 			return state, err
 		}
@@ -172,7 +175,7 @@ func PushStagedNotes(ctx context.Context, client *solutions.Client, ws *workspac
 		if err := SyncRemoteNotes(dir, updated, state.StagedNotes, nil, previous); err != nil {
 			return state, err
 		}
-		_ = os.Remove(filepath.Join(dir, "notes", filename))
+		_ = workspace.RemoveNoteFile(dir, filename)
 		if err := ws.WriteState(key, state); err != nil {
 			return state, err
 		}
@@ -254,15 +257,15 @@ func LocalNoteChanges(dir string, baseline map[string]any) (map[string]string, e
 	}
 	changed := make(map[string]string)
 	for _, note := range notes {
-		data, err := os.ReadFile(filepath.Join(dir, "notes", note.Filename))
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
+		data, exists, err := workspace.ReadNoteFile(dir, note.Filename)
 		if err != nil {
 			return nil, err
 		}
-		if string(data) != note.Markdown {
-			changed[note.Filename] = string(data)
+		if !exists {
+			continue
+		}
+		if data != note.Markdown {
+			changed[note.Filename] = data
 		}
 	}
 	return changed, nil
@@ -331,11 +334,10 @@ func SyncRemoteNotes(dir string, remote map[string]any, stagedNotes, preservedNo
 		preserved[filename] = true
 	}
 	for _, note := range notes {
-		path := filepath.Join(dir, "notes", note.Filename)
 		if staged[note.Filename] || preserved[note.Filename] {
 			continue
 		}
-		if err := workspace.WriteFileAtomic(path, []byte(note.Markdown), 0o600); err != nil {
+		if err := workspace.WriteNoteFile(dir, note.Filename, note.Markdown); err != nil {
 			return err
 		}
 	}
@@ -351,7 +353,7 @@ func SyncRemoteNotes(dir string, remote map[string]any, stagedNotes, preservedNo
 		if current[note.Filename] || staged[note.Filename] || preserved[note.Filename] {
 			continue
 		}
-		if err := os.Remove(filepath.Join(dir, "notes", note.Filename)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := workspace.RemoveNoteFile(dir, note.Filename); err != nil {
 			return err
 		}
 	}

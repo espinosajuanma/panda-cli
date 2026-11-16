@@ -257,25 +257,17 @@ func formatTaskCreatedAt(value any) string {
 }
 
 func readTaskViewNotes(dir string, state workspace.State) ([]taskViewNote, error) {
-	notesDir := filepath.Join(dir, "notes")
-	entries, err := os.ReadDir(notesDir)
-	if err != nil && !os.IsNotExist(err) {
+	files, err := workspace.TaskNoteFiles(dir)
+	if err != nil {
 		return nil, err
 	}
 	staged := make(map[string]bool, len(state.StagedNotes))
 	for _, filename := range state.StagedNotes {
 		staged[filename] = true
 	}
-	notes := make([]taskViewNote, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".md" {
-			continue
-		}
-		body, err := os.ReadFile(filepath.Join(notesDir, entry.Name()))
-		if err != nil {
-			return nil, err
-		}
-		notes = append(notes, taskViewNote{Filename: entry.Name(), Markdown: string(body), Staged: staged[entry.Name()]})
+	notes := make([]taskViewNote, 0, len(files))
+	for _, file := range files {
+		notes = append(notes, taskViewNote{Filename: file.Filename, Markdown: file.Markdown, Staged: staged[file.Filename]})
 	}
 	return notes, nil
 }

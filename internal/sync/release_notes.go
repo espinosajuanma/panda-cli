@@ -1,10 +1,7 @@
 package sync
 
 import (
-	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"slices"
 
 	"github.com/espinosajuanma/panda-cli/internal/content"
@@ -70,7 +67,7 @@ func WriteReleaseNotesToLocal(dir string, remote map[string]any) error {
 		return err
 	}
 	for _, field := range ReleaseNoteFields {
-		if err := workspace.WriteFileAtomic(filepath.Join(dir, field.Filename), []byte(values[field.Name]), 0o600); err != nil {
+		if err := workspace.WriteTextFile(dir, field.Filename, values[field.Name]); err != nil {
 			return err
 		}
 	}
@@ -83,13 +80,7 @@ func EnsureReleaseNotesFiles(dir string, remote map[string]any) error {
 		return err
 	}
 	for _, field := range ReleaseNoteFields {
-		path := filepath.Join(dir, field.Filename)
-		if _, err := os.Stat(path); err == nil {
-			continue
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		if err := workspace.WriteFileAtomic(path, []byte(values[field.Name]), 0o600); err != nil {
+		if err := workspace.EnsureTextFile(dir, field.Filename, values[field.Name]); err != nil {
 			return err
 		}
 	}
@@ -102,14 +93,14 @@ func ReadLocalReleaseNotes(dir string) (LocalReleaseNotes, error) {
 		Exists:   make(map[string]bool, len(ReleaseNoteFields)),
 	}
 	for _, field := range ReleaseNoteFields {
-		data, err := os.ReadFile(filepath.Join(dir, field.Filename))
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
+		data, exists, err := workspace.ReadTextFile(dir, field.Filename)
 		if err != nil {
 			return LocalReleaseNotes{}, err
 		}
-		result.Markdown[field.Name] = string(data)
+		if !exists {
+			continue
+		}
+		result.Markdown[field.Name] = data
 		result.Exists[field.Name] = true
 	}
 	return result, nil
@@ -205,7 +196,7 @@ func SyncReleaseNotesFromPull(dir string, baseline, remote map[string]any, confl
 		if localChanged && current[field.Name] == base[field.Name] {
 			continue
 		}
-		if err := workspace.WriteFileAtomic(filepath.Join(dir, field.Filename), []byte(current[field.Name]), 0o600); err != nil {
+		if err := workspace.WriteTextFile(dir, field.Filename, current[field.Name]); err != nil {
 			return err
 		}
 	}
