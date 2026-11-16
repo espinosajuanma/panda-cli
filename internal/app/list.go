@@ -622,39 +622,3 @@ func responsiveListTitleIndent(widths []int) int {
 	}
 	return indent
 }
-
-func truncateListCell(value string, width int) string {
-	if width < 1 {
-		return ""
-	}
-	runes := []rune(value)
-	if len(runes) <= width {
-		return value
-	}
-	if width == 1 {
-		return "…"
-	}
-	return string(runes[:width-1]) + "…"
-}
-
-func displayStatus(status string) string {
-	var spaced strings.Builder
-	for i, char := range status {
-		if i > 0 && char >= 'A' && char <= 'Z' {
-			spaced.WriteByte(' ')
-		}
-		spaced.WriteRune(char)
-	}
-	return strings.ToUpper(spaced.String())
-}
-
-func tableCell(value any) string {
-	if value == nil {
-		return ""
-	}
-	return strings.Join(strings.Fields(fmt.Sprint(value)), " ")
-}
-
-func isEmptyField(value any) bool {
-	return value == nil || strings.TrimSpace(fmt.Sprint(value)) == ""
-}

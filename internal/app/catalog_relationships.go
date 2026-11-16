@@ -256,19 +256,6 @@ func hasLabelAssignments(value any) bool {
 	return ok && len(items) > 0
 }
 
-func relationshipDisplayName(value any) string {
-	relation, ok := value.(map[string]any)
-	if !ok {
-		return ""
-	}
-	for _, field := range []string{"label", "name", "title", "id"} {
-		if name := strings.TrimSpace(stringField(relation, field)); name != "" {
-			return name
-		}
-	}
-	return ""
-}
-
 func catalogNameIndex(kind catalogKind, records []map[string]any) map[string]string {
 	index := make(map[string]string, len(records))
 	for _, record := range records {
@@ -278,39 +265,6 @@ func catalogNameIndex(kind catalogKind, records []map[string]any) map[string]str
 		}
 	}
 	return index
-}
-
-func relationshipDisplayNameWithCatalog(value any, catalogNames map[string]string) string {
-	if id := relationshipID(value); id != "" {
-		if name := catalogNames[id]; name != "" {
-			return name
-		}
-	}
-	return relationshipDisplayName(value)
-}
-
-func labelsDisplayWithCatalog(value any, catalogNames map[string]string) string {
-	items, _ := value.([]any)
-	names := make([]string, 0, len(items))
-	for _, item := range items {
-		if name := relationshipDisplayNameWithCatalog(item, catalogNames); name != "" {
-			names = append(names, name)
-		}
-	}
-	sort.Slice(names, func(i, j int) bool { return strings.ToLower(names[i]) < strings.ToLower(names[j]) })
-	return strings.Join(names, ", ")
-}
-
-func assigneesDisplay(value any) string {
-	items, _ := value.([]any)
-	var names []string
-	for _, item := range items {
-		if name := relationshipDisplayName(item); name != "" {
-			names = append(names, name)
-		}
-	}
-	sort.Slice(names, func(i, j int) bool { return strings.ToLower(names[i]) < strings.ToLower(names[j]) })
-	return strings.Join(names, ", ")
 }
 
 func remapTaskCatalogRelationships(task map[string]any, idMap map[string]string) (map[string]any, error) {

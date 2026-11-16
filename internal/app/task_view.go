@@ -295,41 +295,6 @@ func writeTaskViewTable(out, colorTarget io.Writer, rows []taskViewRow, width in
 	}
 }
 
-func wrapTaskViewValue(value string, width int) []string {
-	if width < 1 {
-		width = 1
-	}
-	words := strings.Fields(value)
-	if len(words) == 0 {
-		return nil
-	}
-	var lines []string
-	line := ""
-	for _, word := range words {
-		for utf8.RuneCountInString(word) > width {
-			if line != "" {
-				lines = append(lines, line)
-				line = ""
-			}
-			runes := []rune(word)
-			lines = append(lines, string(runes[:width]))
-			word = string(runes[width:])
-		}
-		if line == "" {
-			line = word
-		} else if utf8.RuneCountInString(line)+1+utf8.RuneCountInString(word) <= width {
-			line += " " + word
-		} else {
-			lines = append(lines, line)
-			line = word
-		}
-	}
-	if line != "" {
-		lines = append(lines, line)
-	}
-	return lines
-}
-
 func displayRelationship(value any) string {
 	if name := relationshipDisplayName(value); name != "" {
 		return name
