@@ -56,26 +56,3 @@ func rootCommandNames() []string {
 }
 
 func rootCommandWords() string { return strings.Join(rootCommandNames(), " ") }
-
-func commandNeedsWorkspace(name string) bool {
-	for _, command := range mainCommands {
-		fields := strings.Fields(command.command)
-		if len(fields) > 0 && fields[0] == name && command.workspace {
-			return true
-		}
-	}
-	return false
-}
-
-func commandMutatesWorkspace(name string, args []string) bool {
-	switch name {
-	case "estimate", "pull", "push", "create", "edit", "assign", "edit-note", "add-note", "discard", "clean":
-		return true
-	case "files":
-		return len(args) > 0 && args[0] == "upload"
-	case "labels", "packages":
-		return len(args) == 0 || args[0] != "list"
-	default:
-		return false
-	}
-}

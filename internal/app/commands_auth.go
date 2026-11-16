@@ -83,6 +83,18 @@ const fishCompletion = `complete -c panda -f -n '__fish_seen_subcommand_from edi
 complete -c panda -f -n '__fish_seen_subcommand_from labels packages; and test (count (commandline -opc)) -eq 2' -a 'list create edit delete'
 complete -c panda -f -n 'not __fish_seen_subcommand_from @COMMANDS@' -a '@COMMANDS@'`
 
+func logout(cfg *config.Config, args []string, out io.Writer) error {
+	if len(args) != 0 {
+		return errors.New("usage: panda logout")
+	}
+	cfg.Token, cfg.Email = "", ""
+	if err := cfg.Save(); err != nil {
+		return fmt.Errorf("save configuration: %w", err)
+	}
+	fmt.Fprintln(out, "Logged out.")
+	return nil
+}
+
 func login(ctx context.Context, cfg *config.Config, client *solutions.Client, args []string, in io.Reader, out io.Writer) error {
 	var email string
 	if len(args) > 1 {

@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os/signal"
@@ -46,105 +45,35 @@ func RunContext(ctx context.Context, args []string, in io.Reader, out, errOut io
 	client := solutions.NewClient(cfg.APIURL, cfg.Token)
 	client.Email = cfg.Email
 	command, args := args[0], args[1:]
-	switch command {
-	case "login":
-		return login(ctx, cfg, client, args, in, out)
-	case "logout":
-		if len(args) != 0 {
-			return errors.New("usage: panda logout")
-		}
-		cfg.Token, cfg.Email = "", ""
-		if err := cfg.Save(); err != nil {
-			return fmt.Errorf("save configuration: %w", err)
-		}
-		fmt.Fprintln(out, "Logged out.")
-		return nil
-	case "config":
-		return configCommand(ctx, cfg, client, args, out)
-	case "completion":
-		return completionCommand(args, out)
-	case "path":
-		if len(args) != 0 {
-			return errors.New("usage: panda path")
-		}
-		return printWorkspacePath(cfg, out)
-	case "browse":
-		ws, err := readOnlyProjectWorkspace(cfg)
+	spec, ok := commandRegistry[command]
+	if !ok {
+		return unknownCommandError(command)
+	}
+	env := commandEnv{ctx: ctx, cfg: cfg, client: client, in: in, out: out}
+	if !spec.needsWorkspace {
+		return spec.run(env, args)
+	}
+	var ws *workspace.Workspace
+	if spec.readOnly {
+		ws, err = readOnlyProjectWorkspace(cfg)
+	} else if spec.mutates != nil && spec.mutates(args) {
+		var lock *workspace.Lock
+		ws, lock, err = lockProjectWorkspace(cfg)
 		if err != nil {
 			return err
 		}
-		return browseTasks(ws, args, cfg.Email, cfg.APIURL, in, out)
-	default:
-		if !commandNeedsWorkspace(command) {
-			return unknownCommandError(command)
-		}
-		var ws *workspace.Workspace
-		if commandMutatesWorkspace(command, args) {
-			lockedWorkspace, lock, err := lockProjectWorkspace(cfg)
-			if err != nil {
-				return err
-			}
-			defer lock.Close()
-			ws = lockedWorkspace
-		} else {
-			var err error
-			ws, err = projectWorkspace(cfg)
-			if err != nil {
-				return err
-			}
-		}
-		switch command {
-		case "list":
-			return listTasksForUser(ws, args, cfg.Email, out)
-		case "estimate":
-			return estimateTasks(ws, args, in, out)
-		case "pull":
-			if len(args) != 0 {
-				return errors.New("usage: panda pull")
-			}
-			if err := requireLogin(cfg); err != nil {
-				return err
-			}
-			return pull(ctx, client, ws, cfg.Project, out)
-		case "diff":
-			return diff(ws, args, out)
-		case "push":
-			if err := requireLogin(cfg); err != nil {
-				return err
-			}
-			options, err := parsePushOptions(args)
-			if err != nil {
-				return err
-			}
-			return pushSelectedWithOptions(ctx, client, ws, cfg.Project, options, out)
-		case "create":
-			return createTask(ws, cfg.Project, args, in, out)
-		case "edit":
-			return editTask(ws, args, in, out)
-		case "assign":
-			return assignTask(ws, args, in, out)
-		case "link":
-			return linkTaskWithAPIURL(ws, args, cfg.APIURL, out)
-		case "edit-note":
-			if err := requireLogin(cfg); err != nil {
-				return err
-			}
-			return editNoteContext(ctx, ws, args, client, in, out)
-		case "view":
-			return viewTaskWithAPIURL(ws, args, cfg.APIURL, out)
-		case "files":
-			return filesCommandContext(ctx, ws, args, client, out)
-		case "add-note":
-			return addNote(ws, args, in, out)
-		case "discard":
-			return discard(ws, args, out)
-		case "clean":
-			return clean(ws, args, in, out)
-		case "labels":
-			return projectCatalogCommand(ws, cfg.Project, labelCatalog, args, in, out)
-		case "packages":
-			return projectCatalogCommand(ws, cfg.Project, packageCatalog, args, in, out)
+		defer lock.Close()
+	} else {
+		ws, err = projectWorkspace(cfg)
+	}
+	if err != nil {
+		return err
+	}
+	env.ws = ws
+	if spec.needsLogin {
+		if err := requireLogin(cfg); err != nil {
+			return err
 		}
 	}
-	return nil
+	return spec.run(env, args)
 }
