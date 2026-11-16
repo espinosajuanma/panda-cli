@@ -281,7 +281,13 @@ func readSelectorKey(in *os.File) (rune, error) {
 	if _, err := io.ReadFull(in, one[:]); err != nil {
 		return 0, err
 	}
-	switch one[0] {
+	return decodeSelectorKey(one[0], func() (byte, bool, error) {
+		return readSelectorEscapeByte(in)
+	})
+}
+
+func decodeSelectorKey(first byte, readEscape func() (byte, bool, error)) (rune, error) {
+	switch first {
 	case '\r', '\n':
 		return rune(selectorEnter), nil
 	case ' ':
@@ -291,14 +297,14 @@ func readSelectorKey(in *os.File) (rune, error) {
 	case 0x03:
 		return rune(selectorCancel), nil
 	case 0x1b:
-		second, available, err := readSelectorEscapeByte(in)
+		second, available, err := readEscape()
 		if err != nil {
 			return 0, err
 		}
 		if !available || second != '[' {
 			return rune(selectorEscape), nil
 		}
-		third, available, err := readSelectorEscapeByte(in)
+		third, available, err := readEscape()
 		if err != nil {
 			return 0, err
 		}
@@ -314,7 +320,7 @@ func readSelectorKey(in *os.File) (rune, error) {
 			return rune(selectorEscape), nil
 		}
 	default:
-		return rune(one[0]), nil
+		return rune(first), nil
 	}
 }
 
