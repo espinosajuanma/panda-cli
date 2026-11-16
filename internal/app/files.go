@@ -12,6 +12,7 @@ import (
 	"unicode"
 
 	"github.com/espinosajuanma/panda-cli/internal/fsutil"
+	"github.com/espinosajuanma/panda-cli/internal/report"
 	"github.com/espinosajuanma/panda-cli/internal/solutions"
 	syncpkg "github.com/espinosajuanma/panda-cli/internal/sync"
 	"github.com/espinosajuanma/panda-cli/internal/workspace"
@@ -50,46 +51,28 @@ func filesCommandContext(ctx context.Context, ws *workspace.Workspace, args []st
 }
 
 func renderTaskFiles(ws *workspace.Workspace, dir string, metadata map[string]any, out io.Writer) error {
-	fmt.Fprintf(out, "Files for task %s — %s\n\n", taskLabel(metadata), stringField(metadata, "title"))
-	fmt.Fprintln(out, "Attached files:")
-	files := taskFileReferences(metadata)
-	if len(files) == 0 {
-		fmt.Fprintln(out, "  No attached files.")
-	} else {
-		for index, file := range files {
-			fmt.Fprintf(out, "  [%d] %s (id: %s)", index+1, file.Name, file.ID)
-			if file.Description != "" {
-				fmt.Fprintf(out, " — %s", file.Description)
-			}
-			fmt.Fprintln(out)
-		}
+	view := report.TaskFilesView{
+		Label: taskLabel(metadata),
+		Title: stringField(metadata, "title"),
 	}
-
+	for _, file := range taskFileReferences(metadata) {
+		view.Files = append(view.Files, report.TaskFile{Name: file.Name, ID: file.ID, Description: file.Description})
+	}
 	state, err := ws.ReadState(stateKey(dir, metadata))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	if len(state.StagedFiles) > 0 {
-		fmt.Fprintln(out, "\nStaged uploads:")
-		for _, staged := range state.StagedFiles {
-			status := "[staged]"
-			if _, err := os.Stat(staged.Path); err != nil {
-				status = "[staged; source missing]"
-			}
-			name := staged.Name
-			if name == "" {
-				name = filepath.Base(staged.Path)
-			}
-			fmt.Fprintf(out, "  %s %s (source: %s)", status, name, staged.Path)
-			if staged.Description != "" {
-				fmt.Fprintf(out, " — %s", staged.Description)
-			}
-			fmt.Fprintln(out)
+	for _, staged := range state.StagedFiles {
+		name := staged.Name
+		if name == "" {
+			name = filepath.Base(staged.Path)
 		}
-	} else if len(files) > 0 {
-		fmt.Fprintln(out)
+		_, statErr := os.Stat(staged.Path)
+		view.Staged = append(view.Staged, report.StagedTaskFile{
+			Name: name, Path: staged.Path, Description: staged.Description, SourceMissing: statErr != nil,
+		})
 	}
-	return nil
+	return report.RenderTaskFiles(view, out)
 }
 
 func stageFileUpload(ws *workspace.Workspace, args []string, out io.Writer) error {

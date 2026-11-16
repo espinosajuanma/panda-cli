@@ -1,7 +1,6 @@
 package app
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -32,32 +31,13 @@ type taskViewOptions struct {
 
 type taskViewRow = report.TaskViewRow
 
-type taskViewNote struct {
-	Filename string `json:"filename"`
-	Markdown string `json:"markdown"`
-	Staged   bool   `json:"staged"`
-}
+type taskViewNote = report.TaskViewJSONNote
 
-type taskViewJSON struct {
-	Task         map[string]any        `json:"task"`
-	Description  *string               `json:"description,omitempty"`
-	ReleaseNotes *taskViewReleaseNotes `json:"releaseNotes,omitempty"`
-	Notes        *[]taskViewNote       `json:"notes,omitempty"`
-	Context      taskViewJSONContext   `json:"context"`
-}
+type taskViewJSON = report.TaskViewJSON
 
-type taskViewReleaseNotes struct {
-	CustomerNotes string `json:"customerNotes"`
-	InternalNotes string `json:"internalNotes"`
-}
+type taskViewReleaseNotes = report.TaskViewJSONReleaseNotes
 
-type taskViewJSONContext struct {
-	Link           string                 `json:"link,omitempty"`
-	SyncStatus     string                 `json:"syncStatus"`
-	PendingChanges bool                   `json:"pendingChanges"`
-	LocalDraft     bool                   `json:"localDraft"`
-	StagedFiles    []workspace.StagedFile `json:"stagedFiles,omitempty"`
-}
+type taskViewJSONContext = report.TaskViewJSONContext
 
 func viewTask(ws *workspace.Workspace, args []string, out io.Writer) error {
 	return viewTaskWithAPIURL(ws, args, config.DefaultAPIURL, out)
@@ -171,7 +151,7 @@ func renderTaskView(ws *workspace.Workspace, dir string, metadata map[string]any
 			return err
 		}
 		for _, note := range notes {
-			view.Notes = append(view.Notes, report.TaskViewNote{Filename: note.Filename, Markdown: note.Markdown, Staged: note.Staged})
+			view.Notes = append(view.Notes, report.TaskViewNote(note))
 		}
 	}
 	return report.RenderTaskViewText(view, out, colorTarget, width)
@@ -324,12 +304,7 @@ func renderTaskViewJSON(dir string, metadata map[string]any, state workspace.Sta
 		}
 		document.Notes = &notes
 	}
-	data, err := json.MarshalIndent(document, "", "  ")
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(out, "%s\n", data)
-	return err
+	return report.WriteTaskViewJSON(document, out)
 }
 
 func linkTask(ws *workspace.Workspace, args []string, out io.Writer) error {

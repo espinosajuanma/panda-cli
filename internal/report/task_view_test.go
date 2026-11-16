@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
 func TestTaskViewTableWrapsLongValues(t *testing.T) {
@@ -35,5 +37,34 @@ func TestRenderTaskViewTextOmitsHiddenSections(t *testing.T) {
 	}
 	if strings.Contains(text, "## Description") || strings.Contains(text, "## customer notes") {
 		t.Fatalf("hidden task view sections were rendered:\n%s", text)
+	}
+}
+
+func TestWriteTaskViewJSONMarshalsContextAndSections(t *testing.T) {
+	description := "body"
+	notes := []TaskViewJSONNote{{Filename: "note.md", Markdown: "note body", Staged: true}}
+	document := TaskViewJSON{
+		Task:        map[string]any{"id": "task-1", "title": "Task"},
+		Description: &description,
+		ReleaseNotes: &TaskViewJSONReleaseNotes{
+			CustomerNotes: "customer",
+			InternalNotes: "internal",
+		},
+		Notes: &notes,
+		Context: TaskViewJSONContext{
+			SyncStatus:     "Synced",
+			PendingChanges: false,
+			StagedFiles:    []workspace.StagedFile{{Path: "/tmp/file", Name: "file"}},
+		},
+	}
+	var output bytes.Buffer
+	if err := WriteTaskViewJSON(document, &output); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	for _, expected := range []string{`"task": {`, `"description": "body"`, `"customerNotes": "customer"`, `"filename": "note.md"`, `"syncStatus": "Synced"`, `"stagedFiles": [`} {
+		if !strings.Contains(text, expected) {
+			t.Errorf("task view JSON missing %q:\n%s", expected, text)
+		}
 	}
 }

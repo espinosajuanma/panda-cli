@@ -1,12 +1,14 @@
 package report
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/espinosajuanma/panda-cli/internal/ui"
+	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
 type TaskViewRow struct {
@@ -132,4 +134,40 @@ func WriteTaskViewTable(out, colorTarget io.Writer, rows []TaskViewRow, width in
 			fmt.Fprintf(out, "%s%s\n", indent, line)
 		}
 	}
+}
+
+type TaskViewJSON struct {
+	Task         map[string]any            `json:"task"`
+	Description  *string                   `json:"description,omitempty"`
+	ReleaseNotes *TaskViewJSONReleaseNotes `json:"releaseNotes,omitempty"`
+	Notes        *[]TaskViewJSONNote       `json:"notes,omitempty"`
+	Context      TaskViewJSONContext       `json:"context"`
+}
+
+type TaskViewJSONReleaseNotes struct {
+	CustomerNotes string `json:"customerNotes"`
+	InternalNotes string `json:"internalNotes"`
+}
+
+type TaskViewJSONNote struct {
+	Filename string `json:"filename"`
+	Markdown string `json:"markdown"`
+	Staged   bool   `json:"staged"`
+}
+
+type TaskViewJSONContext struct {
+	Link           string                 `json:"link,omitempty"`
+	SyncStatus     string                 `json:"syncStatus"`
+	PendingChanges bool                   `json:"pendingChanges"`
+	LocalDraft     bool                   `json:"localDraft"`
+	StagedFiles    []workspace.StagedFile `json:"stagedFiles,omitempty"`
+}
+
+func WriteTaskViewJSON(document TaskViewJSON, out io.Writer) error {
+	data, err := json.MarshalIndent(document, "", "  ")
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(out, "%s\n", data)
+	return err
 }
