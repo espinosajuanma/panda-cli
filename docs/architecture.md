@@ -7,16 +7,31 @@ and `push` reconcile that workspace with the Solutions API.
 
 ```text
 cmd/panda
-  └── internal/app       command dispatch and command workflows
-        ├── internal/ui  terminal styling, paging, prompts, selectors, and editor launch
-        ├── internal/task task field/status/effort definitions
+  └── internal/app       command registry, dispatch, and command workflows
+        ├── internal/report  shared report formatting, paging, and effort summaries
+        ├── internal/ui      terminal styling, paging, prompts, selectors, and editor launch
+        ├── internal/task    task model, merge rules, field/status/effort definitions
         ├── internal/catalog catalog kind and field definitions
-        ├── internal/diff line diff algorithm
-        ├── internal/workspace filesystem layout and state persistence
+        ├── internal/diff    line diff algorithm
+        ├── internal/workspace filesystem layout, repositories, locks, and state
+        ├── internal/fsutil  atomic file writes and platform replace operations
         ├── internal/solutions Solutions HTTP API client
-        ├── internal/config user configuration and workspace root
+        ├── internal/config  user configuration and workspace root
         └── internal/content Markdown/HTML conversion
 ```
+
+`internal/archtest` enforces the layering rules in CI. `make arch-check` fails if
+a lower-level package imports `internal/app` or if `cmd/panda` imports anything
+other than `internal/app`.
+
+`internal/app` owns the command registry. Each registry entry declares whether a
+command needs a workspace, whether it mutates the workspace, and whether it
+requires a login. Dispatch, lock acquisition, and login checks are derived from
+those declarations so command metadata cannot drift from its handler.
+
+`internal/workspace` also owns repository helpers for catalogs, members, task
+state, and note filenames. Prefer adding workspace reads and writes there rather
+than opening files from command workflows.
 
 `internal/jsonutil` contains helpers for the JSON-shaped maps used at the
 Solutions and metadata boundaries. Keep those maps at the boundary so unknown

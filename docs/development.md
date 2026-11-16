@@ -13,8 +13,10 @@ make check
 go test -race ./...
 ```
 
-`make check` verifies formatting and runs `go vet ./...`, `go test ./...`, and
-`go build ./...`. Format Go files with `make fmt`.
+`make check` verifies formatting, runs `go vet ./...`, checks package layering
+with `make arch-check`, runs `go test ./...`, and runs `go build ./...`. Format
+Go files with `make fmt`. The architecture check lives in `internal/archtest`
+and can be run directly with `go test ./internal/archtest`.
 
 For a local cross-platform compile smoke test, run:
 
