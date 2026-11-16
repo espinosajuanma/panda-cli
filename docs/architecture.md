@@ -9,6 +9,7 @@ and `push` reconcile that workspace with the Solutions API.
 cmd/panda
   └── internal/app       command registry, dispatch, and command workflows
         ├── internal/sync    pull/push orchestration, merge rules, and catalog/note sync
+        ├── internal/doctor  local-only workspace diagnostics
         ├── internal/report  shared report formatting, paging, and effort summaries
         ├── internal/ui      terminal styling, paging, prompts, selectors, and editor launch
         ├── internal/task    task model, merge rules, field/status/effort definitions
