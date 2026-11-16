@@ -5,20 +5,12 @@ import (
 	"path/filepath"
 
 	"github.com/espinosajuanma/panda-cli/internal/content"
+	"github.com/espinosajuanma/panda-cli/internal/task"
 )
 
 func mergeForPush(local, remote, baseline map[string]any, dir string) (map[string]any, bool, error) {
-	merged := cloneMap(remote)
-	changed := false
-	for _, field := range editableFields {
-		localValue := valueAt(local, field)
-		baseValue := valueAt(baseline, field)
-		remoteValue := valueAt(remote, field)
-		if !same(localValue, baseValue) && !same(localValue, remoteValue) {
-			merged[field] = localValue
-			changed = true
-		}
-	}
+	merged, changed := task.MergeFields(task.FromMap(local), task.FromMap(remote), task.FromMap(baseline))
+	mergedMap := merged.Map()
 	baseMarkdown, err := content.HTMLToMarkdown(stringField(baseline, "description"))
 	if err != nil {
 		return nil, false, err
@@ -32,20 +24,14 @@ func mergeForPush(local, remote, baseline map[string]any, dir string) (map[strin
 		if err != nil {
 			return nil, false, err
 		}
-		merged["description"] = html
+		mergedMap["description"] = html
 		changed = true
 	}
-	return merged, changed, nil
+	return mergedMap, changed, nil
 }
 
 func taskConflicts(local, baseline, remote map[string]any, dir string) []string {
-	var conflicts []string
-	for _, field := range editableFields {
-		localValue, baseValue, remoteValue := valueAt(local, field), valueAt(baseline, field), valueAt(remote, field)
-		if !same(localValue, baseValue) && !same(remoteValue, baseValue) && !same(localValue, remoteValue) {
-			conflicts = append(conflicts, field)
-		}
-	}
+	conflicts := task.MetadataConflicts(task.FromMap(local), task.FromMap(baseline), task.FromMap(remote))
 	baseMarkdown, err := content.HTMLToMarkdown(stringField(baseline, "description"))
 	if err != nil {
 		return append(conflicts, "description")
@@ -78,27 +64,9 @@ func taskConflicts(local, baseline, remote map[string]any, dir string) []string 
 }
 
 func pullMetadataConflicts(local, baseline, remote map[string]any) []string {
-	var conflicts []string
-	for _, field := range editableFields {
-		localValue, baseValue, remoteValue := valueAt(local, field), valueAt(baseline, field), valueAt(remote, field)
-		if !same(localValue, baseValue) && !same(remoteValue, baseValue) && !same(localValue, remoteValue) {
-			conflicts = append(conflicts, field)
-		}
-	}
-	return conflicts
+	return task.MetadataConflicts(task.FromMap(local), task.FromMap(baseline), task.FromMap(remote))
 }
 
 func advanceBaseline(baseline, remote map[string]any, conflicts []string, descriptionConflict bool) map[string]any {
-	advanced := cloneMap(remote)
-	for _, field := range conflicts {
-		if value, exists := baseline[field]; exists {
-			advanced[field] = value
-		} else {
-			delete(advanced, field)
-		}
-	}
-	if descriptionConflict {
-		advanced["description"] = stringField(baseline, "description")
-	}
-	return advanced
+	return task.AdvanceBaseline(task.FromMap(baseline), task.FromMap(remote), conflicts, descriptionConflict).Map()
 }

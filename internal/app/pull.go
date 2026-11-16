@@ -12,6 +12,7 @@ import (
 	"github.com/espinosajuanma/panda-cli/internal/config"
 	"github.com/espinosajuanma/panda-cli/internal/content"
 	"github.com/espinosajuanma/panda-cli/internal/solutions"
+	"github.com/espinosajuanma/panda-cli/internal/task"
 	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
@@ -264,12 +265,7 @@ func dedupeProjectMembers(members []map[string]any) []map[string]any {
 }
 
 func sameTaskVersion(remote, baseline map[string]any) bool {
-	remoteVersion, remoteHasVersion := remote["version"]
-	baseVersion, baselineHasVersion := baseline["version"]
-	return remoteHasVersion && baselineHasVersion && remoteVersion != nil && baseVersion != nil &&
-		same(remoteVersion, baseVersion) && same(valueAt(remote, "labels"), valueAt(baseline, "labels")) &&
-		same(valueAt(remote, "package"), valueAt(baseline, "package")) &&
-		same(valueAt(remote, "files"), valueAt(baseline, "files"))
+	return task.SameVersion(task.FromMap(remote), task.FromMap(baseline))
 }
 
 type pullProgress struct {
