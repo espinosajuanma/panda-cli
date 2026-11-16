@@ -1,8 +1,8 @@
-package workspace
+package fsutil
 
 import "golang.org/x/sys/windows"
 
-func ReplaceFile(source, destination string) error {
+func Replace(source, destination string) error {
 	from, err := windows.UTF16PtrFromString(source)
 	if err != nil {
 		return err

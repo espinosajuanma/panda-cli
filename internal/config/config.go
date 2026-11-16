@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/espinosajuanma/panda-cli/internal/fsutil"
 )
 
 const DefaultAPIURL = "https://solutions.slingrs.io/prod/runtime/api"
@@ -104,26 +106,5 @@ func (c *Config) Save() error {
 		return err
 	}
 	path := filepath.Join(dir, "config.json")
-	tmp, err := os.CreateTemp(dir, ".config-*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return replaceConfigFile(tmpName, path)
+	return fsutil.WriteAtomic(path, data, 0o600)
 }

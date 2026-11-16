@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/espinosajuanma/panda-cli/internal/fsutil"
 	"github.com/espinosajuanma/panda-cli/internal/solutions"
 	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
@@ -246,7 +247,7 @@ func downloadTaskFileContext(ctx context.Context, ws *workspace.Workspace, args 
 		return err
 	}
 	if !temporary {
-		if err := workspace.ReplaceFile(destinationFile.Name(), destinationPath); err != nil {
+		if err := fsutil.Replace(destinationFile.Name(), destinationPath); err != nil {
 			return fmt.Errorf("save downloaded file: %w", err)
 		}
 	}

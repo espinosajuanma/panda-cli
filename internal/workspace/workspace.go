@@ -12,6 +12,7 @@ import (
 	"unicode"
 
 	"github.com/espinosajuanma/panda-cli/internal/config"
+	"github.com/espinosajuanma/panda-cli/internal/fsutil"
 	"github.com/espinosajuanma/panda-cli/internal/jsonutil"
 )
 
@@ -287,31 +288,7 @@ func WriteMap(path string, value map[string]any) error {
 }
 
 func WriteFileAtomic(path string, data []byte, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".panda-*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	if err := tmp.Chmod(mode); err != nil {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return ReplaceFile(tmpName, path)
+	return fsutil.WriteAtomic(path, data, mode)
 }
 
 func MetadataFromRemote(remote map[string]any) map[string]any {
