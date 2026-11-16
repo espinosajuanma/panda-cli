@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -43,48 +42,19 @@ func catalogFields(kind catalogKind) []string {
 }
 
 func readCatalog(ws *workspace.Workspace, kind catalogKind) ([]map[string]any, error) {
-	path := ws.CatalogPath(string(kind))
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var records []map[string]any
-	if err := json.Unmarshal(data, &records); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
-	}
-	return records, nil
+	return ws.ReadCatalog(catdomain.Kind(kind))
 }
 
 func writeCatalog(ws *workspace.Workspace, kind catalogKind, records []map[string]any) error {
-	if records == nil {
-		records = []map[string]any{}
-	}
-	data, err := json.MarshalIndent(records, "", "  ")
-	if err != nil {
-		return err
-	}
-	return workspace.WriteFileAtomic(ws.CatalogPath(string(kind)), append(data, '\n'), 0o600)
+	return ws.WriteCatalog(catdomain.Kind(kind), records)
 }
 
 func readCatalogBaseline(ws *workspace.Workspace, kind catalogKind) ([]map[string]any, error) {
-	state, err := ws.ReadState(ws.CatalogStateKey(string(kind)))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	items, _ := state.Remote["records"].([]any)
-	return mapsFromAny(items), nil
+	return ws.ReadCatalogBaseline(catdomain.Kind(kind))
 }
 
 func writeCatalogBaseline(ws *workspace.Workspace, kind catalogKind, records []map[string]any) error {
-	return ws.WriteState(ws.CatalogStateKey(string(kind)), workspace.State{
-		Remote: map[string]any{"records": anyFromMaps(records)},
-	})
+	return ws.WriteCatalogBaseline(catdomain.Kind(kind), records)
 }
 
 func readLocalCatalogForSync(ws *workspace.Workspace, kind catalogKind, baseline []map[string]any) ([]map[string]any, error) {
@@ -115,24 +85,6 @@ func cloneCatalogRecords(records []map[string]any) []map[string]any {
 		cloned = append(cloned, cloneMap(record))
 	}
 	return cloned
-}
-
-func mapsFromAny(items []any) []map[string]any {
-	records := make([]map[string]any, 0, len(items))
-	for _, item := range items {
-		if record, ok := item.(map[string]any); ok {
-			records = append(records, cloneMap(record))
-		}
-	}
-	return records
-}
-
-func anyFromMaps(records []map[string]any) []any {
-	items := make([]any, 0, len(records))
-	for _, record := range records {
-		items = append(items, cloneMap(record))
-	}
-	return items
 }
 
 func catalogRecordID(record map[string]any) string {

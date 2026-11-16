@@ -1,11 +1,9 @@
 package app
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -27,18 +25,7 @@ func projectMembers(ws *workspace.Workspace) ([]map[string]any, error) {
 }
 
 func projectMembersIfAvailable(ws *workspace.Workspace) ([]map[string]any, bool, error) {
-	data, err := os.ReadFile(filepath.Join(ws.Root, ".panda", "members.json"))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, false, nil
-	}
-	if err != nil {
-		return nil, false, err
-	}
-	var members []map[string]any
-	if err := json.Unmarshal(data, &members); err != nil {
-		return nil, false, fmt.Errorf("parse project members: %w", err)
-	}
-	return members, true, nil
+	return ws.ReadMembers()
 }
 
 func memberUser(member map[string]any) map[string]any {

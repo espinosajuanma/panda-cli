@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -236,12 +235,7 @@ func pull(ctx context.Context, client *solutions.Client, ws *workspace.Workspace
 }
 
 func writeProjectMembers(ws *workspace.Workspace, members []map[string]any) error {
-	members = dedupeProjectMembers(members)
-	data, err := json.MarshalIndent(members, "", "  ")
-	if err != nil {
-		return err
-	}
-	return workspace.WriteFileAtomic(filepath.Join(ws.Root, ".panda", "members.json"), append(data, '\n'), 0o600)
+	return ws.WriteMembers(dedupeProjectMembers(members))
 }
 
 func dedupeProjectMembers(members []map[string]any) []map[string]any {
