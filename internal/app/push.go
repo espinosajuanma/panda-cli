@@ -35,7 +35,7 @@ func pushSelectedWithOptions(ctx context.Context, client *solutions.Client, ws *
 	fatal := func(fatalErr error) error {
 		if options.json {
 			report.Errors = append(report.Errors, fatalErr.Error())
-			report.updateSummary()
+			report.UpdateSummary()
 			if renderErr := renderPushJSON(report, out); renderErr != nil {
 				return renderErr
 			}
@@ -106,7 +106,7 @@ func pushSelectedWithOptions(ctx context.Context, client *solutions.Client, ws *
 		}
 		createdTask := false
 		if state.LocalCreated {
-			result.addAction("create")
+			result.AddAction("create")
 			remote, err := createRemoteTask(ctx, client, dir, local, project, catalogIDs)
 			if err != nil {
 				recordFailure("failed", err.Error())
@@ -177,7 +177,7 @@ func pushSelectedWithOptions(ctx context.Context, client *solutions.Client, ws *
 				continue
 			}
 			if changed {
-				result.addAction("fields")
+				result.AddAction("fields")
 				remote, err = client.UpdateTask(ctx, id, payload)
 				if err != nil {
 					recordFailure("failed", fmt.Sprintf("update: %v", err))
@@ -185,7 +185,7 @@ func pushSelectedWithOptions(ctx context.Context, client *solutions.Client, ws *
 				}
 			}
 			if state.StagedDiscard {
-				result.addAction("discard")
+				result.AddAction("discard")
 				if stringField(remote, "status") != "discarded" {
 					remote, err = client.DiscardTask(ctx, id)
 					if err != nil {
@@ -207,7 +207,7 @@ func pushSelectedWithOptions(ctx context.Context, client *solutions.Client, ws *
 				state.StagedDiscard = false
 			}
 			if len(myNotes) > 0 {
-				result.addAction("editedNotes")
+				result.AddAction("editedNotes")
 				remote, err = client.EditMyNotes(ctx, id, myNotes)
 				if err != nil {
 					recordFailure("failed", fmt.Sprintf("edit notes: %v", err))
@@ -231,7 +231,7 @@ func pushSelectedWithOptions(ctx context.Context, client *solutions.Client, ws *
 				continue
 			}
 			if len(releasePayload) > 0 {
-				result.addAction("releaseNotes")
+				result.AddAction("releaseNotes")
 				remote, err = client.EditReleaseNotes(ctx, id, releasePayload)
 				if err != nil {
 					recordFailure("failed", fmt.Sprintf("edit release notes: %v", err))
@@ -252,7 +252,7 @@ func pushSelectedWithOptions(ctx context.Context, client *solutions.Client, ws *
 			}
 		}
 		if len(state.StagedNotes) > 0 {
-			result.addAction("stagedNotes")
+			result.AddAction("stagedNotes")
 		}
 		state, err = pushStagedNotes(ctx, client, ws, dir, local, key, state)
 		if err != nil {
@@ -260,7 +260,7 @@ func pushSelectedWithOptions(ctx context.Context, client *solutions.Client, ws *
 			continue
 		}
 		if len(state.StagedFiles) > 0 {
-			result.addAction("files")
+			result.AddAction("files")
 		}
 		state, err = pushStagedFiles(ctx, client, ws, dir, local, key, state)
 		if err != nil {
@@ -288,7 +288,7 @@ func pushSelectedWithOptions(ctx context.Context, client *solutions.Client, ws *
 	report.Catalogs.Labels = catalogPushResult(labelPlan, labelChanged)
 	report.Catalogs.Packages = catalogPushResult(packagePlan, packageChanged)
 	if options.json {
-		report.updateSummary()
+		report.UpdateSummary()
 		if err := renderPushJSON(report, out); err != nil {
 			return err
 		}
