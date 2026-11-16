@@ -49,8 +49,8 @@ any task, are converted to HTML when pushed, and are synchronized by `pull`,
 The `.panda/state` directory stores remote baselines, staged actions, and remote
 task IDs. A locally created task uses the next `draft-N` ID until a successful
 push assigns its Solutions task number and renames its directory. Older task
-directories at the project root are migrated into `tasks/` when the workspace
-is next opened; unrelated project files are left in place.
+directories at the project root are migrated into `tasks/` by mutating commands
+when the workspace is next opened; unrelated project files are left in place.
 
 Draft numbering starts at `draft-1` and advances past the highest existing
 draft. If the highest-numbered drafts are removed or pushed and renamed to

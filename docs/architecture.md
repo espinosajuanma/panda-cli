@@ -75,9 +75,10 @@ reviewed migration is introduced.
 
 ## Read-only tools and machine output
 
-- `list` and `diff` inspect the selected local workspace; `browse` provides an
-  interactive read-only view over the same task/filter report. `browse` must not
-  acquire the mutation lock or initialize/migrate the workspace.
+- `list`, `diff`, `view`, `link`, and `files` inspect the selected local
+  workspace; `browse` provides an interactive read-only view over the same
+  task/filter report. These commands require an existing workspace and must not
+  initialize or migrate it. Run `panda pull` first when the workspace is missing.
 - `doctor` is local-only and read-only. Workspace inspection helpers such as
   state-key enumeration and lock probing must not create files or change saved
   state.

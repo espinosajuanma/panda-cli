@@ -67,16 +67,46 @@ func TestMutatingCommandLocksBeforeMigration(t *testing.T) {
 	}
 }
 
-func TestReadOnlyCommandKeepsEnsureBehavior(t *testing.T) {
+func TestReadOnlyCommandDoesNotInitializeMissingWorkspace(t *testing.T) {
 	cfg := saveTestProject(t)
-	if err := Run([]string{"list"}, strings.NewReader(""), io.Discard, io.Discard); err != nil {
-		t.Fatal(err)
+	err := Run([]string{"list"}, strings.NewReader(""), io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "run `panda pull` first") {
+		t.Fatalf("read-only command error = %v, want missing workspace guidance", err)
 	}
 	root, err := workspace.WorkspacePath(cfg.Project.Name)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(root, "tasks")); err != nil {
-		t.Fatalf("read-only command did not initialize the workspace as before: %v", err)
+	if _, statErr := os.Stat(root); !os.IsNotExist(statErr) {
+		t.Fatalf("read-only command created the workspace: %v", statErr)
+	}
+}
+
+func TestReadOnlyCommandDoesNotMigrateLegacyWorkspace(t *testing.T) {
+	cfg := saveTestProject(t)
+	root, err := workspace.WorkspacePath(cfg.Project.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyDir := filepath.Join(root, "23")
+	if err := os.MkdirAll(filepath.Join(legacyDir, "notes"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := workspace.WriteMap(filepath.Join(legacyDir, "metadata.json"), map[string]any{
+		"id": "task-23", "number": float64(23), "title": "Legacy task", "status": "new",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDir, "description.md"), []byte("Legacy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Run([]string{"list"}, strings.NewReader(""), io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "tasks", "23")); !os.IsNotExist(statErr) {
+		t.Fatalf("read-only command migrated the legacy task: %v", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(legacyDir, "metadata.json")); statErr != nil {
+		t.Fatalf("legacy task was lost: %v", statErr)
 	}
 }

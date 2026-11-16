@@ -25,18 +25,6 @@ func projectWorkspaceRoot(cfg *config.Config) (string, error) {
 	return workspace.WorkspacePath(cfg.Project.Name)
 }
 
-func projectWorkspace(cfg *config.Config) (*workspace.Workspace, error) {
-	root, err := projectWorkspaceRoot(cfg)
-	if err != nil {
-		return nil, err
-	}
-	ws := workspace.New(root)
-	if err := ws.Ensure(); err != nil {
-		return nil, err
-	}
-	return ws, nil
-}
-
 func lockProjectWorkspace(cfg *config.Config) (*workspace.Workspace, *workspace.Lock, error) {
 	root, err := projectWorkspaceRoot(cfg)
 	if err != nil {

@@ -54,9 +54,7 @@ func RunContext(ctx context.Context, args []string, in io.Reader, out, errOut io
 		return spec.run(env, args)
 	}
 	var ws *workspace.Workspace
-	if spec.readOnly {
-		ws, err = readOnlyProjectWorkspace(cfg)
-	} else if spec.mutates != nil && spec.mutates(args) {
+	if spec.mutates != nil && spec.mutates(args) {
 		var lock *workspace.Lock
 		ws, lock, err = lockProjectWorkspace(cfg)
 		if err != nil {
@@ -64,7 +62,7 @@ func RunContext(ctx context.Context, args []string, in io.Reader, out, errOut io
 		}
 		defer lock.Close()
 	} else {
-		ws, err = projectWorkspace(cfg)
+		ws, err = readOnlyProjectWorkspace(cfg)
 	}
 	if err != nil {
 		return err

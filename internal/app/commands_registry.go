@@ -22,7 +22,6 @@ type commandEnv struct {
 type commandSpec struct {
 	name           string
 	needsWorkspace bool
-	readOnly       bool
 	needsLogin     bool
 	mutates        func([]string) bool
 	run            func(commandEnv, []string) error
@@ -83,7 +82,6 @@ var commandRegistry = map[string]commandSpec{
 	"browse": {
 		name:           "browse",
 		needsWorkspace: true,
-		readOnly:       true,
 		mutates:        neverMutates,
 		run: func(env commandEnv, args []string) error {
 			return browseTasks(env.ws, args, env.cfg.Email, env.cfg.APIURL, env.in, env.out)
