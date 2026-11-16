@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/espinosajuanma/panda-cli/internal/report"
 	syncpkg "github.com/espinosajuanma/panda-cli/internal/sync"
 	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
@@ -104,14 +105,7 @@ func editReleaseNotesFiles(dir string, args []string, out io.Writer) error {
 }
 
 func releaseNoteDisplayName(field string) string {
-	switch field {
-	case "customerNotes":
-		return "customer notes"
-	case "internalNotes":
-		return "internal notes"
-	default:
-		return strings.TrimSpace(field)
-	}
+	return report.ReleaseNoteDisplayName(field)
 }
 
 func releaseNoteHeading(field string) string {
