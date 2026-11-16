@@ -406,10 +406,6 @@ func stateKey(dir string, metadata map[string]any) string {
 	return workspace.StateKey(dir, metadata)
 }
 
-func taskStateKeys(dir string, metadata map[string]any) []string {
-	return workspace.TaskStateKeys(dir, metadata)
-}
-
 func isLocalDraft(dir string, metadata map[string]any) bool {
 	return workspace.IsLocalDraft(dir, metadata)
 }
@@ -446,15 +442,6 @@ func taskLabel(metadata map[string]any) string {
 	return task.Label(metadata)
 }
 
-func isConflictField(fields []string, field string) bool {
-	for _, conflict := range fields {
-		if conflict == field {
-			return true
-		}
-	}
-	return false
-}
-
 func contains(values []string, expected string) bool {
 	for _, value := range values {
 		if value == expected {
@@ -462,25 +449,6 @@ func contains(values []string, expected string) bool {
 		}
 	}
 	return false
-}
-
-func safeName(value string) string {
-	var builder strings.Builder
-	for _, r := range value {
-		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
-			builder.WriteRune(r)
-		} else if r == ' ' {
-			builder.WriteRune('-')
-		}
-	}
-	if builder.Len() == 0 {
-		return "unknown"
-	}
-	return builder.String()
-}
-
-func fprintln(out io.Writer) {
-	fmt.Fprintln(out)
 }
 
 func noteFilename(timestamp time.Time, author string, duplicateIndex int) string {

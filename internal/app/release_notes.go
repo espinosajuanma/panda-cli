@@ -18,8 +18,6 @@ const (
 	releaseInternalNotesFile = syncpkg.ReleaseInternalNotesFile
 )
 
-type releaseNoteField = syncpkg.ReleaseNoteField
-
 type localReleaseNotes = syncpkg.LocalReleaseNotes
 
 var releaseNoteFields = syncpkg.ReleaseNoteFields
@@ -28,24 +26,12 @@ func releaseNotesObject(remote map[string]any) map[string]any {
 	return syncpkg.ReleaseNotesObject(remote)
 }
 
-func releaseNoteHTML(remote map[string]any, field string) string {
-	return syncpkg.ReleaseNoteHTML(remote, field)
-}
-
 func releaseNoteMarkdown(remote map[string]any, field string) (string, error) {
 	return syncpkg.ReleaseNoteMarkdown(remote, field)
 }
 
-func releaseNoteMarkdownValues(remote map[string]any) (map[string]string, error) {
-	return syncpkg.ReleaseNoteMarkdownValues(remote)
-}
-
 func writeReleaseNotesToLocal(dir string, remote map[string]any) error {
 	return syncpkg.WriteReleaseNotesToLocal(dir, remote)
-}
-
-func ensureReleaseNotesFiles(dir string, remote map[string]any) error {
-	return syncpkg.EnsureReleaseNotesFiles(dir, remote)
 }
 
 func readLocalReleaseNotes(dir string) (localReleaseNotes, error) {
@@ -58,14 +44,6 @@ func releaseNoteChanges(dir string, baseline map[string]any) (map[string]string,
 
 func releaseNoteConflicts(dir string, baseline, remote map[string]any) ([]string, error) {
 	return syncpkg.ReleaseNoteConflicts(dir, baseline, remote)
-}
-
-func releaseNotesPayload(dir string, baseline map[string]any) (map[string]string, error) {
-	return syncpkg.ReleaseNotesPayload(dir, baseline)
-}
-
-func syncReleaseNotesFromPull(dir string, baseline, remote map[string]any, conflicts []string) error {
-	return syncpkg.SyncReleaseNotesFromPull(dir, baseline, remote, conflicts)
 }
 
 func advanceReleaseNotesBaseline(baseline, remote map[string]any, conflicts []string) map[string]any {

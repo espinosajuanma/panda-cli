@@ -17,13 +17,7 @@ type diffTask = report.DiffTask
 
 type diffChange = report.DiffChange
 
-type diffJSONLine = report.DiffJSONLine
-
-type diffCatalogs = report.DiffCatalogs
-
 type diffCatalogChange = report.DiffCatalogChange
-
-type diffSummaryData = report.DiffSummaryData
 
 func anyPointer(value any) *any { return &value }
 

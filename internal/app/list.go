@@ -29,8 +29,6 @@ type listOptions struct {
 	wide            bool
 }
 
-type effortEstimate = task.Effort
-
 type listTaskEntry = report.ListEntry
 
 type listGroup = report.ListGroup

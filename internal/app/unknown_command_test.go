@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"strings"
 	"testing"
@@ -82,7 +83,7 @@ func TestUnknownCatalogAndEditSubcommandsSuggestCloseMatches(t *testing.T) {
 		t.Fatalf("unexpected catalog error: %v", err)
 	}
 
-	err = filesCommandContext(nil, nil, []string{"uplod"}, nil, io.Discard)
+	err = filesCommandContext(context.TODO(), nil, []string{"uplod"}, nil, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), `unknown files subcommand "uplod"`) || !strings.Contains(err.Error(), `did you mean "upload"`) {
 		t.Fatalf("unexpected files error: %v", err)
 	}

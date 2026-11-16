@@ -14,12 +14,6 @@ type pushOptions struct {
 
 type pushReport = report.PushReport
 
-type pushTaskResult = report.PushTaskResult
-
-type pushCatalogResults = report.PushCatalogResults
-
-type pushCatalogResult = report.PushCatalogResult
-
 type pushSummary = report.PushSummary
 
 func parsePushOptions(args []string) (pushOptions, error) {

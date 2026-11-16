@@ -32,10 +32,6 @@ func newPullProgress(out io.Writer) *pullProgress {
 	return syncpkg.NewPullProgress(out)
 }
 
-func updatePullStage(progress *pullProgress, start, end, current, total int) {
-	syncpkg.UpdatePullStage(progress, start, end, current, total)
-}
-
 func formatPullProgress(percent int) string {
 	return syncpkg.FormatPullProgress(percent)
 }

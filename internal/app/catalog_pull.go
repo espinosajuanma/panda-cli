@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 
-	catdomain "github.com/espinosajuanma/panda-cli/internal/catalog"
 	"github.com/espinosajuanma/panda-cli/internal/config"
 	"github.com/espinosajuanma/panda-cli/internal/solutions"
 	syncpkg "github.com/espinosajuanma/panda-cli/internal/sync"
@@ -25,14 +24,6 @@ func projectCatalogDiff(ws *workspace.Workspace) ([]diffCatalogChange, int, int,
 
 func pullProjectCatalogs(ctx context.Context, client *solutions.Client, ws *workspace.Workspace, project *config.Project, out io.Writer) (int, error) {
 	return syncpkg.PullProjectCatalogs(ctx, client, ws, project, out)
-}
-
-func pullProjectCatalogsFromRecords(ws *workspace.Workspace, records map[catalogKind][]map[string]any, out io.Writer, progress *pullProgress) (int, error) {
-	converted := make(map[catdomain.Kind][]map[string]any, len(records))
-	for kind, kindRecords := range records {
-		converted[catdomain.Kind(kind)] = kindRecords
-	}
-	return syncpkg.PullProjectCatalogsFromRecords(ws, converted, out, progress)
 }
 
 func dedupeCatalogRecords(records []map[string]any) []map[string]any {

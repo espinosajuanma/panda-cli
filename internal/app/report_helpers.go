@@ -29,11 +29,3 @@ func tableCell(value any) string {
 func isEmptyField(value any) bool {
 	return report.IsEmptyField(value)
 }
-
-func truncateListCell(value string, width int) string {
-	return report.TruncateCell(value, width)
-}
-
-func wrapTaskViewValue(value string, width int) []string {
-	return report.WrapValue(value, width)
-}
