@@ -8,6 +8,7 @@ and `push` reconcile that workspace with the Solutions API.
 ```text
 cmd/panda
   └── internal/app       command registry, dispatch, and command workflows
+        ├── internal/sync    pull/push orchestration, merge rules, and catalog/note sync
         ├── internal/report  shared report formatting, paging, and effort summaries
         ├── internal/ui      terminal styling, paging, prompts, selectors, and editor launch
         ├── internal/task    task model, merge rules, field/status/effort definitions
@@ -32,6 +33,12 @@ those declarations so command metadata cannot drift from its handler.
 `internal/workspace` also owns repository helpers for catalogs, members, task
 state, and note filenames. Prefer adding workspace reads and writes there rather
 than opening files from command workflows.
+
+`internal/sync` owns pull/push orchestration and the three-way merge rules for
+tasks, catalogs, notes, and release notes. It may call `workspace`, `solutions`,
+`catalog`, `task`, `content`, and `report`, but must not import `internal/app`.
+Command handlers in `internal/app` translate flags into sync calls and render
+their results.
 
 `internal/jsonutil` contains helpers for the JSON-shaped maps used at the
 Solutions and metadata boundaries. Keep those maps at the boundary so unknown
