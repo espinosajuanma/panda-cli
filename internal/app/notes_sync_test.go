@@ -250,7 +250,7 @@ func TestPullPreservesEditedNotesAndReportsOverlappingRemoteEdits(t *testing.T) 
 		t.Fatal(err)
 	}
 	baselineNotes, err := getRemoteNotes(state.Remote)
-	if err != nil || len(baselineNotes) != 1 || baselineNotes[0].markdown != "Original note body" {
+	if err != nil || len(baselineNotes) != 1 || baselineNotes[0].Markdown != "Original note body" {
 		t.Fatalf("conflicted note baseline advanced unexpectedly: %#v, error=%v", baselineNotes, err)
 	}
 	if state.Remote["version"] != float64(1) {

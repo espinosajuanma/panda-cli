@@ -429,14 +429,14 @@ func createRemoteTask(ctx context.Context, client *solutions.Client, dir string,
 	}
 	releaseNotes := make(map[string]any)
 	for _, field := range releaseNoteFields {
-		if !localReleaseNotes.exists[field.name] || strings.TrimSpace(localReleaseNotes.markdown[field.name]) == "" {
+		if !localReleaseNotes.Exists[field.Name] || strings.TrimSpace(localReleaseNotes.Markdown[field.Name]) == "" {
 			continue
 		}
-		fieldHTML, err := content.MarkdownToHTML(localReleaseNotes.markdown[field.name])
+		fieldHTML, err := content.MarkdownToHTML(localReleaseNotes.Markdown[field.Name])
 		if err != nil {
-			return nil, fmt.Errorf("convert %s: %w", field.name, err)
+			return nil, fmt.Errorf("convert %s: %w", field.Name, err)
 		}
-		releaseNotes[field.name] = fieldHTML
+		releaseNotes[field.Name] = fieldHTML
 	}
 	if len(releaseNotes) > 0 {
 		newTask["releaseNotes"] = releaseNotes

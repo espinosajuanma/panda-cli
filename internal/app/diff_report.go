@@ -152,13 +152,13 @@ func collectDiffReport(ws *workspace.Workspace, options diffOptions) (diffReport
 				return diffReport{}, fmt.Errorf("inspect release notes for %s: %w", taskLabel(local), releaseErr)
 			}
 			for _, field := range releaseNoteFields {
-				markdown, changed := releaseChanges[field.name]
+				markdown, changed := releaseChanges[field.Name]
 				if !changed {
 					continue
 				}
-				change := diffChange{Kind: "release-note", Field: field.name, Path: field.filename, Updated: true}
+				change := diffChange{Kind: "release-note", Field: field.Name, Path: field.Filename, Updated: true}
 				if options.verbose {
-					before, baselineErr := releaseNoteMarkdown(state.Remote, field.name)
+					before, baselineErr := releaseNoteMarkdown(state.Remote, field.Name)
 					if baselineErr != nil {
 						return diffReport{}, baselineErr
 					}
@@ -359,18 +359,6 @@ func renderDiffJSON(report diffReport, out io.Writer) error {
 	}
 	_, err = fmt.Fprintf(out, "%s\n", data)
 	return err
-}
-
-func baselineNoteMarkdown(remote map[string]any) (map[string]string, error) {
-	notes, err := getRemoteNotes(remote)
-	if err != nil {
-		return nil, err
-	}
-	result := make(map[string]string, len(notes))
-	for _, note := range notes {
-		result[note.filename] = note.markdown
-	}
-	return result, nil
 }
 
 func sortedMapKeys(values map[string]string) []string {

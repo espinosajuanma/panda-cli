@@ -154,11 +154,11 @@ func renderTaskView(ws *workspace.Workspace, dir string, metadata map[string]any
 			return err
 		}
 		for _, field := range releaseNoteFields {
-			markdown := localNotes.markdown[field.name]
-			if !localNotes.exists[field.name] || strings.TrimSpace(markdown) == "" {
+			markdown := localNotes.Markdown[field.Name]
+			if !localNotes.Exists[field.Name] || strings.TrimSpace(markdown) == "" {
 				continue
 			}
-			fmt.Fprintf(out, "\n%s\n", colorText(colorTarget, "1;32", "## "+releaseNoteHeading(field.name)))
+			fmt.Fprintf(out, "\n%s\n", colorText(colorTarget, "1;32", "## "+releaseNoteHeading(field.Name)))
 			fmt.Fprintln(out, highlightMarkdown(out, markdown))
 		}
 	}
@@ -381,8 +381,8 @@ func renderTaskViewJSON(dir string, metadata map[string]any, state workspace.Sta
 			return err
 		}
 		document.ReleaseNotes = &taskViewReleaseNotes{
-			CustomerNotes: localNotes.markdown["customerNotes"],
-			InternalNotes: localNotes.markdown["internalNotes"],
+			CustomerNotes: localNotes.Markdown["customerNotes"],
+			InternalNotes: localNotes.Markdown["internalNotes"],
 		}
 	}
 	if !options.noNotes {

@@ -51,7 +51,7 @@ func editNoteContext(ctx context.Context, ws *workspace.Workspace, args []string
 	}
 	owned := false
 	for _, note := range remoteNotes {
-		if note.filename == filename && noteOwnedBy(note, user, client.Email) {
+		if note.Filename == filename && noteOwnedBy(note, user, client.Email) {
 			owned = true
 			break
 		}
