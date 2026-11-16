@@ -11,6 +11,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/espinosajuanma/panda-cli/internal/report"
 	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
@@ -282,16 +283,16 @@ func TestListSummarizesFullEffortPerAssigneeAndUnassignedTasks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(listReport.assigneeTotals) != 3 || listReport.sharedAssigneeTasks != 1 {
-		t.Fatalf("assignee totals/shared tasks = %#v / %d", listReport.assigneeTotals, listReport.sharedAssigneeTasks)
+	if len(listReport.AssigneeTotals) != 3 || listReport.SharedAssigneeTasks != 1 {
+		t.Fatalf("assignee totals/shared tasks = %#v / %d", listReport.AssigneeTotals, listReport.SharedAssigneeTasks)
 	}
 	want := []assigneeEffortTotal{
 		{Assignee: "Ada Lovelace", Tasks: 2, StoryPoints: 7, Hours: 28},
 		{Assignee: "Grace Hopper", Tasks: 2, StoryPoints: 5, Hours: 20},
 		{Assignee: "Unassigned", Tasks: 1, StoryPoints: 3, Hours: 12},
 	}
-	if !reflect.DeepEqual(listReport.assigneeTotals, want) {
-		t.Fatalf("assignee totals = %#v, want %#v", listReport.assigneeTotals, want)
+	if !reflect.DeepEqual(listReport.AssigneeTotals, want) {
+		t.Fatalf("assignee totals = %#v, want %#v", listReport.AssigneeTotals, want)
 	}
 }
 
@@ -342,7 +343,7 @@ func TestResponsiveListDropsOptionalColumnsAndWrapsTitles(t *testing.T) {
 	task["reviewers"] = []any{map[string]any{"id": "user-2", "label": "Grace Hopper"}}
 
 	var output strings.Builder
-	if _, err := printTaskGroup(&output, &output, "new", []map[string]any{task}, nil, nil, true, true, 60); err != nil {
+	if _, err := report.PrintTaskGroup(&output, &output, "new", []map[string]any{task}, nil, nil, true, true, 60); err != nil {
 		t.Fatal(err)
 	}
 	text := output.String()
@@ -367,13 +368,13 @@ func TestResponsiveListDropsOptionalColumnsAndWrapsTitles(t *testing.T) {
 }
 
 func TestListWideOverridesTerminalWidthAndCannotCombineWithJSON(t *testing.T) {
-	if got := listTableWidth(false, true, 48); got != 48 {
+	if got := report.ListTableWidth(false, true, 48); got != 48 {
 		t.Fatalf("terminal list width = %d, want 48", got)
 	}
-	if got := listTableWidth(true, true, 48); got != 0 {
+	if got := report.ListTableWidth(true, true, 48); got != 0 {
 		t.Fatalf("wide list width = %d, want 0 (unconstrained)", got)
 	}
-	if got := listTableWidth(false, false, 48); got != 0 {
+	if got := report.ListTableWidth(false, false, 48); got != 0 {
 		t.Fatalf("piped list width = %d, want 0 (full table)", got)
 	}
 	options, err := parseListOptions([]string{"--wide"})

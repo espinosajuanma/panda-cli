@@ -68,11 +68,11 @@ func browseWithUI(ws *workspace.Workspace, args []string, userEmail, apiURL stri
 		return errors.New("panda browse does not accept --wide")
 	}
 	for {
-		report, err := collectListReportForUser(ws, options, userEmail)
+		doc, err := collectListReportForUser(ws, options, userEmail)
 		if err != nil {
 			return err
 		}
-		choices, entries := browserTaskChoices(report)
+		choices, entries := browserTaskChoices(doc)
 		if len(choices) == 0 {
 			fmt.Fprintln(out, "No tasks match the filters.")
 			return nil
@@ -112,19 +112,19 @@ func browseWithUI(ws *workspace.Workspace, args []string, userEmail, apiURL stri
 	}
 }
 
-func browserTaskChoices(report listReport) ([]selectorOption, map[string]listTaskEntry) {
+func browserTaskChoices(doc listReport) ([]selectorOption, map[string]listTaskEntry) {
 	var choices []selectorOption
 	entries := make(map[string]listTaskEntry)
-	for _, group := range report.groups {
-		for _, entry := range group.entries {
-			selector := filepath.Base(entry.dir)
-			label := fmt.Sprintf("%s [%s] %s", taskLabel(entry.metadata), displayStatus(group.status), tableCell(entry.metadata["title"]))
-			if group.status == "released" {
-				if release := relationshipDisplayName(entry.metadata["release"]); release != "" {
+	for _, group := range doc.Groups {
+		for _, entry := range group.Entries {
+			selector := filepath.Base(entry.Dir)
+			label := fmt.Sprintf("%s [%s] %s", taskLabel(entry.Metadata), displayStatus(group.Status), tableCell(entry.Metadata["title"]))
+			if group.Status == "released" {
+				if release := relationshipDisplayName(entry.Metadata["release"]); release != "" {
 					label += " · " + tableCell(release)
 				}
 			}
-			if assignees := assigneesDisplay(entry.metadata["assignees"]); assignees != "" {
+			if assignees := assigneesDisplay(entry.Metadata["assignees"]); assignees != "" {
 				label += " · " + tableCell(assignees)
 			}
 			choices = append(choices, selectorOption{value: selector, label: label})
@@ -142,7 +142,7 @@ func browserTaskActions(ws *workspace.Workspace, entry listTaskEntry, apiURL str
 		{value: "files", label: "View attached files"},
 		{value: "diff", label: "Review pending diff"},
 	}
-	if _, err := verifiedTaskLinkForAPIURL(ws, entry.metadata, apiURL); err == nil {
+	if _, err := verifiedTaskLinkForAPIURL(ws, entry.Metadata, apiURL); err == nil {
 		actions = append(actions, selectorOption{value: "link", label: "Print task link"})
 	}
 	actions = append(actions,
@@ -162,7 +162,7 @@ func browserActionLabel(actions []selectorOption, value string) string {
 }
 
 func runBrowserTaskAction(ws *workspace.Workspace, entry listTaskEntry, action, apiURL string, out io.Writer) error {
-	selector := filepath.Base(entry.dir)
+	selector := filepath.Base(entry.Dir)
 	switch action {
 	case "view":
 		return viewTaskWithAPIURL(ws, []string{selector}, apiURL, out)
@@ -182,7 +182,7 @@ func runBrowserTaskAction(ws *workspace.Workspace, entry listTaskEntry, action, 
 }
 
 func renderBrowseDescription(entry listTaskEntry, out io.Writer) error {
-	data, err := os.ReadFile(filepath.Join(entry.dir, "description.md"))
+	data, err := os.ReadFile(filepath.Join(entry.Dir, "description.md"))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			data = []byte("No description.")
@@ -191,23 +191,23 @@ func renderBrowseDescription(entry listTaskEntry, out io.Writer) error {
 		}
 	}
 	return writePagedOutput(out, func(rendered io.Writer) error {
-		fmt.Fprintf(rendered, "%s\n\n", colorText(out, "1;32", "## Description — #"+taskLabel(entry.metadata)))
+		fmt.Fprintf(rendered, "%s\n\n", colorText(out, "1;32", "## Description — #"+taskLabel(entry.Metadata)))
 		fmt.Fprintln(rendered, highlightMarkdown(out, string(data)))
 		return nil
 	})
 }
 
 func renderBrowseNotes(ws *workspace.Workspace, entry listTaskEntry, out io.Writer) error {
-	state, err := ws.ReadState(stateKey(entry.dir, entry.metadata))
+	state, err := ws.ReadState(stateKey(entry.Dir, entry.Metadata))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	notes, err := readTaskViewNotes(entry.dir, state)
+	notes, err := readTaskViewNotes(entry.Dir, state)
 	if err != nil {
 		return err
 	}
 	return writePagedOutput(out, func(rendered io.Writer) error {
-		fmt.Fprintf(rendered, "%s\n\n", colorText(out, "1;32", "## Notes — #"+taskLabel(entry.metadata)))
+		fmt.Fprintf(rendered, "%s\n\n", colorText(out, "1;32", "## Notes — #"+taskLabel(entry.Metadata)))
 		if len(notes) == 0 {
 			fmt.Fprintln(rendered, "No notes.")
 			return nil
