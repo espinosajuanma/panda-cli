@@ -1,4 +1,4 @@
-.PHONY: fmt fmt-check vet test test-race build check
+.PHONY: fmt fmt-check vet arch-check test test-race build check
 
 fmt:
 	gofmt -w ./cmd ./internal
@@ -8,6 +8,9 @@ fmt-check:
 
 vet:
 	go vet ./...
+
+arch-check:
+	go test -run TestLayerImports ./internal/archtest
 
 test:
 	go test ./...
@@ -21,5 +24,6 @@ build:
 check:
 	$(MAKE) fmt-check
 	$(MAKE) vet
+	$(MAKE) arch-check
 	$(MAKE) test
 	$(MAKE) build
