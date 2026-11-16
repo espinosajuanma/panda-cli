@@ -80,22 +80,15 @@ func readLocalCatalogForSync(ws *workspace.Workspace, kind catalogKind, baseline
 }
 
 func cloneCatalogRecords(records []map[string]any) []map[string]any {
-	cloned := make([]map[string]any, 0, len(records))
-	for _, record := range records {
-		cloned = append(cloned, cloneMap(record))
-	}
-	return cloned
+	return catdomain.CloneRecords(records)
 }
 
 func catalogRecordID(record map[string]any) string {
-	if id := stringField(record, "id"); id != "" {
-		return id
-	}
-	return stringField(record, "localId")
+	return catdomain.RecordID(record)
 }
 
 func catalogRecordName(kind catalogKind, record map[string]any) string {
-	return stringField(record, catalogNameField(kind))
+	return catdomain.RecordName(catdomain.Kind(kind), record)
 }
 
 func catalogRecords(ctx context.Context, client *solutions.Client, projectID string, kind catalogKind) ([]map[string]any, error) {
@@ -106,31 +99,11 @@ func catalogRecords(ctx context.Context, client *solutions.Client, projectID str
 }
 
 func normalizeCatalogRecords(kind catalogKind, records []map[string]any) ([]map[string]any, error) {
-	normalized := make([]map[string]any, 0, len(records))
-	for _, record := range records {
-		item := cloneMap(record)
-		if kind == packageCatalog {
-			markdown, err := content.HTMLToMarkdown(stringField(record, "description"))
-			if err != nil {
-				return nil, fmt.Errorf("convert package %q description to Markdown: %w", catalogRecordName(kind, record), err)
-			}
-			item["description"] = markdown
-		}
-		normalized = append(normalized, item)
-	}
-	return normalized, nil
+	return catdomain.NormalizeRecords(catdomain.Kind(kind), records)
 }
 
 func catalogRecordForAPI(kind catalogKind, record map[string]any) (map[string]any, error) {
-	item := cloneMap(record)
-	if kind == packageCatalog {
-		html, err := content.MarkdownToHTML(stringField(record, "description"))
-		if err != nil {
-			return nil, fmt.Errorf("convert package %q description to HTML: %w", catalogRecordName(kind, record), err)
-		}
-		item["description"] = html
-	}
-	return item, nil
+	return catdomain.RecordForAPI(catdomain.Kind(kind), record)
 }
 
 func mergeCatalogRecords(kind catalogKind, local, baseline, remote []map[string]any) ([]map[string]any, []map[string]any, []string) {
@@ -138,11 +111,7 @@ func mergeCatalogRecords(kind catalogKind, local, baseline, remote []map[string]
 }
 
 func setCatalogField(destination map[string]any, field string, source map[string]any) {
-	if value, exists := source[field]; exists {
-		destination[field] = value
-	} else {
-		delete(destination, field)
-	}
+	catdomain.SetField(destination, field, source)
 }
 
 func catalogRecordChanged(kind catalogKind, record, baseline map[string]any) bool {
