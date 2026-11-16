@@ -59,9 +59,9 @@ func recordTaskProblem(report *pushReport, problems *[]string, result *pushTaskR
 func catalogPushResult(plan *catalogPushPlan, changed bool) pushCatalogResult {
 	result := pushCatalogResult{Changed: changed}
 	if plan != nil {
-		result.Created = plan.created
-		result.Updated = plan.updated
-		result.Deleted = plan.deleted
+		result.Created = plan.Created
+		result.Updated = plan.Updated
+		result.Deleted = plan.Deleted
 	}
 	return result
 }
