@@ -13,14 +13,11 @@ import (
 
 	"github.com/espinosajuanma/panda-cli/internal/fsutil"
 	"github.com/espinosajuanma/panda-cli/internal/solutions"
+	syncpkg "github.com/espinosajuanma/panda-cli/internal/sync"
 	"github.com/espinosajuanma/panda-cli/internal/workspace"
 )
 
-type taskFileReference struct {
-	ID          string
-	Name        string
-	Description string
-}
+type taskFileReference = syncpkg.FileReference
 
 func filesCommand(ws *workspace.Workspace, args []string, client *solutions.Client, out io.Writer) error {
 	return filesCommandContext(context.Background(), ws, args, client, out)
@@ -264,33 +261,7 @@ func downloadTaskFileContext(ctx context.Context, ws *workspace.Workspace, args 
 }
 
 func taskFileReferences(metadata map[string]any) []taskFileReference {
-	items, _ := metadata["files"].([]any)
-	files := make([]taskFileReference, 0, len(items))
-	for _, item := range items {
-		entry, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		file := taskFileReference{Description: stringField(entry, "description")}
-		switch value := entry["file"].(type) {
-		case map[string]any:
-			file.ID = stringField(value, "id")
-			file.Name = stringField(value, "name")
-		case string:
-			file.ID = value
-		}
-		if file.ID == "" {
-			file.ID = stringField(entry, "fileId")
-		}
-		if file.Name == "" {
-			file.Name = stringField(entry, "name")
-		}
-		if file.Name == "" {
-			file.Name = "(unnamed file)"
-		}
-		files = append(files, file)
-	}
-	return files
+	return syncpkg.TaskFileReferences(metadata)
 }
 
 func selectTaskFile(metadata map[string]any, selector string) (taskFileReference, error) {
@@ -359,142 +330,6 @@ func stripFileSizeSuffix(name string) string {
 	return name
 }
 
-func pushStagedFiles(ctx context.Context, client *solutions.Client, ws *workspace.Workspace, dir string, metadata map[string]any, key string, state workspace.State) (workspace.State, error) {
-	if len(state.StagedFiles) == 0 {
-		return state, nil
-	}
-	taskID := stringField(metadata, "id")
-	if taskID == "" {
-		return state, fmt.Errorf("task %s has not been created in Solutions yet", taskLabel(metadata))
-	}
-	if err := validateStagedFiles(state.StagedFiles); err != nil {
-		return state, err
-	}
-
-	attachments := make([]solutions.FileAttachment, 0, len(state.StagedFiles))
-	preexistingUploadIDs := false
-	for index := range state.StagedFiles {
-		staged := state.StagedFiles[index]
-		filename := staged.Name
-		if filename == "" && staged.Path != "" {
-			filename = filepath.Base(staged.Path)
-		}
-		if staged.RemoteID != "" {
-			preexistingUploadIDs = true
-			attachments = append(attachments, solutions.FileAttachment{
-				FileID: staged.RemoteID, Name: filename, Description: staged.Description,
-			})
-			continue
-		}
-		file, err := os.Open(staged.Path)
-		if err != nil {
-			return state, fmt.Errorf("open staged file %q: %w", staged.Name, err)
-		}
-		link, uploadErr := client.UploadFile(ctx, filename, file)
-		closeErr := file.Close()
-		if uploadErr != nil {
-			return state, fmt.Errorf("upload staged file %q: %w", staged.Name, uploadErr)
-		}
-		if closeErr != nil {
-			return state, fmt.Errorf("close staged file %q: %w", staged.Name, closeErr)
-		}
-		attachments = append(attachments, solutions.FileAttachment{
-			FileID: link.FileID, Name: filename, Description: staged.Description,
-		})
-		state.StagedFiles[index].RemoteID = link.FileID
-		if err := ws.WriteState(key, state); err != nil {
-			return state, fmt.Errorf("save uploaded file ID for %q: %w", staged.Name, err)
-		}
-	}
-
-	var updated map[string]any
-	var err error
-	if preexistingUploadIDs {
-		updated, err = client.GetTask(ctx, taskID)
-		if err != nil {
-			return state, fmt.Errorf("check staged file attachments: %w", err)
-		}
-	}
-	pending := missingFileAttachments(updated, attachments)
-	if len(pending) > 0 {
-		updated, err = client.AttachFiles(ctx, taskID, pending)
-		if err != nil {
-			return state, fmt.Errorf("attach uploaded files to task: %w", err)
-		}
-	}
-	if updated == nil || stringField(updated, "id") != taskID || !containsAttachedFiles(updated, attachments) {
-		updated, err = client.GetTask(ctx, taskID)
-		if err != nil {
-			return state, fmt.Errorf("refresh task after attaching files: %w", err)
-		}
-	}
-	if stringField(updated, "id") != taskID {
-		return state, fmt.Errorf("file attachment response did not include task %s", taskID)
-	}
-	if !containsAttachedFiles(updated, attachments) {
-		return state, fmt.Errorf("task %s response did not include the newly attached file references", taskID)
-	}
-	if err := writeRemoteToLocal(dir, updated); err != nil {
-		return state, fmt.Errorf("save attached file references: %w", err)
-	}
-	state.Remote = cloneMap(updated)
-	state.StagedFiles = nil
-	if err := ws.WriteState(key, state); err != nil {
-		return state, err
-	}
-	return state, nil
-}
-
-func missingFileAttachments(taskRecord map[string]any, attachments []solutions.FileAttachment) []solutions.FileAttachment {
-	attached := make(map[string]bool)
-	for _, file := range taskFileReferences(taskRecord) {
-		attached[file.ID] = true
-	}
-	pending := make([]solutions.FileAttachment, 0, len(attachments))
-	for _, attachment := range attachments {
-		if !attached[attachment.FileID] {
-			pending = append(pending, attachment)
-		}
-	}
-	return pending
-}
-
-func validateStagedFiles(files []workspace.StagedFile) error {
-	for _, staged := range files {
-		if staged.RemoteID != "" {
-			continue
-		}
-		info, err := os.Stat(staged.Path)
-		if err != nil {
-			return fmt.Errorf("staged file %q is unavailable: %w", staged.Name, err)
-		}
-		if !info.Mode().IsRegular() {
-			return fmt.Errorf("staged file %q is no longer a regular file", staged.Name)
-		}
-		file, err := os.Open(staged.Path)
-		if err != nil {
-			return fmt.Errorf("staged file %q cannot be opened: %w", staged.Name, err)
-		}
-		if err := file.Close(); err != nil {
-			return fmt.Errorf("close staged file %q: %w", staged.Name, err)
-		}
-	}
-	return nil
-}
-
 func safeTempName(value string) string {
 	return workspace.SafeFileComponent(value)
-}
-
-func containsAttachedFiles(taskRecord map[string]any, attachments []solutions.FileAttachment) bool {
-	attached := make(map[string]bool)
-	for _, file := range taskFileReferences(taskRecord) {
-		attached[file.ID] = true
-	}
-	for _, file := range attachments {
-		if !attached[file.FileID] {
-			return false
-		}
-	}
-	return true
 }
