@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -404,66 +403,23 @@ func editTemporaryNote(in io.Reader) (string, error) {
 }
 
 func stateKey(dir string, metadata map[string]any) string {
-	if id := stringField(metadata, "id"); id != "" {
-		return id
-	}
-	return filepath.Base(dir)
+	return workspace.StateKey(dir, metadata)
 }
 
 func taskStateKeys(dir string, metadata map[string]any) []string {
-	if id := stringField(metadata, "id"); id != "" {
-		return []string{id}
-	}
-	keys := make([]string, 0, 2)
-	seen := make(map[string]bool, 2)
-	for _, key := range []string{stringField(metadata, "localId"), filepath.Base(dir)} {
-		if key != "" && !seen[key] {
-			seen[key] = true
-			keys = append(keys, key)
-		}
-	}
-	return keys
+	return workspace.TaskStateKeys(dir, metadata)
 }
 
 func isLocalDraft(dir string, metadata map[string]any) bool {
-	if stringField(metadata, "id") != "" {
-		return false
-	}
-	if stringField(metadata, "localId") != "" {
-		return true
-	}
-	base := filepath.Base(dir)
-	if strings.HasPrefix(base, "draft-") {
-		number, err := strconv.Atoi(strings.TrimPrefix(base, "draft-"))
-		return err == nil && number > 0
-	}
-	return strings.HasPrefix(base, "local-") && len(base) > len("local-")
+	return workspace.IsLocalDraft(dir, metadata)
 }
 
 func loadTaskState(ws *workspace.Workspace, dir string, metadata map[string]any) (workspace.State, string, error) {
-	keys := taskStateKeys(dir, metadata)
-	for _, key := range keys {
-		state, err := ws.ReadState(key)
-		if err == nil {
-			if isLocalDraft(dir, metadata) && stringField(state.Remote, "id") == "" {
-				state.LocalCreated = true
-			}
-			return state, key, nil
-		}
-		if !errors.Is(err, os.ErrNotExist) {
-			return workspace.State{}, "", fmt.Errorf("read sync baseline for task %s: %w", taskLabel(metadata), err)
-		}
-	}
-	if isLocalDraft(dir, metadata) {
-		return workspace.State{LocalCreated: true}, stateKey(dir, metadata), nil
-	}
-	return workspace.State{}, "", fmt.Errorf("task %s has no sync baseline; run `panda pull` before cleaning or pushing", taskLabel(metadata))
+	return ws.LoadTaskState(dir, metadata)
 }
 
 func removeTaskStateFiles(ws *workspace.Workspace, dir string, metadata map[string]any) {
-	for _, key := range taskStateKeys(dir, metadata) {
-		_ = os.Remove(ws.StatePathForKey(key))
-	}
+	ws.RemoveTaskStateFiles(dir, metadata)
 }
 
 func cloneMap(input map[string]any) map[string]any {
@@ -487,16 +443,7 @@ func relationshipID(value any) string {
 }
 
 func taskLabel(metadata map[string]any) string {
-	if number := metadata["number"]; number != nil {
-		return fmt.Sprint(number)
-	}
-	if id := stringField(metadata, "id"); id != "" {
-		return id
-	}
-	if localID := stringField(metadata, "localId"); localID != "" {
-		return localID
-	}
-	return "local task"
+	return task.Label(metadata)
 }
 
 func isConflictField(fields []string, field string) bool {
@@ -537,24 +484,11 @@ func fprintln(out io.Writer) {
 }
 
 func noteFilename(timestamp time.Time, author string, duplicateIndex int) string {
-	suffix := ""
-	if duplicateIndex > 1 {
-		suffix = fmt.Sprintf("-%d", duplicateIndex)
-	}
-	return timestamp.UTC().Format("20060102T150405.000Z") + "-" + safeName(author) + suffix + ".md"
+	return workspace.NoteFilename(timestamp, author, duplicateIndex)
 }
 
 func uniqueNoteFilename(notesDir string, timestamp time.Time, author string) (string, error) {
-	for index := 1; ; index++ {
-		filename := noteFilename(timestamp, author, index)
-		_, err := os.Stat(filepath.Join(notesDir, filename))
-		if errors.Is(err, os.ErrNotExist) {
-			return filename, nil
-		}
-		if err != nil {
-			return "", err
-		}
-	}
+	return workspace.UniqueNoteFilename(notesDir, timestamp, author)
 }
 
 func colorText(out io.Writer, style, value string) string {
