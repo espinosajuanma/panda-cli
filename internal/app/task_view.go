@@ -12,10 +12,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/espinosajuanma/panda-cli/internal/config"
 	"github.com/espinosajuanma/panda-cli/internal/jsonutil"
+	"github.com/espinosajuanma/panda-cli/internal/report"
 	"github.com/espinosajuanma/panda-cli/internal/solutions"
 	"github.com/espinosajuanma/panda-cli/internal/task"
 	"github.com/espinosajuanma/panda-cli/internal/ui"
@@ -30,10 +30,7 @@ type taskViewOptions struct {
 	json           bool
 }
 
-type taskViewRow struct {
-	label string
-	value string
-}
+type taskViewRow = report.TaskViewRow
 
 type taskViewNote struct {
 	Filename string `json:"filename"`
@@ -128,85 +125,56 @@ func renderTaskView(ws *workspace.Workspace, dir string, metadata map[string]any
 	}
 	labelNames := catalogNameIndex(labelCatalog, labelsCatalog)
 	packageNames := catalogNameIndex(packageCatalog, packagesCatalog)
-	title := taskLabel(metadata) + " — " + stringField(metadata, "title")
-	fmt.Fprintf(out, "%s\n\n", colorText(colorTarget, "1;32", "# "+title))
-	fmt.Fprintln(out, colorText(colorTarget, "1;32", "## Metadata"))
-	rows := taskViewMetadataRows(metadata, labelNames, packageNames, viewContext)
-	writeTaskViewTable(out, colorTarget, rows, width)
-	if viewContext.Link != "" {
-		fmt.Fprintf(out, "%s %s\n", colorText(colorTarget, "1;36", "Task link:"), viewContext.Link)
+	view := report.TaskViewText{
+		Title:            taskLabel(metadata) + " — " + stringField(metadata, "title"),
+		Rows:             taskViewMetadataRows(metadata, labelNames, packageNames, viewContext),
+		Link:             viewContext.Link,
+		ShowDescription:  !options.noDescription,
+		ShowReleaseNotes: !options.noReleaseNotes,
+		ShowNotes:        !options.noNotes,
 	}
-	if !options.noDescription {
-		fmt.Fprintln(out, colorText(colorTarget, "1;32", "\n## Description"))
+	if view.ShowDescription {
 		description, err := os.ReadFile(filepath.Join(dir, "description.md"))
 		if err != nil {
 			return err
 		}
-		if strings.TrimSpace(string(description)) == "" {
-			fmt.Fprintln(out, "No description.")
-		} else {
-			fmt.Fprintln(out, highlightMarkdown(out, string(description)))
-		}
+		view.Description = string(description)
+		view.HasDescription = true
 	}
-	if !options.noReleaseNotes {
+	if view.ShowReleaseNotes {
 		localNotes, err := readLocalReleaseNotes(dir)
 		if err != nil {
 			return err
 		}
 		for _, field := range releaseNoteFields {
-			markdown := localNotes.Markdown[field.Name]
-			if !localNotes.Exists[field.Name] || strings.TrimSpace(markdown) == "" {
+			if !localNotes.Exists[field.Name] {
 				continue
 			}
-			fmt.Fprintf(out, "\n%s\n", colorText(colorTarget, "1;32", "## "+releaseNoteHeading(field.Name)))
-			fmt.Fprintln(out, highlightMarkdown(out, markdown))
+			view.ReleaseNotes = append(view.ReleaseNotes, report.TaskViewReleaseNote{
+				Heading: releaseNoteHeading(field.Name), Markdown: localNotes.Markdown[field.Name],
+			})
 		}
 	}
-	fmt.Fprintln(out, colorText(colorTarget, "1;32", "\n## Files"))
-	files := taskFileReferences(metadata)
-	if len(files) == 0 {
-		fmt.Fprintln(out, "No attached files.")
-	} else {
-		for _, file := range files {
-			fmt.Fprintf(out, "- %s (id: %s)", file.Name, file.ID)
-			if file.Description != "" {
-				fmt.Fprintf(out, " — %s", file.Description)
-			}
-			fmt.Fprintln(out)
-		}
+	for _, file := range taskFileReferences(metadata) {
+		view.Files = append(view.Files, report.TaskViewFile{Name: file.Name, ID: file.ID, Description: file.Description})
 	}
 	for _, staged := range state.StagedFiles {
 		name := staged.Name
 		if name == "" {
 			name = filepath.Base(staged.Path)
 		}
-		fmt.Fprintf(out, "- %s (staged upload)", name)
-		if staged.Description != "" {
-			fmt.Fprintf(out, " — %s", staged.Description)
-		}
-		fmt.Fprintln(out)
+		view.Files = append(view.Files, report.TaskViewFile{Name: name, Description: staged.Description, Staged: true})
 	}
-	if !options.noNotes {
-		fmt.Fprintln(out)
-		fmt.Fprintln(out, colorText(colorTarget, "1;32", "## Notes"))
+	if view.ShowNotes {
 		notes, err := readTaskViewNotes(dir, state)
 		if err != nil {
 			return err
 		}
-		if len(notes) == 0 {
-			fmt.Fprintln(out, "No notes.")
-		} else {
-			for _, note := range notes {
-				marker := ""
-				if note.Staged {
-					marker = colorText(colorTarget, "1;33", " [staged]")
-				}
-				fmt.Fprintf(out, "%s%s\n", colorText(colorTarget, "1;36", "### "+strings.TrimSuffix(note.Filename, ".md")), marker)
-				fmt.Fprintln(out, highlightMarkdown(out, note.Markdown))
-			}
+		for _, note := range notes {
+			view.Notes = append(view.Notes, report.TaskViewNote{Filename: note.Filename, Markdown: note.Markdown, Staged: note.Staged})
 		}
 	}
-	return nil
+	return report.RenderTaskViewText(view, out, colorTarget, width)
 }
 
 func taskViewMetadataRows(metadata map[string]any, labelNames, packageNames map[string]string, viewContext taskViewJSONContext) []taskViewRow {
@@ -246,53 +214,25 @@ func taskViewMetadataRows(metadata map[string]any, labelNames, packageNames map[
 		if display == "" || display == "<nil>" {
 			display = "None"
 		}
-		rows = append(rows, taskViewRow{label: field.label, value: display})
+		rows = append(rows, report.TaskViewRow{Label: field.label, Value: display})
 		if field.key == "status" && stringField(metadata, "status") == "released" {
 			if release := displayRelationship(metadata["release"]); release != "" {
-				rows = append(rows, taskViewRow{label: "Release", value: release})
+				rows = append(rows, report.TaskViewRow{Label: "Release", Value: release})
 			}
 		}
 	}
 	if createdBy, ok := metadata["createdBy"]; ok {
 		if name := displayRelationship(createdBy); name != "" {
-			rows = append(rows, taskViewRow{label: "Created by", value: name})
+			rows = append(rows, report.TaskViewRow{Label: "Created by", Value: name})
 		}
 	}
 	if createdAt, ok := metadata["createdAt"]; ok {
 		if formatted := formatTaskCreatedAt(createdAt); formatted != "" {
-			rows = append(rows, taskViewRow{label: "Created at", value: formatted})
+			rows = append(rows, report.TaskViewRow{Label: "Created at", Value: formatted})
 		}
 	}
-	rows = append(rows, taskViewRow{label: "Sync", value: viewContext.SyncStatus})
+	rows = append(rows, report.TaskViewRow{Label: "Sync", Value: viewContext.SyncStatus})
 	return rows
-}
-
-func writeTaskViewTable(out, colorTarget io.Writer, rows []taskViewRow, width int) {
-	labelWidth := 0
-	for _, row := range rows {
-		if length := utf8.RuneCountInString(row.label); length > labelWidth {
-			labelWidth = length
-		}
-	}
-	if labelWidth == 0 {
-		return
-	}
-	valueWidth := width - labelWidth - 6
-	if valueWidth < 12 {
-		valueWidth = 12
-	}
-	indent := strings.Repeat(" ", labelWidth+4)
-	for _, row := range rows {
-		padding := labelWidth - utf8.RuneCountInString(row.label)
-		wrapped := wrapTaskViewValue(row.value, valueWidth)
-		if len(wrapped) == 0 {
-			wrapped = []string{"None"}
-		}
-		fmt.Fprintf(out, "  %s%s  %s\n", colorText(colorTarget, "1;36", row.label), strings.Repeat(" ", padding), wrapped[0])
-		for _, line := range wrapped[1:] {
-			fmt.Fprintf(out, "%s%s\n", indent, line)
-		}
-	}
 }
 
 func displayRelationship(value any) string {
